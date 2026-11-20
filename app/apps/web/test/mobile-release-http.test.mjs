@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, before } from "node:test";
 
+import { hashPassword } from "../../../packages/auth/dist/index.js";
 import {
   adminClient,
   resetDatabase,
@@ -30,6 +31,8 @@ const fallback = {
   downloadUrl: "",
 };
 
+const PASSWORD = "password-uji-aman-123";
+
 async function waitForReady() {
   const deadline = Date.now() + 40_000;
   while (Date.now() < deadline) {
@@ -53,11 +56,45 @@ async function getJson(path) {
   return { response, body: await response.json() };
 }
 
+function cookiesFrom(response) {
+  return response.headers
+    .getSetCookie()
+    .map((cookie) => cookie.split(";")[0])
+    .join("; ");
+}
+
+/** Login web: dapatkan cookie sesi + token CSRF yang cocok. */
+async function loginCookies(email) {
+  const csrfResponse = await fetch(`${baseUrl}/api/auth/csrf`, {
+    headers: { connection: "close" },
+  });
+  assert.equal(csrfResponse.status, 200);
+  const { csrfToken } = await csrfResponse.json();
+
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken,
+      cookie: cookiesFrom(csrfResponse),
+      connection: "close",
+    },
+    body: JSON.stringify({ email, password: PASSWORD }),
+  });
+  const body = await login.json();
+  assert.equal(login.status, 200, JSON.stringify(body));
+  assert.ok(body.csrfToken);
+  return { cookie: cookiesFrom(login), csrfToken: body.csrfToken };
+}
+
 before(async () => {
   db = adminClient();
   await resetDatabase(db);
-  tenantA = await seedTenant(db, { name: "Release A" });
-  employee = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER);
+  const passwordHash = await hashPassword(PASSWORD);
+  tenantA = await seedTenant(db, { name: "Release A", passwordHash });
+  employee = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER, {
+    passwordHash,
+  });
 
   releaseDir = await mkdtemp(join(tmpdir(), "absensi-releases-"));
   const port = 3800 + randomInt(300);
@@ -197,13 +234,15 @@ function releaseForm(version, buildNumber, bytes) {
 
 test("M7: admin mengunggah rilis dan metadata langsung berlaku", async () => {
   const bytes = Buffer.from("PK-uploaded-apk-bytes");
+  const owner = await loginCookies(tenantA.ownerEmail);
   const uploaded = await fetch(
     `${baseUrl}/api/workspaces/${tenantA.tenantId}/app-release`,
     {
       method: "POST",
       body: releaseForm("1.3.0", 9, bytes),
       headers: {
-        authorization: `Bearer ${tenantA.ownerToken}`,
+        cookie: owner.cookie,
+        "x-csrf-token": owner.csrfToken,
         connection: "close",
       },
     },
@@ -227,13 +266,15 @@ test("M7: admin mengunggah rilis dan metadata langsung berlaku", async () => {
   assert.equal(download.status, 200);
   assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes);
 
+  const viewer = await loginCookies(employee.email);
   const denied = await fetch(
     `${baseUrl}/api/workspaces/${tenantA.tenantId}/app-release`,
     {
       method: "POST",
       body: releaseForm("1.3.1", 10, Buffer.from("nope")),
       headers: {
-        authorization: `Bearer ${employee.token}`,
+        cookie: viewer.cookie,
+        "x-csrf-token": viewer.csrfToken,
         connection: "close",
       },
     },
@@ -242,20 +283,21 @@ test("M7: admin mengunggah rilis dan metadata langsung berlaku", async () => {
   assert.equal((await getJson("/api/mobile/version")).body.latestVersion, "1.3.0");
 });
 
-test("M8: unggah APK 13 MB melewati middleware dan terbaca utuh", async () => {
-  const size = 13 * 1024 * 1024;
-  const bytes = Buffer.alloc(size);
-  for (let index = 0; index < size; index += 1) {
-    bytes[index] = (index * 31 + 7) % 256;
-  }
+test("M8: server.mjs menerima unggahan APK 60 MB utuh lewat middleware", async () => {
+  const size = 60 * 1024 * 1024;
+  const bytes = Buffer.alloc(size, 0x5a);
+  bytes.write("PK\u0003\u0004", 0, "binary");
+  bytes.write("absensi-60mb-penanda-akhir", size - 30, "utf8");
 
+  const owner = await loginCookies(tenantA.ownerEmail);
   const uploaded = await fetch(
     `${baseUrl}/api/workspaces/${tenantA.tenantId}/app-release`,
     {
       method: "POST",
       body: releaseForm("1.6.0", 11, bytes),
       headers: {
-        authorization: `Bearer ${tenantA.ownerToken}`,
+        cookie: owner.cookie,
+        "x-csrf-token": owner.csrfToken,
         connection: "close",
       },
     },
@@ -273,4 +315,13 @@ test("M8: unggah APK 13 MB melewati middleware dan terbaca utuh", async () => {
     createHash("sha256").update(stored).digest("hex"),
     createHash("sha256").update(bytes).digest("hex"),
   );
+
+  const audit = await db.auditLog.findFirst({
+    where: { tenantId: tenantA.tenantId, action: "mobile.release_upload" },
+    orderBy: { createdAt: "desc" },
+  });
+  assert.ok(audit, "audit unggahan APK wajib tercatat");
+  assert.equal(audit.actorUserId, tenantA.ownerUserId);
+  assert.equal(audit.metadata.sizeBytes, size);
+  assert.equal(audit.metadata.buildNumber, 11);
 });
