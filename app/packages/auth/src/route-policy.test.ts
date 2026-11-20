@@ -64,7 +64,7 @@ test("H2: registry tidak menyimpan route yang sudah tidak ada", () => {
   }
 });
 
-test("H3: hanya health/login/register/csrf/ready/accept-invitation yang publik", () => {
+test("H3: hanya health/login/register/csrf/ready/accept-invitation/rilis mobile yang publik", () => {
   const publicRoutes = Object.entries(API_ROUTE_POLICIES)
     .filter(([, policy]) => policy.kind === "public")
     .map(([route]) => route)
@@ -77,6 +77,8 @@ test("H3: hanya health/login/register/csrf/ready/accept-invitation yang publik",
     "/api/health",
     "/api/health/ready",
     "/api/invitations/accept",
+    "/api/mobile/apk/latest",
+    "/api/mobile/version",
   ]);
 });
 

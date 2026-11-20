@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { slug: "settings/office", label: "Kantor", permission: "office.manage" },
   { slug: "settings/shifts", label: "Shift kerja", permission: "office.manage" },
   { slug: "settings/holidays", label: "Hari libur", permission: "workspace.manage" },
+  { slug: "settings/app-release", label: "Rilis aplikasi", permission: "workspace.manage" },
 ] as const;
 
 const BREADCRUMBS: Record<string, string> = {
@@ -34,6 +35,7 @@ const BREADCRUMBS: Record<string, string> = {
   office: "Kantor",
   shifts: "Shift kerja",
   holidays: "Hari libur",
+  "app-release": "Rilis aplikasi",
 };
 
 function labelsFor(pathname: string): Array<{ label: string; href: string }> {

@@ -112,6 +112,32 @@ ThemeData buildAppTheme() {
       iconTheme: IconThemeData(color: AppColors.ink, size: 22),
       actionsIconTheme: IconThemeData(color: AppColors.ink, size: 22),
     ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: AppColors.surface,
+      indicatorColor: AppColors.greenSoft,
+      elevation: 0,
+      height: 66,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      indicatorShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.1,
+          color: selected ? AppColors.greenDark : AppColors.muted,
+        );
+      }),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return IconThemeData(
+          size: 22,
+          color: selected ? AppColors.green : AppColors.muted,
+        );
+      }),
+    ),
     cardTheme: CardThemeData(
       color: AppColors.surface,
       elevation: 0,

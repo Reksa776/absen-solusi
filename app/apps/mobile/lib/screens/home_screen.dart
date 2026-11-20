@@ -10,6 +10,7 @@ import '../models/attendance_log.dart';
 import '../models/employee_request.dart';
 import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
+import '../services/app_update_service.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/offline_attendance_queue.dart';
@@ -17,6 +18,7 @@ import '../services/push_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/geofence_map.dart';
 import '../widgets/selfie_frame.dart';
+import '../widgets/update_dialog.dart';
 import 'camera_screen.dart';
 import 'correction_form_screen.dart';
 import 'employee_requests_screen.dart';
@@ -71,6 +73,7 @@ class HomeScreen extends StatefulWidget {
     this.photoTaker,
     this.pushService,
     this.offlineQueue,
+    this.embedded = false,
   });
 
   final AuthService auth;
@@ -78,6 +81,7 @@ class HomeScreen extends StatefulWidget {
   final PhotoTaker? photoTaker;
   final PushService? pushService;
   final OfflineAttendanceQueue? offlineQueue;
+  final bool embedded;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -86,6 +90,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final LocationService _location;
   late final OfflineAttendanceQueue _offlineQueue;
+  late final AppUpdateService _updates;
+  InstalledAppInfo _installed = InstalledAppInfo.unknown;
+  bool _checkingUpdate = false;
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
   int _pendingOffline = 0;
@@ -106,6 +113,8 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _location = widget.locationService ?? LocationService();
     _offlineQueue = widget.offlineQueue ?? OfflineAttendanceQueue();
+    _updates = AppUpdateService();
+    unawaited(_loadInstalledVersion());
     unawaited(_refreshOffline().then((_) => _syncOffline()));
     // Retry berkala: koneksi yang pulih akan menyinkronkan antrean tanpa aksi user.
     _offlineRetry = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -449,6 +458,50 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _loadInstalledVersion() async {
+    final info = await _updates.installed();
+    if (!mounted) return;
+    setState(() => _installed = info);
+  }
+
+  Future<void> _checkForAppUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    try {
+      final result = await _updates.checkForUpdate();
+      if (!mounted) return;
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Aplikasi sudah versi terbaru (${_installed.version}).',
+            ),
+          ),
+        );
+        return;
+      }
+      await UpdateAvailableDialog.show(
+        context,
+        service: _updates,
+        result: result,
+      );
+    } on AppUpdateException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tidak dapat memeriksa pembaruan. Periksa koneksi Anda.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
+    }
+  }
+
   Future<void> _openWorkspacePicker() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -472,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final circleSize = (width * 0.62).clamp(220.0, 260.0);
         return Scaffold(
           backgroundColor: AppColors.canvas,
-          appBar: AppBar(
+          appBar: widget.embedded ? null : AppBar(
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -503,9 +556,11 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 4),
             ],
           ),
-          body: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
+          body: SafeArea(
+            bottom: false,
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
                   color: AppColors.green,
                   onRefresh: () async {
                     await _load();
@@ -589,10 +644,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildTodayCard(),
                       const SizedBox(height: 14),
                       _buildOfficeCard(),
+                      if (!widget.embedded) ...[
+                        const SizedBox(height: 14),
+                        _buildAppInfoCard(),
+                      ],
                       ],
                     ),
                   ),
                 ),
+          ),
         );
       },
     );
@@ -644,13 +704,26 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _openWorkspacePicker,
               icon: const Icon(Icons.swap_horiz, size: 20),
             ),
-            IconButton(
-              key: const Key('home-logout'),
-              tooltip: 'Keluar',
-              visualDensity: VisualDensity.compact,
-              onPressed: widget.auth.logout,
-              icon: const Icon(Icons.logout, size: 20),
-            ),
+            if (widget.embedded)
+              IconButton(
+                key: const Key('home-notifications'),
+                tooltip: 'Notifikasi',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => NotificationsScreen(auth: widget.auth),
+                  ),
+                ),
+                icon: const Icon(Icons.notifications_outlined, size: 20),
+              )
+            else
+              IconButton(
+                key: const Key('home-logout'),
+                tooltip: 'Keluar',
+                visualDensity: VisualDensity.compact,
+                onPressed: widget.auth.logout,
+                icon: const Icon(Icons.logout, size: 20),
+              ),
           ],
         ),
         const SizedBox(height: 10),
@@ -1193,6 +1266,74 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildAppInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.system_update_alt,
+                size: 16,
+                color: AppColors.muted,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Pembaruan aplikasi',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              Text(
+                'v${_installed.version} (${_installed.buildNumber})',
+                key: const Key('home-app-version'),
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.muted,
+                  fontFeatures: tabularFigures,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Pasang rilis terbaru langsung dari server kantor tanpa mengunduh manual.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const Key('home-check-update'),
+              onPressed: _checkingUpdate ? null : _checkForAppUpdate,
+              icon: _checkingUpdate
+                  ? const SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh, size: 16),
+              label: Text(
+                _checkingUpdate ? 'Memeriksa…' : 'Cek Pembaruan Aplikasi',
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

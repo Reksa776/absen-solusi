@@ -25,6 +25,14 @@ export type ApiRoutePolicy =
 export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/health": { kind: "public", reason: "liveness probe" },
   "/api/health/ready": { kind: "public", reason: "readiness probe (database + katalog permission)" },
+  "/api/mobile/version": {
+    kind: "public",
+    reason: "metadata rilis aplikasi untuk cek pembaruan di perangkat",
+  },
+  "/api/mobile/apk/latest": {
+    kind: "public",
+    reason: "unduhan APK rilis resmi yang dipasang pengguna",
+  },
   "/api/auth/register": { kind: "public", reason: "bootstrap user pertama" },
   "/api/auth/login": { kind: "public", reason: "login (rate limited + CSRF cookie mode)" },
   "/api/auth/login/2fa": {
@@ -200,6 +208,13 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/workspaces/:id/holidays/:holidayId": {
     kind: "permission",
     permission: "workspace.manage",
+  },
+  "/api/workspaces/:id/app-release": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "workspace.manage" },
+      POST: { kind: "permission", permission: "workspace.manage" },
+    },
   },
 };
 

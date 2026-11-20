@@ -25,6 +25,9 @@ packages/database/src/generated/
 # Uploaded proof files (served through authorized API only)
 storage/
 
+# Self-hosted mobile releases (binary APK + metadata are uploaded from the admin panel)
+storage/releases/
+
 # Playwright artifacts and E2E session state
 apps/web/test-results/
 apps/web/playwright-report/
