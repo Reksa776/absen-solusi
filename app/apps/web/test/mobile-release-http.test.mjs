@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomInt, randomUUID } from "node:crypto";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomInt, randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, before } from "node:test";
@@ -240,4 +240,37 @@ test("M7: admin mengunggah rilis dan metadata langsung berlaku", async () => {
   );
   assert.equal(denied.status, 403);
   assert.equal((await getJson("/api/mobile/version")).body.latestVersion, "1.3.0");
+});
+
+test("M8: unggah APK 13 MB melewati middleware dan terbaca utuh", async () => {
+  const size = 13 * 1024 * 1024;
+  const bytes = Buffer.alloc(size);
+  for (let index = 0; index < size; index += 1) {
+    bytes[index] = (index * 31 + 7) % 256;
+  }
+
+  const uploaded = await fetch(
+    `${baseUrl}/api/workspaces/${tenantA.tenantId}/app-release`,
+    {
+      method: "POST",
+      body: releaseForm("1.6.0", 11, bytes),
+      headers: {
+        authorization: `Bearer ${tenantA.ownerToken}`,
+        connection: "close",
+      },
+    },
+  );
+  const payload = await uploaded.json();
+  assert.equal(uploaded.status, 201, JSON.stringify(payload));
+  assert.equal(payload.apk.sizeBytes, size);
+  assert.equal(payload.version.latestVersion, "1.6.0");
+
+  const stored = Buffer.from(
+    await readFile(join(releaseDir, "absensi-mobile.apk")),
+  );
+  assert.equal(stored.length, size);
+  assert.equal(
+    createHash("sha256").update(stored).digest("hex"),
+    createHash("sha256").update(bytes).digest("hex"),
+  );
 });
