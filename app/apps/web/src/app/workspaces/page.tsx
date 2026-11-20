@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { SignOutButton } from "../sign-out-button";
 import { requirePagePermission } from "@/lib/page-auth";
+import { dashboardPath } from "@/lib/web-access";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +15,8 @@ export default async function WorkspacesPage({
 }) {
   const { user, session, workspaces, ctx } = await requirePagePermission();
   const params = await searchParams;
-  const active = workspaces.find((workspace) => workspace.id === session.activeTenantId);
+  const active = workspaces.find((workspace) => workspace.id === session.activeTenantId) ?? workspaces[0];
+  if (active) redirect(dashboardPath(active.id));
 
   return (
     <main
@@ -48,7 +51,6 @@ export default async function WorkspacesPage({
           {workspaces.map((workspace) => (
             <li key={workspace.id} style={{ marginBottom: "0.75rem" }}>
               <strong>{workspace.name}</strong>
-              {workspace.id === active?.id ? " (aktif)" : ""}
               <br />
               <span style={{ color: "#555" }}>role: {workspace.roleKeys.join(", ") || "—"}</span>
               <br />

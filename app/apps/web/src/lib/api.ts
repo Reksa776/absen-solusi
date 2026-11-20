@@ -1,7 +1,20 @@
-import { enforceUserRateLimit, errorResponse, HttpError, logger } from "@absensi/auth";
+import {
+  enforceUserRateLimit,
+  errorResponse,
+  HttpError,
+  jsonResponse,
+  logger,
+  PasswordPolicyError,
+} from "@absensi/auth";
 
 export function handleRouteError(error: unknown): Response {
   if (error instanceof HttpError) return errorResponse(error);
+  if (error instanceof PasswordPolicyError) {
+    return jsonResponse(
+      { error: { code: "INVALID_PASSWORD", message: error.message } },
+      400,
+    );
+  }
   logger.error("unhandled route error", { error });
   return errorResponse(error);
 }
@@ -16,6 +29,7 @@ export async function assertWorkspaceWriteLimit(
   bucket:
     | "workspace.create"
     | "workspace.invite"
+    | "workspace.member"
     | "workspace.role"
     | "workspace.switch"
     | "workspace.office"

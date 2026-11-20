@@ -8,6 +8,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { SignOutButton } from "./sign-out-button";
+import { dashboardPath, isEmployeeOnlyRoles } from "@/lib/web-access";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,10 @@ export default async function HomePage() {
 
   const workspaces = await loadWorkspacesForUser(session.userId);
   const active = workspaces.find((workspace) => workspace.id === session.activeTenantId) ?? workspaces[0];
+  if (active) {
+    if (isEmployeeOnlyRoles(active.roleKeys)) redirect("/web-access-denied");
+    redirect(dashboardPath(active.id));
+  }
   // SYSTEM: data user untuk sesi yang sudah tervalidasi.
   const user = await systemDb().user.findUnique({ where: { id: session.userId } });
 
@@ -38,23 +43,7 @@ export default async function HomePage() {
       <p>
         Masuk sebagai <strong>{user?.name ?? "pengguna"}</strong> ({user?.email}).
       </p>
-      {active ? (
-        <section>
-          <h2 style={{ fontSize: "1.15rem" }}>Workspace aktif</h2>
-          <p style={{ margin: 0 }}>
-            <strong>{active.name}</strong>
-            <br />
-            <span style={{ color: "#555" }}>slug: {active.slug}</span>
-            <br />
-            <span style={{ color: "#555" }}>role: {active.roleKeys.join(", ") || "—"}</span>
-          </p>
-          <p style={{ color: "#555" }}>
-            Switcher workspace dan modul absensi menyusul di Phase 2.
-          </p>
-        </section>
-      ) : (
-        <p>Belum ada workspace aktif. Buat workspace melalui API untuk melanjutkan.</p>
-      )}
+      <p>Belum ada workspace aktif. Hubungi Admin/HR untuk penugasan perusahaan.</p>
     </main>
   );
 }

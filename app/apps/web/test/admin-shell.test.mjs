@@ -19,10 +19,13 @@ test("B7 UI: halaman member merender tabel dan form endpoint yang benar", () => 
   const form = read("workspaces/[id]/members/member-admin.tsx");
   assert.match(page, /requirePagePermission\("member\.read"\)/);
   assert.match(page, /listWorkspaceMembers/);
-  assert.match(form, /\/api\/workspaces\/\$\{workspaceId\}\/members`/);
+  assert.match(form, /\/api\/workspaces\/\$\{workspaceId\}\/members\/direct/);
   assert.match(form, /\/members\/\$\{memberId\}\/role/);
   assert.match(form, /"PATCH"/);
+  assert.match(form, /Reset Password/);
+  assert.match(form, /Tambah Karyawan Langsung/);
   assert.match(form, /role="alert"/);
+  assert.match(page, /canResetPassword/);
 });
 
 test("B7 UI: audit viewer read-only memakai audit.read dan filter tenant", () => {

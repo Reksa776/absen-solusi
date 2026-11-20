@@ -12,6 +12,8 @@ import {
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { isEmployeeOnlyRoles } from "@/lib/web-access";
+
 export type PageSession = {
   session: NonNullable<Awaited<ReturnType<typeof validateSession>>>;
   user: { id: string; email: string; name: string; status: string };
@@ -49,6 +51,9 @@ export async function requirePagePermission(permission?: string): Promise<PageSe
   if (!member) redirect("/workspaces?error=forbidden");
 
   const access = await resolveMemberPermissions(systemDb(), session.activeTenantId, member.id);
+  if (isEmployeeOnlyRoles(access.roleKeys)) {
+    redirect("/web-access-denied");
+  }
   if (permission && !access.permissions.includes(permission)) {
     redirect("/workspaces?error=forbidden");
   }

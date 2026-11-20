@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from "@absensi/permissions";
 
 const CSRF_COOKIE = "aos_csrf";
+const PASSWORD_MIN_LENGTH = 12;
 
 function readCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -31,32 +32,41 @@ type Member = {
 };
 
 type OfficeOption = { id: string; name: string };
+type ShiftOption = { id: string; name: string };
 
 export function MemberAdmin({
   workspaceId,
   currentMemberId,
   members,
   offices,
+  shifts,
   canInvite,
   canManageRoles,
   canAssignOffice,
+  canResetPassword,
 }: {
   workspaceId: string;
   currentMemberId: string | null;
   members: Member[];
   offices: OfficeOption[];
+  shifts: ShiftOption[];
   canInvite: boolean;
   canManageRoles: boolean;
   canAssignOffice: boolean;
+  canResetPassword: boolean;
 }) {
   const router = useRouter();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<RoleKey>("VIEWER");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<RoleKey>("EMPLOYEE");
+  const [officeId, setOfficeId] = useState("");
+  const [shiftId, setShiftId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function postJson(url: string, method: "POST" | "PATCH", payload: unknown) {
+  async function requestJson(url: string, method: "POST" | "PATCH", payload: unknown) {
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -82,18 +92,34 @@ export function MemberAdmin({
     }
   }
 
-  async function invite(event: FormEvent<HTMLFormElement>) {
+  async function addEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const ok = await postJson(`/api/workspaces/${workspaceId}/members`, "POST", { email, role });
+    const ok = await requestJson(
+      `/api/workspaces/${workspaceId}/members/direct`,
+      "POST",
+      {
+        name,
+        email,
+        password,
+        role,
+        officeId: officeId || null,
+        shiftId: shiftId || null,
+      },
+    );
     if (ok) {
+      setName("");
       setEmail("");
-      setNotice("Undangan dibuat.");
+      setPassword("");
+      setRole("EMPLOYEE");
+      setOfficeId("");
+      setShiftId("");
+      setNotice("Karyawan berhasil ditambahkan dan dapat langsung login di aplikasi mobile.");
       router.refresh();
     }
   }
 
   async function changeRole(memberId: string, nextRole: string) {
-    const ok = await postJson(
+    const ok = await requestJson(
       `/api/workspaces/${workspaceId}/members/${memberId}/role`,
       "PATCH",
       { role: nextRole },
@@ -105,7 +131,7 @@ export function MemberAdmin({
   }
 
   async function assignOffice(memberId: string, officeLocationId: string) {
-    const ok = await postJson(
+    const ok = await requestJson(
       `/api/workspaces/${workspaceId}/members/${memberId}/office`,
       "PATCH",
       { officeLocationId: officeLocationId || null },
@@ -116,21 +142,55 @@ export function MemberAdmin({
     }
   }
 
+  async function resetPassword(member: Member) {
+    const nextPassword = window.prompt(
+      `Password baru untuk ${member.user.email} (minimal ${PASSWORD_MIN_LENGTH} karakter):`,
+    );
+    if (nextPassword === null) return;
+    if (nextPassword.length < PASSWORD_MIN_LENGTH) {
+      setError(`Password minimal ${PASSWORD_MIN_LENGTH} karakter`);
+      return;
+    }
+    const ok = await requestJson(
+      `/api/workspaces/${workspaceId}/members/${member.id}/password`,
+      "PATCH",
+      { password: nextPassword },
+    );
+    if (ok) {
+      setNotice(`Password ${member.user.email} berhasil direset. Semua sesi lama dicabut.`);
+    }
+  }
+
+  const assignableRoles = ROLE_KEYS.filter((key) => key !== "WORKSPACE_OWNER");
+
   return (
     <section>
       {canInvite ? (
         <form
-          onSubmit={invite}
+          onSubmit={addEmployee}
+          aria-label="Tambah Karyawan Langsung"
           style={{
-            display: "flex",
-            gap: "0.5rem",
-            flexWrap: "wrap",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
+            gap: "0.75rem",
             alignItems: "end",
             padding: "1rem",
             background: "#f5f5f5",
             marginBottom: "1.5rem",
           }}
         >
+          <h2 style={{ gridColumn: "1 / -1", fontSize: "1.1rem", margin: 0 }}>
+            Tambah Karyawan Langsung
+          </h2>
+          <label style={{ display: "grid", gap: "0.25rem" }}>
+            Nama
+            <input
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              style={{ padding: "0.5rem" }}
+            />
+          </label>
           <label style={{ display: "grid", gap: "0.25rem" }}>
             Email
             <input
@@ -142,21 +202,67 @@ export function MemberAdmin({
             />
           </label>
           <label style={{ display: "grid", gap: "0.25rem" }}>
+            Password awal
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={PASSWORD_MIN_LENGTH}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              style={{ padding: "0.5rem" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.25rem" }}>
             Role
             <select
               value={role}
               onChange={(event) => setRole(event.target.value as RoleKey)}
               style={{ padding: "0.5rem" }}
             >
-              {ROLE_KEYS.map((key) => (
+              {assignableRoles.map((key) => (
                 <option key={key} value={key}>
                   {ROLE_LABELS[key]}
                 </option>
               ))}
             </select>
           </label>
+          {canAssignOffice ? (
+            <label style={{ display: "grid", gap: "0.25rem" }}>
+              Kantor
+              <select
+                value={officeId}
+                onChange={(event) => setOfficeId(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              >
+                <option value="">Semua kantor aktif</option>
+                {offices.map((office) => (
+                  <option key={office.id} value={office.id}>
+                    {office.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {canAssignOffice ? (
+            <label style={{ display: "grid", gap: "0.25rem" }}>
+              Shift
+              <select
+                value={shiftId}
+                onChange={(event) => setShiftId(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              >
+                <option value="">Tanpa shift default</option>
+                {shifts.map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
-            {busy ? "Memproses…" : "Undang member"}
+            {busy ? "Memproses…" : "Tambah Karyawan"}
           </button>
         </form>
       ) : null}
@@ -178,6 +284,9 @@ export function MemberAdmin({
             {canAssignOffice ? (
               <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Kantor</th>
             ) : null}
+            {canResetPassword ? (
+              <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Aksi</th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -189,12 +298,12 @@ export function MemberAdmin({
               <td style={{ padding: "0.5rem" }}>
                 {canManageRoles && member.id !== currentMemberId && member.status === "ACTIVE" ? (
                   <select
-                    defaultValue={member.roleKeys[0] ?? "VIEWER"}
+                    defaultValue={member.roleKeys[0] ?? "EMPLOYEE"}
                     onChange={(event) => changeRole(member.id, event.target.value)}
                     disabled={busy}
                     style={{ padding: "0.35rem" }}
                   >
-                    {ROLE_KEYS.map((key) => (
+                    {assignableRoles.map((key) => (
                       <option key={key} value={key}>
                         {ROLE_LABELS[key]}
                       </option>
@@ -219,6 +328,22 @@ export function MemberAdmin({
                       </option>
                     ))}
                   </select>
+                </td>
+              ) : null}
+              {canResetPassword ? (
+                <td style={{ padding: "0.5rem" }}>
+                  {member.status === "ACTIVE" && member.id !== currentMemberId ? (
+                    <button
+                      type="button"
+                      onClick={() => resetPassword(member)}
+                      disabled={busy}
+                      style={{ padding: "0.4rem 0.6rem" }}
+                    >
+                      Reset Password
+                    </button>
+                  ) : (
+                    "—"
+                  )}
                 </td>
               ) : null}
             </tr>

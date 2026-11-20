@@ -7,10 +7,15 @@ import {
   jsonResponse,
   readJsonBody,
   requireString,
+  revokeSession,
   sessionCookie,
 } from "@absensi/auth";
 
 import { appendSetCookies, handleRouteError } from "@/lib/api";
+import {
+  isEmployeeOnlyActiveWorkspace,
+  WEB_EMPLOYEE_DENIED_MESSAGE,
+} from "@/lib/web-access";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +32,27 @@ export async function POST(request: Request): Promise<Response> {
       ip: getClientIp(request),
       userAgent: request.headers.get("user-agent"),
     });
+    if (
+      !bearerMode &&
+      isEmployeeOnlyActiveWorkspace(result.workspaces, result.activeTenantId)
+    ) {
+      await revokeSession(result.token);
+      return jsonResponse(
+        { error: { code: "WEB_EMPLOYEE_FORBIDDEN", message: WEB_EMPLOYEE_DENIED_MESSAGE } },
+        403,
+      );
+    }
     const csrfToken = createCsrfToken();
     const response = jsonResponse({
       token: bearerMode ? result.token : undefined,
       user: result.user,
       activeTenantId: result.activeTenantId,
       workspaces: result.workspaces,
+      redirectTo: bearerMode
+        ? null
+        : result.activeTenantId
+          ? `/workspaces/${result.activeTenantId}/dashboard`
+          : "/workspaces",
       csrfToken,
     });
     const cookies = [csrfCookie(csrfToken)];

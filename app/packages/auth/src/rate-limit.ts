@@ -149,6 +149,7 @@ export async function enforceUserRateLimit(input: {
     | "api"
     | "workspace.create"
     | "workspace.invite"
+    | "workspace.member"
     | "workspace.role"
     | "workspace.switch"
     | "workspace.office"

@@ -68,6 +68,14 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
       POST: { kind: "permission", permission: "member.invite" },
     },
   },
+  "/api/workspaces/:id/members/direct": {
+    kind: "permission",
+    permission: "member.invite",
+  },
+  "/api/workspaces/:id/members/:memberId/password": {
+    kind: "permission",
+    permission: "member.manage",
+  },
   "/api/workspaces/:id/members/:memberId/role": {
     kind: "permission",
     permission: "role.manage",

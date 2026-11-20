@@ -349,6 +349,14 @@ export {
   type AcceptInvitationResult,
 } from "./invitations.js";
 export {
+  directAddMember,
+  resetMemberPassword,
+  type DirectAddMemberInput,
+  type DirectAddMemberResult,
+  type ResetMemberPasswordInput,
+  type ResetMemberPasswordResult,
+} from "./member-direct.js";
+export {
   assertWorkspaceClaim,
   changeMemberRole,
   createWorkspace,

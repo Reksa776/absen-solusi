@@ -44,6 +44,7 @@ export function SignInForm() {
         error?: { message?: string };
         requiresTwoFactor?: boolean;
         challengeToken?: string;
+        redirectTo?: string | null;
       };
       if (response.status === 202 && body.requiresTwoFactor && body.challengeToken) {
         setChallengeToken(body.challengeToken);
@@ -54,7 +55,7 @@ export function SignInForm() {
         setError(body.error?.message ?? "Gagal masuk");
         return;
       }
-      router.replace("/");
+      router.replace(body.redirectTo ?? "/");
       router.refresh();
     } catch {
       setError("Tidak dapat menghubungi server");
@@ -76,12 +77,15 @@ export function SignInForm() {
         headers: { "content-type": "application/json", "x-csrf-token": csrfToken },
         body: JSON.stringify({ challengeToken, code }),
       });
-      const body = (await response.json()) as { error?: { message?: string } };
+      const body = (await response.json()) as {
+        error?: { message?: string };
+        redirectTo?: string | null;
+      };
       if (!response.ok) {
         setError(body.error?.message ?? "Kode 2FA tidak valid");
         return;
       }
-      router.replace("/");
+      router.replace(body.redirectTo ?? "/");
       router.refresh();
     } catch {
       setError("Tidak dapat menghubungi server");
