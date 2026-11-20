@@ -1,0 +1,33 @@
+{
+  "name": "@absensi/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "validate": "prisma validate",
+    "migrate:deploy": "prisma migrate deploy",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test --test-force-exit --test-concurrency=1 dist"
+  },
+  "dependencies": {
+    "@absensi/permissions": "0.1.0",
+    "@prisma/adapter-mariadb": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "mariadb": "^3.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "prisma": "7.10.1",
+    "typescript": "7.0.2"
+  }
+}

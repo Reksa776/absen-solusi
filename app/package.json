@@ -1,0 +1,36 @@
+{
+  "name": "absensi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aplikasi absensi — monorepo (web, worker, database, permissions)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build:packages": "npm run build --workspace @absensi/permissions && npm run build --workspace @absensi/database && npm run build --workspace @absensi/auth",
+    "build": "npm run build:packages && npm run build --workspace @absensi/worker && npm run build --workspace @absensi/web",
+    "typecheck": "npm run build:packages && npm run typecheck --workspace @absensi/worker && npm run typecheck --workspace @absensi/web && npm run typecheck --workspace @absensi/auth && npm run typecheck --workspace @absensi/database && npm run typecheck --workspace @absensi/permissions",
+    "test:run": "npm run build && npm run test --workspaces --if-present",
+    "test": "bash scripts/test-ci.sh",
+    "test:ci": "bash scripts/test-ci.sh",
+    "test:db-setup-smoke": "node scripts/test-db-setup-smoke.mjs",
+    "ci:clean-checkout": "bash scripts/ci-clean-checkout.sh",
+    "ci:all-tags": "bash scripts/ci-all-tags.sh",
+    "e2e:csp": "bash scripts/e2e-csp.sh",
+    "prisma:generate": "npm run generate --workspace @absensi/database",
+    "prisma:validate": "npm run validate --workspace @absensi/database"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  },
+  "allowScripts": {
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true
+  }
+}

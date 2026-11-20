@@ -1,0 +1,29 @@
+import { getLateStats, jsonResponse, requirePermission } from "@absensi/auth";
+
+import { handleRouteError } from "@/lib/api";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  try {
+    const { ctx } = await requirePermission(request, "attendance.read");
+    const { id } = await context.params;
+    const url = new URL(request.url);
+    return jsonResponse(
+      await getLateStats({
+        ctx,
+        workspaceId: id,
+        year: url.searchParams.get("year") ?? "",
+        month: url.searchParams.get("month") ?? "",
+        memberId: url.searchParams.get("memberId") ?? undefined,
+        from: url.searchParams.get("from") ?? undefined,
+        to: url.searchParams.get("to") ?? undefined,
+      }),
+    );
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}

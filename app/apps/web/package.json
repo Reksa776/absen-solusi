@@ -1,0 +1,28 @@
+{
+  "name": "@absensi/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "NODE_ENV=production next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-force-exit --test-concurrency=1 test"
+  },
+  "dependencies": {
+    "@absensi/auth": "0.1.0",
+    "@absensi/database": "0.1.0",
+    "@absensi/permissions": "0.1.0",
+    "@node-rs/argon2": "2.2.2",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

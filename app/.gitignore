@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+!.env.example
+
+# Generated Prisma client
+packages/database/src/generated/
+
+# Local dev database instance (data, socket, log)
+.devdb/
+
+# Uploaded proof files (served through authorized API only)
+storage/
+
+# Playwright artifacts and E2E session state
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/e2e/.auth/
+
+# Editor / OS
+.DS_Store
+*.log

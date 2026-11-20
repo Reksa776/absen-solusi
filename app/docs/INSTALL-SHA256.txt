@@ -1,0 +1,24 @@
+# install.sh reference hash
+
+Path: /home/reksa/absen-solusi/install.sh
+SHA-256: c73dad4dcf7c9ecadb98578e28cc763d23d7be3fa1b513545319038795493214
+Size: 68015 bytes
+Mode: 664
+Mtime: 2026-11-17 15:35:39 +0700
+
+## Provenance
+
+This file is **not** part of the absensi application. Its header identifies it
+as the Hermes Agent bootstrap (`NousResearch/hermes-agent`), with
+`HERMES_REPO_URL` and Hermes install stages. It is not referenced by this
+repository's package scripts or application code.
+
+The file was not modified, moved, or deleted. The hash above is the full
+reference; an earlier report prefix (`c9...493214`) did not match the current
+file and is superseded by this value.
+
+Verification command:
+
+```bash
+sha256sum /home/reksa/absen-solusi/install.sh
+```
