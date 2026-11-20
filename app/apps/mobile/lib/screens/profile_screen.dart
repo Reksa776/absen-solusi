@@ -2,25 +2,30 @@ import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
 import '../models/office_location.dart';
+import '../models/schedule.dart';
 import '../services/app_update_service.dart';
+import '../services/attendance_reminder_service.dart';
 import '../services/auth_service.dart';
 import '../services/offline_attendance_queue.dart';
 import '../theme/app_theme.dart';
 import '../widgets/update_dialog.dart';
+import 'schedule_screen.dart';
 
-/// Tab Profil: identitas, kantor & shift, antrean offline, versi aplikasi,
-/// dan tombol keluar.
+/// Tab Profil: identitas, kantor & shift, jadwal kerja, pengingat absensi,
+/// antrean offline, versi aplikasi, dan tombol keluar.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({
     super.key,
     required this.auth,
     this.updateService,
     this.offlineQueue,
+    this.reminderService,
   });
 
   final AuthService auth;
   final AppUpdateService? updateService;
   final OfflineAttendanceQueue? offlineQueue;
+  final AttendanceReminderService? reminderService;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -31,13 +36,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       widget.updateService ?? AppUpdateService();
   late final OfflineAttendanceQueue _queue =
       widget.offlineQueue ?? OfflineAttendanceQueue();
+  late final AttendanceReminderService _reminders =
+      widget.reminderService ?? AttendanceReminderService();
 
   OfficeLocation? _office;
+  WorkSchedule? _schedule;
+  ReminderSettings _reminder = const ReminderSettings();
   InstalledAppInfo _installed = InstalledAppInfo.unknown;
   int _pending = 0;
   bool _loading = true;
   bool _checking = false;
   bool _syncing = false;
+  bool _savingReminder = false;
   String? _officeError;
 
   @override
@@ -74,13 +84,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     }
 
+    try {
+      final schedule = await widget.auth.api.workSchedule();
+      if (!mounted) return;
+      setState(() => _schedule = schedule);
+    } catch (_) {
+      // Kartu jadwal menampilkan status kosong bila endpoint gagal.
+    }
+
     final installed = await _updates.installed();
     final pending = await _queue.count();
+    final reminder = await _reminders.loadSettings();
     if (!mounted) return;
     setState(() {
       _installed = installed;
       _pending = pending;
+      _reminder = reminder;
     });
+  }
+
+  Future<void> _syncReminders() async {
+    final schedule = _schedule;
+    if (schedule == null) return;
+    var checkedIn = false;
+    var checkedOut = false;
+    try {
+      final now = DateTime.now();
+      final logs = await widget.auth.api.attendanceHistory();
+      for (final log in logs) {
+        final local = log.timestampServer.toLocal();
+        if (local.year != now.year ||
+            local.month != now.month ||
+            local.day != now.day) {
+          continue;
+        }
+        if (log.isCheckIn) checkedIn = true;
+        if (log.isCheckOut) checkedOut = true;
+      }
+    } catch (_) {
+      // Tanpa data absensi hari ini, pengingat tetap dijadwalkan.
+    }
+    await _reminders.sync(
+      schedule: schedule,
+      settings: _reminder,
+      checkedInToday: checkedIn,
+      checkedOutToday: checkedOut,
+    );
+  }
+
+  Future<void> _setReminderEnabled(bool enabled) async {
+    if (_savingReminder) return;
+    final next = _reminder.copyWith(enabled: enabled);
+    setState(() {
+      _reminder = next;
+      _savingReminder = true;
+    });
+    try {
+      await _reminders.saveSettings(next);
+      await _syncReminders();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pengaturan pengingat gagal disimpan.')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingReminder = false);
+    }
+  }
+
+  Future<void> _setReminderMinutes(int? minutes) async {
+    if (minutes == null || _savingReminder) return;
+    final next = _reminder.copyWith(minutesBefore: minutes);
+    setState(() {
+      _reminder = next;
+      _savingReminder = true;
+    });
+    try {
+      await _reminders.saveSettings(next);
+      await _syncReminders();
+    } finally {
+      if (mounted) setState(() => _savingReminder = false);
+    }
   }
 
   Future<void> _checkForUpdate() async {
@@ -187,53 +271,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            const Text(
-              'Profil',
-              style: TextStyle(
-                fontSize: 23,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-                color: AppColors.ink,
+              const Text(
+                'Profil',
+                style: TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: AppColors.ink,
+                ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              widget.auth.activeWorkspace?.name ?? 'Akun karyawan',
-              style: const TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
-            const SizedBox(height: 14),
-            _identityCard(),
-            const SizedBox(height: 12),
-            _officeCard(),
-            const SizedBox(height: 12),
-            _offlineCard(),
-            const SizedBox(height: 12),
-            _versionCard(),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 50,
-              child: OutlinedButton.icon(
-                key: const Key('profile-logout'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.danger,
-                  side: BorderSide(
-                    color: AppColors.danger.withValues(alpha: 0.3),
+              const SizedBox(height: 2),
+              Text(
+                widget.auth.activeWorkspace?.name ?? 'Akun karyawan',
+                style: const TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+              const SizedBox(height: 14),
+              _identityCard(),
+              const SizedBox(height: 12),
+              _officeCard(),
+              const SizedBox(height: 12),
+              _scheduleCard(),
+              const SizedBox(height: 12),
+              _reminderCard(),
+              const SizedBox(height: 12),
+              _offlineCard(),
+              const SizedBox(height: 12),
+              _versionCard(),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 50,
+                child: OutlinedButton.icon(
+                  key: const Key('profile-logout'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: BorderSide(
+                      color: AppColors.danger.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  onPressed: widget.auth.logout,
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Keluar dari akun'),
+                ),
+              ),
+              if (_loading) ...[
+                const SizedBox(height: 16),
+                const Center(
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-                onPressed: widget.auth.logout,
-                icon: const Icon(Icons.logout, size: 18),
-                label: const Text('Keluar dari akun'),
-              ),
-            ),
-            if (_loading) ...[
-              const SizedBox(height: 16),
-              const Center(
-                child: SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            ],
+              ],
             ],
           ),
         ),
@@ -354,7 +442,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               Text(
-                office == null ? 'Belum disetel' : 'Radius ${office.radiusMeters.toStringAsFixed(0)} m',
+                office == null
+                    ? 'Belum disetel'
+                    : 'Radius ${office.radiusMeters.toStringAsFixed(0)} m',
                 style: const TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w600,
@@ -385,6 +475,163 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: 'Workspace',
             value: widget.auth.activeWorkspace?.name ?? '—',
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _scheduleCard() {
+    final schedule = _schedule;
+    final workdays = schedule == null
+        ? const <String>[]
+        : schedule.weekly
+              .where((day) => day.isWorkday)
+              .map((day) => day.label)
+              .toList(growable: false);
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.calendar_month_outlined, size: 15, color: AppColors.muted),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Jadwal kerja minggu ini',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              if (schedule != null)
+                Text(
+                  schedule.hours,
+                  key: const Key('profile-schedule-hours'),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                    fontFeatures: tabularFigures,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            schedule == null
+                ? 'Jadwal shift belum dapat dimuat dari server.'
+                : '${schedule.shiftName} • '
+                      '${workdays.isEmpty ? 'Tidak ada hari kerja' : workdays.join(', ')}',
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.4,
+              color: AppColors.muted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const Key('profile-schedule'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ScheduleScreen(
+                    auth: widget.auth,
+                    initialSchedule: schedule,
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.event_note_outlined, size: 16),
+              label: const Text('Lihat jadwal & hari libur'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reminderCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.alarm,
+                size: 15,
+                color: AppColors.muted,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Pengingat Alarm Absensi',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              Switch(
+                key: const Key('profile-reminder-toggle'),
+                value: _reminder.enabled,
+                onChanged: _savingReminder ? null : _setReminderEnabled,
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            _reminder.enabled
+                ? 'Pengingat check-in ${_reminder.minutesBefore} menit sebelum shift '
+                      'dan check-out saat shift berakhir. Hari libur dilewati.'
+                : 'Pengingat alarm absensi dimatikan.',
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.4,
+              color: AppColors.muted,
+            ),
+          ),
+          if (_reminder.enabled) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Ingatkan sebelum shift',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                ),
+                DropdownButton<int>(
+                  key: const Key('profile-reminder-minutes'),
+                  value: _reminder.minutesBefore,
+                  underline: const SizedBox.shrink(),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                    fontFeatures: tabularFigures,
+                  ),
+                  items: const [5, 10, 15, 30, 45, 60]
+                      .map(
+                        (minutes) => DropdownMenuItem<int>(
+                          value: minutes,
+                          child: Text('$minutes menit'),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: _savingReminder ? null : _setReminderMinutes,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

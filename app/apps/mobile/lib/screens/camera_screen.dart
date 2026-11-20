@@ -1,16 +1,30 @@
-import 'dart:typed_data';
-
 import 'package:camera/camera.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/selfie_frame.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key, this.insideGeofence = true});
+  const CameraScreen({
+    super.key,
+    this.insideGeofence = true,
+    this.officeName,
+    this.distanceMeters,
+    this.wfh = false,
+  });
 
   /// True bila GPS berada dalam radius kantor (ring hijau), false untuk kuning.
   final bool insideGeofence;
+
+  /// Nama kantor/lokasi aktif yang ditampilkan di atas lingkaran kamera.
+  final String? officeName;
+
+  /// Jarak GPS ke kantor dalam meter, bila sudah diketahui.
+  final double? distanceMeters;
+
+  /// True bila hari ini bekerja dari rumah (geofence dilewati).
+  final bool wfh;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -26,6 +40,9 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   void initState() {
     super.initState();
+    // Kamera selfie selalu portrait agar preview tidak terpotong/gepeng saat
+    // perangkat berputar.
+    SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
     _initialize();
   }
 
@@ -90,8 +107,11 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   void dispose() {
     _controller?.dispose();
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
+
+  Color get _ringColor => widget.insideGeofence ? AppColors.green : AppColors.amber;
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +128,7 @@ class _CameraScreenState extends State<CameraScreen> {
         leading: IconButton(
           tooltip: 'Tutup',
           onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(Icons.close),
+          icon: const Icon(Icons.close, color: Colors.white),
         ),
       ),
       body: SafeArea(
@@ -144,29 +164,17 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Widget _liveView(CameraController controller) {
     final size = _circleSize(context);
-    final ringColor = widget.insideGeofence ? AppColors.green : AppColors.amber;
 
     return Column(
       children: [
         const Spacer(),
-        Text(
-          widget.insideGeofence
-              ? 'Dalam radius kantor · kamera depan'
-              : 'Di luar radius / WFH · kamera depan',
-          style: TextStyle(
-            color: ringColor == AppColors.green
-                ? const Color(0xFF86EFAC)
-                : const Color(0xFFFDE047),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        _locationCard(),
         const SizedBox(height: 18),
         _CircularPreview(
           controller: controller,
           size: size,
           mirrored: _isFront,
-          ringColor: ringColor,
+          ringColor: _ringColor,
         ),
         const SizedBox(height: 18),
         const Text(
@@ -183,7 +191,7 @@ class _CameraScreenState extends State<CameraScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _taking ? AppColors.tableHead : Colors.white,
-              border: Border.all(color: ringColor, width: 4),
+              border: Border.all(color: _ringColor, width: 4),
             ),
             alignment: Alignment.center,
             child: _taking
@@ -196,7 +204,7 @@ class _CameraScreenState extends State<CameraScreen> {
                     height: 54,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: ringColor,
+                      color: _ringColor,
                     ),
                   ),
           ),
@@ -211,13 +219,86 @@ class _CameraScreenState extends State<CameraScreen> {
     );
   }
 
+  String get _radiusLabel {
+    if (widget.insideGeofence) return 'Dalam radius kantor';
+    return widget.wfh ? 'Di luar radius / WFH' : 'Di luar radius kantor';
+  }
+
+  Widget _locationCard() {
+    final positive = widget.insideGeofence;
+    final foreground = positive
+        ? const Color(0xFFDCFCE7)
+        : const Color(0xFFFEF9C3);
+    final background = positive
+        ? const Color(0x3315803D)
+        : const Color(0x33EAB308);
+    final border = positive
+        ? const Color(0x6615803D)
+        : const Color(0x66EAB308);
+    final distance = widget.distanceMeters;
+
+    return Container(
+      key: const Key('camera-location'),
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.location_on_outlined,
+            size: 17,
+            color: positive ? const Color(0xFF86EFAC) : const Color(0xFFFDE047),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.officeName?.isNotEmpty == true
+                      ? widget.officeName!
+                      : 'Lokasi kantor',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    _radiusLabel,
+                    if (distance != null)
+                      '${distance.toStringAsFixed(0)} m dari kantor',
+                  ].join(' · '),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: foreground.withValues(alpha: 0.85),
+                    fontFeatures: tabularFigures,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _reviewView() {
     final size = _circleSize(context);
-    final ringColor = widget.insideGeofence ? AppColors.green : AppColors.amber;
 
     return Column(
       children: [
         const Spacer(),
+        _locationCard(),
+        const SizedBox(height: 16),
         const Text(
           'Pratinjau foto',
           style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
@@ -228,7 +309,7 @@ class _CameraScreenState extends State<CameraScreen> {
           height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: ringColor, width: 3),
+            border: Border.all(color: _ringColor, width: 3),
           ),
           child: ClipOval(
             child: Transform.flip(
@@ -305,15 +386,16 @@ class _CircularPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Rasio sensor dipakai apa adanya: jangan pernah memaksa AspectRatio(1)
-    // karena itu membuat gambar gepeng. FittedBox(cover) yang memotong rapi.
-    final aspect = controller.value.aspectRatio;
+    // Di portrait, CameraPreview memakai 1 / aspectRatio sebagai rasio
+    // lebar:tinggi. Kotak preview harus memakai rasio yang sama persis agar
+    // wajah tidak melebar; FittedBox(cover) yang memotong tepinya ke lingkaran.
+    final portraitAspectRatio = 1 / controller.value.aspectRatio;
     Widget preview = FittedBox(
       fit: BoxFit.cover,
       clipBehavior: Clip.hardEdge,
       child: SizedBox(
         width: size,
-        height: size * aspect,
+        height: size / portraitAspectRatio,
         child: CameraPreview(controller),
       ),
     );

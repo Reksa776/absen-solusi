@@ -14,10 +14,20 @@ class GpsReading {
   final bool isMocked;
 }
 
+enum LocationProblem { serviceDisabled, permissionDenied, permissionDeniedForever }
+
 class LocationUnavailableException implements Exception {
-  const LocationUnavailableException(this.message);
+  const LocationUnavailableException(
+    this.message, {
+    this.problem = LocationProblem.permissionDenied,
+  });
 
   final String message;
+  final LocationProblem problem;
+
+  bool get canOpenSettings =>
+      problem == LocationProblem.serviceDisabled ||
+      problem == LocationProblem.permissionDeniedForever;
 
   @override
   String toString() => message;
@@ -28,6 +38,7 @@ class LocationService {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw const LocationUnavailableException(
         'Layanan lokasi tidak aktif. Aktifkan GPS perangkat.',
+        problem: LocationProblem.serviceDisabled,
       );
     }
     var permission = await Geolocator.checkPermission();
@@ -35,11 +46,15 @@ class LocationService {
       permission = await Geolocator.requestPermission();
     }
     if (permission == LocationPermission.denied) {
-      throw const LocationUnavailableException('Izin lokasi ditolak.');
+      throw const LocationUnavailableException(
+        'Izin lokasi ditolak.',
+        problem: LocationProblem.permissionDenied,
+      );
     }
     if (permission == LocationPermission.deniedForever) {
       throw const LocationUnavailableException(
         'Izin lokasi ditolak permanen. Buka pengaturan aplikasi.',
+        problem: LocationProblem.permissionDeniedForever,
       );
     }
 
@@ -57,5 +72,15 @@ class LocationService {
       // memeriksa ulang dan menolak flag true; ini bukan satu-satunya kontrol.
       isMocked: position.isMocked,
     );
+  }
+
+  /// Membuka pengaturan lokasi (GPS mati) atau pengaturan aplikasi (izin
+  /// ditolak permanen) agar karyawan dapat memperbaiki sendiri.
+  Future<void> openSettings(LocationProblem problem) async {
+    if (problem == LocationProblem.serviceDisabled) {
+      await Geolocator.openLocationSettings();
+      return;
+    }
+    await Geolocator.openAppSettings();
   }
 }

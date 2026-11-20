@@ -126,6 +126,8 @@ void main() {
     expect(find.byKey(const Key('profile-app-version')), findsOneWidget);
     expect(find.byKey(const Key('profile-check-update')), findsOneWidget);
     expect(find.byKey(const Key('profile-logout')), findsOneWidget);
+    expect(find.byKey(const Key('profile-schedule')), findsOneWidget);
+    expect(find.byKey(const Key('profile-reminder-toggle')), findsOneWidget);
     expect(find.text('Ayu'), findsOneWidget);
     expect(find.text('HQ'), findsOneWidget);
 

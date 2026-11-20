@@ -25,6 +25,7 @@ export type ApiRoutePolicy =
 export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/health": { kind: "public", reason: "liveness probe" },
   "/api/health/ready": { kind: "public", reason: "readiness probe (database + katalog permission)" },
+  "/api/mobile/schedule": { kind: "permission", permission: "workspace.read" },
   "/api/mobile/version": {
     kind: "public",
     reason: "metadata rilis aplikasi untuk cek pembaruan di perangkat",

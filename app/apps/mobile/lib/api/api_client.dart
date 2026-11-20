@@ -11,6 +11,7 @@ import '../models/employee_request.dart';
 import '../models/in_app_notification.dart';
 import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
+import '../models/schedule.dart';
 import '../models/session.dart';
 import '../services/token_store.dart';
 
@@ -353,6 +354,14 @@ class ApiClient {
         .whereType<Map<String, dynamic>>()
         .map(WfhRequest.fromJson)
         .toList(growable: false);
+  }
+
+  Future<WorkSchedule> workSchedule() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/schedule'),
+      headers: await _authHeaders(),
+    );
+    return WorkSchedule.fromJson(_decodeObject(response));
   }
 
   Future<InboxPage> myNotifications({

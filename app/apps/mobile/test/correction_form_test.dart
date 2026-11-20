@@ -176,6 +176,8 @@ void main() {
       proof: Uint8List.fromList([0xff, 0xd8, 0xff, 0xd9]),
     );
 
+    await tester.ensureVisible(find.byKey(const Key('correction-proof')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('correction-proof')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('correction-proof-attached')), findsOneWidget);

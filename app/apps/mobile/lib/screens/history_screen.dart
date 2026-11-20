@@ -2,8 +2,10 @@ import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
 import '../models/attendance_log.dart';
+import '../models/correction.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import 'correction_form_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key, required this.auth, this.embedded = false});
@@ -32,6 +34,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   ];
 
   List<AttendanceLog> _rows = const [];
+  List<CorrectionRequest> _corrections = const [];
   String _month = 'ALL';
   String _status = 'ALL';
   bool _loading = true;
@@ -51,9 +54,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
     try {
       final (from, to) = _monthRange(_month);
       final rows = await widget.auth.api.attendanceHistory(from: from, to: to);
+      var corrections = const <CorrectionRequest>[];
+      try {
+        corrections = await widget.auth.api.myCorrections();
+      } catch (_) {
+        // Status revisi bersifat pelengkap; riwayat tetap tampil tanpa itu.
+      }
       if (!mounted) return;
       setState(() {
         _rows = rows;
+        _corrections = corrections;
         _loading = false;
       });
     } on ApiException catch (error) {
@@ -120,6 +130,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return checkIns.intersection(checkOuts).length;
   }
 
+  int get _suspiciousCount => _rows.where((row) => row.isSuspicious).length;
+
   String _dayKey(DateTime value) {
     final local = value.toLocal();
     return '${local.year}-${local.month}-${local.day}';
@@ -136,6 +148,64 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final local = value.toLocal();
     return '${local.day.toString().padLeft(2, '0')} '
         '${_monthNames[local.month - 1]} ${local.year}';
+  }
+
+  AttendanceLog? _siblingOf(AttendanceLog row, bool checkIn) {
+    final key = _dayKey(row.timestampServer);
+    for (final candidate in _rows) {
+      if (candidate.isCheckIn == checkIn &&
+          _dayKey(candidate.timestampServer) == key) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  CorrectionRequest? _correctionFor(AttendanceLog row) {
+    CorrectionRequest? latest;
+    for (final correction in _corrections) {
+      if (correction.requestType != row.type) continue;
+      final sameLog = correction.attendanceLogId == row.id;
+      final sameDay =
+          _dayKey(correction.requestedTimestamp) == _dayKey(row.timestampServer);
+      if (!sameLog && !sameDay) continue;
+      if (latest == null || correction.createdAt.isAfter(latest.createdAt)) {
+        latest = correction;
+      }
+    }
+    return latest;
+  }
+
+  Future<void> _openRevision(AttendanceLog row) async {
+    final checkIn = row.isCheckIn ? row : _siblingOf(row, true);
+    final checkOut = row.isCheckOut ? row : _siblingOf(row, false);
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CorrectionFormScreen(
+          auth: widget.auth,
+          initialDate: row.timestampServer.toLocal(),
+          initialCheckInTime: checkIn?.timestampServer.toLocal(),
+          initialCheckOutTime: checkOut?.timestampServer.toLocal(),
+          initialKind: 'ADJUST',
+          logType: row.type,
+          attendanceLogId: row.id,
+        ),
+      ),
+    );
+    if (saved == true && mounted) await _load();
+  }
+
+  Future<void> _openMissedRevision() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CorrectionFormScreen(
+          auth: widget.auth,
+          initialKind: 'LUPA_FULL',
+          initialDate: DateTime.now().subtract(const Duration(days: 1)),
+        ),
+      ),
+    );
+    if (saved == true && mounted) await _load();
   }
 
   @override
@@ -164,16 +234,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Riwayat',
-            style: TextStyle(
-              fontSize: 23,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
-              color: AppColors.ink,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Riwayat',
+                  style: TextStyle(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                key: const Key('history-revise-missed'),
+                onPressed: _openMissedRevision,
+                icon: const Icon(Icons.assignment_late_outlined, size: 16),
+                label: const Text('Revisi'),
+              ),
+            ],
           ),
-          const SizedBox(height: 2),
           const Text(
             'Rekap kehadiran dan log harian Anda.',
             style: TextStyle(fontSize: 12, color: AppColors.muted),
@@ -192,7 +273,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 _statDivider(),
                 _stat('Lengkap', '$_completeDays', 'hari'),
                 _statDivider(),
-                _stat('Perlu tinjau', '${_rows.where((row) => row.isSuspicious).length}', 'log', warn: true),
+                _stat('Perlu tinjau', '$_suspiciousCount', 'log', warn: true),
               ],
             ),
           ),
@@ -416,60 +497,132 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _logCard(AttendanceLog row) {
+    final correction = _correctionFor(row);
     return Container(
-      padding: const EdgeInsets.all(12),
+      key: Key('history-card-${row.id}'),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.line),
       ),
-      child: Row(
+      child: Column(
         children: [
-          _dateBlock(row.timestampServer),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            child: Row(
               children: [
-                Text(
-                  '${row.label} • ${_time(row.timestampServer)}',
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
-                    fontFeatures: tabularFigures,
+                _dateBlock(row.timestampServer),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${row.label} • ${_time(row.timestampServer)}',
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                          fontFeatures: tabularFigures,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_longDate(row.timestampServer)} • '
+                        'jarak ${row.distanceMeters.toStringAsFixed(0)} m • '
+                        'akurasi ${row.accuracyMeters.toStringAsFixed(0)} m',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: AppColors.muted,
+                          fontFeatures: tabularFigures,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  '${_longDate(row.timestampServer)} • '
-                  'jarak ${row.distanceMeters.toStringAsFixed(0)} m • '
-                  'akurasi ${row.accuracyMeters.toStringAsFixed(0)} m',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    height: 1.35,
-                    color: AppColors.muted,
-                    fontFeatures: tabularFigures,
-                  ),
-                ),
+                const SizedBox(width: 8),
+                row.isSuspicious
+                    ? _pill(
+                        'Suspicious',
+                        AppColors.dangerSoft,
+                        AppColors.danger.withValues(alpha: 0.25),
+                        AppColors.danger,
+                      )
+                    : _pill(
+                        'Dalam radius',
+                        AppColors.greenSoft,
+                        AppColors.greenLine,
+                        AppColors.greenDark,
+                      ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          row.isSuspicious
-              ? _pill(
-                  'Suspicious',
-                  AppColors.dangerSoft,
-                  AppColors.danger.withValues(alpha: 0.25),
-                  AppColors.danger,
-                )
-              : _pill(
-                  'Dalam radius',
-                  AppColors.greenSoft,
-                  AppColors.greenLine,
-                  AppColors.greenDark,
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 2, 10, 2),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  key: Key('history-revise-${row.id}'),
+                  onPressed: () => _openRevision(row),
+                  icon: const Icon(Icons.edit_calendar_outlined, size: 15),
+                  label: const Text('Ajukan Revisi'),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
+                const Spacer(),
+                if (correction != null)
+                  _correctionPill(correction)
+                else
+                  const Text(
+                    'Belum direvisi',
+                    style: TextStyle(fontSize: 10.5, color: AppColors.muted),
+                  ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _correctionPill(CorrectionRequest correction) {
+    final (background, border, foreground) = switch (correction.status) {
+      'APPROVED' => (
+        AppColors.greenSoft,
+        AppColors.greenLine,
+        AppColors.greenDark,
+      ),
+      'REJECTED' => (
+        AppColors.dangerSoft,
+        AppColors.danger.withValues(alpha: 0.25),
+        AppColors.danger,
+      ),
+      _ => (AppColors.yellowSoft, AppColors.yellowLine, AppColors.yellowInk),
+    };
+    return Container(
+      key: Key('history-correction-${correction.id}'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        'Revisi: ${correction.statusLabel}',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
       ),
     );
   }

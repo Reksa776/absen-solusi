@@ -439,3 +439,10 @@ export {
   routePatternFromFile,
   type ApiRoutePolicy,
 } from "./route-policy.js";
+export {
+  getMobileSchedule,
+  holidayTypeForName,
+  type MobileSchedule,
+  type MobileScheduleDay,
+  type MobileScheduleHoliday,
+} from "./mobile-schedule.js";

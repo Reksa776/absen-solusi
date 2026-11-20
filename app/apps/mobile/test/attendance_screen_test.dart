@@ -41,9 +41,13 @@ class FakeLocation extends LocationService {
   FakeLocation(this.callback);
 
   final Future<GpsReading> Function() callback;
+  int calls = 0;
 
   @override
-  Future<GpsReading> current() => callback();
+  Future<GpsReading> current() {
+    calls++;
+    return callback();
+  }
 }
 
 class AttendanceMock {
@@ -97,6 +101,30 @@ class AttendanceMock {
             201,
           );
         }
+        if (path == '/api/mobile/schedule') {
+          return http.Response(
+            jsonEncode({
+              'office': {
+                'id': 'o1',
+                'name': 'HQ',
+                'timezone': 'Asia/Jakarta',
+                'radiusMeters': 100,
+                'workStart': '09:00',
+                'workEnd': '17:00',
+              },
+              'shift': {
+                'id': 's1',
+                'name': 'Reguler',
+                'startTime': '09:00',
+                'endTime': '17:00',
+                'lateToleranceMinutes': 15,
+              },
+              'weekly': [],
+              'holidays': [],
+            }),
+            200,
+          );
+        }
         return http.Response(jsonEncode({'ok': true}), 200);
       }),
     );
@@ -108,7 +136,32 @@ class AttendanceMock {
 Widget shell(Widget child) => MaterialApp(home: child);
 
 void main() {
-  testWidgets('home merender status, geofence, dan menolak GPS akurasi buruk', (
+  testWidgets('home fokus pada jam, tombol absen, dan status hari ini', (
+    tester,
+  ) async {
+    final mock = AttendanceMock();
+    await mock.init();
+    final location = FakeLocation(
+      () async => const GpsReading(
+        latitude: -6.2,
+        longitude: 106.8,
+        accuracyMeters: 5,
+        isMocked: false,
+      ),
+    );
+    await tester.pumpWidget(
+      shell(HomeScreen(auth: mock.auth, locationService: location)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Status hari ini'), findsOneWidget);
+    expect(find.text('Check-in sekarang'), findsOneWidget);
+    expect(find.byKey(const Key('home-office')), findsNothing);
+    // GPS tidak diminta sebelum tombol absen ditekan.
+    expect(location.calls, 0);
+  });
+
+  testWidgets('GPS akurasi buruk memblokir pengiriman dan kamera', (
     tester,
   ) async {
     final mock = AttendanceMock();
@@ -122,21 +175,24 @@ void main() {
       ),
     );
     await tester.pumpWidget(
-      shell(HomeScreen(auth: mock.auth, locationService: location)),
+      shell(
+        HomeScreen(
+          auth: mock.auth,
+          locationService: location,
+          photoTaker: (_) async => Uint8List.fromList([1]),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Status hari ini'), findsOneWidget);
-    expect(find.text('HQ'), findsWidgets);
-    expect(find.text('Check-in sekarang'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('refresh-location')));
+    await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
+
     expect(find.byKey(const Key('accuracy-warning')), findsOneWidget);
-    final button = tester.widget<FilledButton>(
-      find.byKey(const Key('attendance-submit')),
+    expect(
+      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      isFalse,
     );
-    expect(button.onPressed, isNull);
   });
 
   testWidgets('GPS permission ditolak menampilkan pesan', (tester) async {
@@ -151,12 +207,16 @@ void main() {
       shell(HomeScreen(auth: mock.auth, locationService: location)),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('refresh-location')));
+    await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
     expect(find.text('Izin lokasi ditolak.'), findsOneWidget);
+    expect(
+      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      isFalse,
+    );
   });
 
-  testWidgets('mock location memblokir tombol absensi', (tester) async {
+  testWidgets('mock location memblokir absensi', (tester) async {
     final mock = AttendanceMock();
     await mock.init();
     final location = FakeLocation(
@@ -168,21 +228,25 @@ void main() {
       ),
     );
     await tester.pumpWidget(
-      shell(HomeScreen(auth: mock.auth, locationService: location)),
+      shell(
+        HomeScreen(
+          auth: mock.auth,
+          locationService: location,
+          photoTaker: (_) async => Uint8List.fromList([1]),
+        ),
+      ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('refresh-location')));
+    await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('mock-warning')), findsOneWidget);
     expect(
-      tester
-          .widget<FilledButton>(find.byKey(const Key('attendance-submit')))
-          .onPressed,
-      isNull,
+      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      isFalse,
     );
   });
 
-  testWidgets('check-in mengirim foto setelah GPS valid', (tester) async {
+  testWidgets('check-in mengambil lokasi lalu mengirim foto', (tester) async {
     final mock = AttendanceMock();
     await mock.init();
     final location = FakeLocation(
@@ -203,11 +267,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('refresh-location')));
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
 
+    expect(location.calls, 1);
     expect(
       mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
       isTrue,
@@ -236,8 +299,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('refresh-location')));
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
     expect(
@@ -247,7 +308,10 @@ void main() {
   });
 
   testWidgets('error GEOFENCE dari server ditampilkan jelas', (tester) async {
-    final mock = AttendanceMock(checkInStatus: 403, checkInCode: 'GEOFENCE_VIOLATION');
+    final mock = AttendanceMock(
+      checkInStatus: 403,
+      checkInCode: 'GEOFENCE_VIOLATION',
+    );
     await mock.init();
     final location = FakeLocation(
       () async => const GpsReading(
@@ -266,8 +330,6 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('refresh-location')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
