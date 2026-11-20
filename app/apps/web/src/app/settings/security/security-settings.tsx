@@ -116,43 +116,49 @@ export function SecuritySettings({ enabled }: { enabled: boolean }) {
 
   return (
     <section>
-      <p>
-        Status: <strong>{enabled ? "Aktif" : "Belum aktif"}</strong>
+      <p style={{ marginTop: 0 }}>
+        Status:{" "}
+        <span className={enabled ? "badge badge--green" : "badge badge--neutral"}>
+          {enabled ? "Aktif" : "Belum aktif"}
+        </span>
       </p>
-      {error ? <p role="alert" style={{ color: "#b00020" }}>{error}</p> : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {error ? <p role="alert" className="alert">{error}</p> : null}
+      {notice ? <p role="status" className="notice">{notice}</p> : null}
 
       {!enabled && !setup ? (
-        <button type="button" onClick={() => void startSetup()} disabled={busy} style={{ padding: "0.6rem 1rem" }}>
+        <button
+          type="button"
+          onClick={() => void startSetup()}
+          disabled={busy}
+          className="btn btn--primary"
+        >
           {busy ? "Menyiapkan…" : "Aktifkan 2FA"}
         </button>
       ) : null}
 
       {setup ? (
-        <div style={{ border: "1px solid #ddd", borderRadius: "0.5rem", padding: "1rem" }}>
-          <p>Tambahkan akun di aplikasi authenticator dengan URI berikut:</p>
-          <code style={{ display: "block", overflowWrap: "anywhere", background: "#f5f5f5", padding: "0.6rem" }}>
+        <div className="card card-pad" style={{ marginTop: "0.75rem" }}>
+          <p style={{ marginTop: 0 }}>Tambahkan akun di aplikasi authenticator dengan URI berikut:</p>
+          <code className="mono" style={{ display: "block", overflowWrap: "anywhere", background: "var(--table-head)", padding: "0.6rem", borderRadius: "8px" }}>
             {setup.otpauthUri}
           </code>
-          <p>Secret manual: <code>{setup.secret}</code></p>
+          <p>Secret manual: <code className="mono">{setup.secret}</code></p>
           <p><strong>Backup codes (hanya ditampilkan sekali):</strong></p>
           <ul style={{ columns: 2 }}>
-            {setup.backupCodes.map((backup) => <li key={backup}><code>{backup}</code></li>)}
+            {setup.backupCodes.map((backup) => <li key={backup}><code className="mono">{backup}</code></li>)}
           </ul>
-          <form onSubmit={verify} style={{ display: "flex", gap: "0.5rem", alignItems: "end" }}>
-            <label>
+          <form onSubmit={verify} className="form-row">
+            <label className="field">
               Kode 6 digit
-              <br />
               <input
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
                 required
-                style={{ padding: "0.5rem" }}
               />
             </label>
-            <button type="submit" disabled={busy} style={{ padding: "0.55rem 0.9rem" }}>
+            <button type="submit" disabled={busy} className="btn btn--primary">
               Verifikasi & aktifkan
             </button>
           </form>
@@ -160,33 +166,29 @@ export function SecuritySettings({ enabled }: { enabled: boolean }) {
       ) : null}
 
       {enabled ? (
-        <form onSubmit={disable} style={{ display: "grid", gap: "0.6rem", maxWidth: "26rem", marginTop: "1rem" }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: 0 }}>Nonaktifkan 2FA</h2>
-          <label>
+        <form onSubmit={disable} className="stack" style={{ maxWidth: "26rem", marginTop: "1rem" }}>
+          <h2 className="section-title">Nonaktifkan 2FA</h2>
+          <label className="field">
             Password
-            <br />
             <input
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
-              style={{ padding: "0.5rem", width: "100%" }}
             />
           </label>
-          <label>
+          <label className="field">
             Kode TOTP
-            <br />
             <input
               inputMode="numeric"
               autoComplete="one-time-code"
               value={code}
               onChange={(event) => setCode(event.target.value)}
               required
-              style={{ padding: "0.5rem", width: "100%" }}
             />
           </label>
-          <button type="submit" disabled={busy} style={{ padding: "0.55rem 0.9rem" }}>
+          <button type="submit" disabled={busy} className="btn btn--danger">
             Nonaktifkan
           </button>
         </form>

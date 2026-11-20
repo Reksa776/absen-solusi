@@ -57,52 +57,50 @@ export function NotificationInbox({
 
   return (
     <section>
-      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
+      <div className="btn-row" style={{ marginBottom: "1rem" }}>
         <button
           type="button"
+          className="btn btn--secondary"
           disabled={busy || unreadCount === 0}
           onClick={() => void act("/api/notifications/read-all", "POST")}
-          style={{ padding: "0.5rem 0.8rem" }}
         >
           Tandai semua dibaca
         </button>
+        <span className="badge badge--yellow">{unreadCount} belum dibaca</span>
       </div>
-      {error ? <p style={{ color: "#b00020" }}>{error}</p> : null}
-      {notifications.length === 0 ? <p>Belum ada notifikasi.</p> : null}
-      <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: "0.75rem" }}>
+      {error ? <p role="alert" className="alert">{error}</p> : null}
+      {notifications.length === 0 ? (
+        <p className="empty" style={{ border: "1px solid var(--line)", borderRadius: "12px", background: "#fff" }}>
+          Belum ada notifikasi.
+        </p>
+      ) : null}
+      <ul className="notification-list">
         {notifications.map((item) => (
           <li
             key={item.id}
-            style={{
-              border: "1px solid #ddd",
-              borderRadius: "0.5rem",
-              padding: "0.9rem 1rem",
-              background: item.isRead ? "#fff" : "#e0f2f1",
-            }}
+            className={`notification${item.isRead ? "" : " notification--unread"}`}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+            <div className="notification-head">
               <strong>{item.title}</strong>
-              <span style={{ color: "#666", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
+              <span className="notification-time">
                 {item.createdAt.slice(0, 16).replace("T", " ")} UTC
               </span>
             </div>
-            <p style={{ margin: "0.35rem 0" }}>{item.body}</p>
-            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-              {item.linkUrl ? (
-                <a href={item.linkUrl} style={{ color: "#00695c" }}>
-                  Buka detail
-                </a>
-              ) : null}
+            <p>{item.body}</p>
+            <div className="action-links">
+              {item.linkUrl ? <a href={item.linkUrl}>Buka detail</a> : null}
               {!item.isRead ? (
                 <button
                   type="button"
+                  className="btn btn--ghost btn--sm"
                   disabled={busy}
                   onClick={() => void act(`/api/notifications/${item.id}/read`, "PATCH")}
-                  style={{ padding: "0.25rem 0.5rem" }}
                 >
                   Tandai dibaca
                 </button>
-              ) : null}
+              ) : (
+                <span className="badge badge--neutral">Dibaca</span>
+              )}
             </div>
           </li>
         ))}

@@ -93,82 +93,88 @@ export function HolidayManager({
 
   return (
     <section>
-      <form
-        onSubmit={add}
-        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "end" }}
-      >
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Tanggal
-          <input
-            type="date"
-            required
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem", flex: 1, minWidth: "12rem" }}>
-          Nama
-          <input
-            type="text"
-            required
-            maxLength={120}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
-          {busy ? "Memproses…" : "Tambah hari libur"}
-        </button>
+      <form onSubmit={add} className="form-card">
+        <div className="form-row">
+          <label className="field" style={{ flex: "0 1 11rem" }}>
+            Tanggal
+            <input
+              type="date"
+              required
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+          </label>
+          <label className="field" style={{ flex: "1 1 14rem" }}>
+            Nama
+            <input
+              type="text"
+              required
+              maxLength={120}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn btn--primary" disabled={busy}>
+            {busy ? "Memproses…" : "Tambah hari libur"}
+          </button>
+        </div>
       </form>
 
       {error ? (
-        <p role="alert" style={{ color: "#b00020" }}>
+        <p role="alert" className="alert">
           {error}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      ) : null}
 
-      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "1rem" }}>
-        <thead>
-          <tr>
-            {["Tanggal", "Nama", "Aksi"].map((label) => (
-              <th
-                key={label}
-                style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}
-              >
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {holidays.length === 0 ? (
-            <tr>
-              <td colSpan={3} style={{ padding: "0.75rem", color: "#555" }}>
-                Belum ada hari libur.
-              </td>
-            </tr>
-          ) : null}
-          {holidays.map((holiday) => (
-            <tr key={holiday.id}>
-              <td style={{ padding: "0.5rem" }}>{holiday.date}</td>
-              <td style={{ padding: "0.5rem" }}>{holiday.name}</td>
-              <td style={{ padding: "0.5rem" }}>
-                <button
-                  type="button"
-                  onClick={() => remove(holiday.id)}
-                  disabled={busy}
-                  style={{ padding: "0.35rem 0.6rem" }}
-                >
-                  Hapus
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Tanggal libur</h2>
+            <p className="section-note">{holidays.length} entri</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Tanggal", "Nama", "Aksi"].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {holidays.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="empty">
+                    Belum ada hari libur.
+                  </td>
+                </tr>
+              ) : null}
+              {holidays.map((holiday) => (
+                <tr key={holiday.id}>
+                  <td className="mono nowrap">{holiday.date}</td>
+                  <td>{holiday.name}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn--danger btn--sm"
+                      onClick={() => remove(holiday.id)}
+                      disabled={busy}
+                    >
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }

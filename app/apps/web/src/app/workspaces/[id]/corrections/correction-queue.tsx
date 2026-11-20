@@ -49,6 +49,12 @@ function statusLabel(value: string): string {
   return "Menunggu";
 }
 
+function statusBadge(value: string): string {
+  if (value === "APPROVED") return "badge badge--green";
+  if (value === "REJECTED") return "badge badge--red";
+  return "badge badge--yellow";
+}
+
 export function CorrectionQueue({
   workspaceId,
   corrections,
@@ -126,153 +132,154 @@ export function CorrectionQueue({
   return (
     <section>
       {error && !selected ? (
-        <p role="alert" style={{ color: "#b00020" }}>
+        <p role="alert" className="alert">
           {error}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      ) : null}
 
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-        <thead>
-          <tr>
-            {["Member", "Tipe", "Tanggal diminta", "Alasan", "Bukti", "Status", "Aksi"].map(
-              (label) => (
-                <th
-                  key={label}
-                  style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}
-                >
-                  {label}
-                </th>
-              ),
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {corrections.length === 0 ? (
-            <tr>
-              <td colSpan={7} style={{ padding: "1rem", color: "#555" }}>
-                Belum ada revisi pada filter ini.
-              </td>
-            </tr>
-          ) : null}
-          {corrections.map((correction) => (
-            <tr key={correction.id}>
-              <td style={{ padding: "0.5rem" }}>
-                {correction.member.name}
-                <br />
-                <span style={{ color: "#555" }}>{correction.member.email}</span>
-              </td>
-              <td style={{ padding: "0.5rem" }}>{typeLabel(correction.requestType)}</td>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                {stamp(correction.requestedTimestamp)}
-              </td>
-              <td style={{ padding: "0.5rem", maxWidth: "22rem" }}>{correction.reason}</td>
-              <td style={{ padding: "0.5rem" }}>
-                {correction.proofUrl ? (
-                  <a
-                    href={`/api/corrections/${correction.id}/proof`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Lihat bukti
-                  </a>
-                ) : (
-                  "—"
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Revisi kehadiran</h2>
+            <p className="section-note">{corrections.length} entri pada filter ini</p>
+          </div>
+          <span className="badge badge--neutral">{statusLabel("PENDING")} diprioritaskan</span>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Member", "Tipe", "Tanggal diminta", "Alasan", "Bukti", "Status", "Aksi"].map(
+                  (label) => (
+                    <th key={label}>{label}</th>
+                  ),
                 )}
-              </td>
-              <td style={{ padding: "0.5rem" }}>{statusLabel(correction.status)}</td>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                <Link
-                  href={`/workspaces/${workspaceId}/corrections/${correction.id}`}
-                  style={{ marginRight: "0.5rem" }}
-                >
-                  Detail
-                </Link>
-                {canReview && correction.status === "PENDING" ? (
-                  <>
-                    <button
-                      type="button"
-                      data-testid={`approve-${correction.id}`}
-                      onClick={() => open(correction, "approve")}
-                      style={{ padding: "0.35rem 0.6rem", marginRight: "0.25rem" }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      data-testid={`reject-${correction.id}`}
-                      onClick={() => open(correction, "reject")}
-                      style={{ padding: "0.35rem 0.6rem" }}
-                    >
-                      Reject
-                    </button>
-                  </>
-                ) : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </tr>
+            </thead>
+            <tbody>
+              {corrections.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty">
+                    Belum ada revisi pada filter ini.
+                  </td>
+                </tr>
+              ) : null}
+              {corrections.map((correction) => (
+                <tr key={correction.id}>
+                  <td>
+                    <span className="cell-title">{correction.member.name}</span>
+                    <span className="cell-sub">{correction.member.email}</span>
+                  </td>
+                  <td>{typeLabel(correction.requestType)}</td>
+                  <td className="mono nowrap">{stamp(correction.requestedTimestamp)}</td>
+                  <td style={{ maxWidth: "22rem" }}>{correction.reason}</td>
+                  <td>
+                    {correction.proofUrl ? (
+                      <a
+                        href={`/api/corrections/${correction.id}/proof`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Lihat bukti
+                      </a>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className={statusBadge(correction.status)}>
+                      {statusLabel(correction.status)}
+                    </span>
+                  </td>
+                  <td className="nowrap">
+                    <div className="btn-row">
+                      <Link
+                        href={`/workspaces/${workspaceId}/corrections/${correction.id}`}
+                        className="btn btn--ghost btn--sm"
+                      >
+                        Detail
+                      </Link>
+                      {canReview && correction.status === "PENDING" ? (
+                        <>
+                          <button
+                            type="button"
+                            data-testid={`approve-${correction.id}`}
+                            className="btn btn--primary btn--sm"
+                            onClick={() => open(correction, "approve")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`reject-${correction.id}`}
+                            className="btn btn--danger btn--sm"
+                            onClick={() => open(correction, "reject")}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {selected ? (
         <div
           role="dialog"
           aria-modal="true"
           data-testid="correction-review-dialog"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "grid",
-            placeItems: "center",
-            padding: "1rem",
-          }}
+          className="modal-backdrop"
         >
-          <div
-            style={{
-              background: "#fff",
-              color: "#111",
-              padding: "1.25rem",
-              borderRadius: "0.5rem",
-              width: "min(32rem, 100%)",
-            }}
-          >
-            <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>
-              {selected.action === "approve" ? "Setujui revisi?" : "Tolak revisi"}
-            </h2>
-            <p style={{ color: "#555", marginTop: 0 }}>
+          <div className="modal">
+            <h2>{selected.action === "approve" ? "Setujui revisi?" : "Tolak revisi"}</h2>
+            <p className="modal-sub">
               {selected.correction.member.name} ·{" "}
               {typeLabel(selected.correction.requestType)} ·{" "}
               {stamp(selected.correction.requestedTimestamp)}
             </p>
             {selected.action === "approve" ? (
-              <p>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
                 Absensi akan diperbarui dari{" "}
-                <strong>{stamp(selected.correction.originalTimestamp)}</strong> menjadi{" "}
-                <strong>{stamp(selected.correction.requestedTimestamp)}</strong>.
+                <strong className="mono">{stamp(selected.correction.originalTimestamp)}</strong>{" "}
+                menjadi{" "}
+                <strong className="mono">{stamp(selected.correction.requestedTimestamp)}</strong>.
               </p>
             ) : (
-              <label style={{ display: "grid", gap: "0.35rem" }}>
+              <label className="field">
                 Alasan penolakan (wajib, minimal {MIN_REJECTION_REASON} karakter)
                 <textarea
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   rows={4}
                   disabled={busy}
-                  style={{ padding: "0.5rem" }}
                 />
               </label>
             )}
             {error ? (
-              <p role="alert" style={{ color: "#b00020" }}>
+              <p role="alert" className="alert" style={{ marginTop: "0.75rem" }}>
                 {error}
               </p>
             ) : null}
-            <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-              <button type="button" onClick={close} disabled={busy} style={{ padding: "0.5rem" }}>
+            <div className="modal-actions">
+              <button type="button" className="btn btn--secondary" onClick={close} disabled={busy}>
                 Batal
               </button>
-              <button type="button" onClick={confirm} disabled={busy} style={{ padding: "0.5rem" }}>
+              <button
+                type="button"
+                className={selected.action === "approve" ? "btn btn--primary" : "btn btn--danger"}
+                onClick={confirm}
+                disabled={busy}
+              >
                 {busy
                   ? "Memproses…"
                   : selected.action === "approve"

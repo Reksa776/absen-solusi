@@ -175,189 +175,204 @@ export function OfficeManager({
   return (
     <section>
       {error ? (
-        <p role="alert" style={{ color: "#b00020" }}>
+        <p role="alert" className="alert">
           {error}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      ) : null}
 
-      <form
-        onSubmit={submit}
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))",
-          gap: "0.75rem",
-          alignItems: "end",
-          padding: "1rem",
-          background: "#f5f5f5",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Nama kantor
-          <input
-            required
-            maxLength={120}
-            value={form.name}
-            onChange={(event) => update("name", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Alamat
-          <input
-            maxLength={255}
-            value={form.address}
-            onChange={(event) => update("address", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Latitude
-          <input
-            required
-            type="number"
-            step="any"
-            min={-90}
-            max={90}
-            value={form.latitude}
-            onChange={(event) => update("latitude", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Longitude
-          <input
-            required
-            type="number"
-            step="any"
-            min={-180}
-            max={180}
-            value={form.longitude}
-            onChange={(event) => update("longitude", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Radius (meter)
-          <input
-            required
-            type="number"
-            min={10}
-            max={5000}
-            value={form.radiusMeters}
-            onChange={(event) => update("radiusMeters", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Timezone (IANA)
-          <input
-            required
-            maxLength={64}
-            value={form.timezone}
-            onChange={(event) => update("timezone", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Jam masuk
-          <input
-            required
-            type="time"
-            value={form.workStart}
-            onChange={(event) => update("workStart", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Jam pulang
-          <input
-            required
-            type="time"
-            value={form.workEnd}
-            onChange={(event) => update("workEnd", event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={form.isActive}
-            onChange={(event) => update("isActive", event.target.checked)}
-          />
-          Aktif
-        </label>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
-            {busy ? "Memproses…" : editingId ? "Simpan perubahan" : "Tambah kantor"}
-          </button>
-          {editingId ? (
-            <button type="button" onClick={reset} disabled={busy} style={{ padding: "0.6rem" }}>
-              Batal
+      <form onSubmit={submit} className="form-card">
+        <div className="table-head" style={{ padding: "0 0 0.85rem", borderBottom: "none" }}>
+          <div>
+            <h2 className="section-title">
+              {editingId ? "Edit kantor" : "Tambah kantor"}
+            </h2>
+            <p className="section-note">
+              Radius menentukan geofence absensi di aplikasi mobile.
+            </p>
+          </div>
+        </div>
+        <div className="form-grid">
+          <label className="field">
+            Nama kantor
+            <input
+              required
+              maxLength={120}
+              value={form.name}
+              onChange={(event) => update("name", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Alamat
+            <input
+              maxLength={255}
+              value={form.address}
+              onChange={(event) => update("address", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Latitude
+            <input
+              required
+              type="number"
+              step="any"
+              min={-90}
+              max={90}
+              className="mono"
+              value={form.latitude}
+              onChange={(event) => update("latitude", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Longitude
+            <input
+              required
+              type="number"
+              step="any"
+              min={-180}
+              max={180}
+              className="mono"
+              value={form.longitude}
+              onChange={(event) => update("longitude", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Radius (meter)
+            <input
+              required
+              type="number"
+              min={10}
+              max={5000}
+              className="mono"
+              value={form.radiusMeters}
+              onChange={(event) => update("radiusMeters", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Timezone (IANA)
+            <input
+              required
+              maxLength={64}
+              value={form.timezone}
+              onChange={(event) => update("timezone", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Jam masuk
+            <input
+              required
+              type="time"
+              className="mono"
+              value={form.workStart}
+              onChange={(event) => update("workStart", event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Jam pulang
+            <input
+              required
+              type="time"
+              className="mono"
+              value={form.workEnd}
+              onChange={(event) => update("workEnd", event.target.value)}
+            />
+          </label>
+          <label className="field--check">
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={(event) => update("isActive", event.target.checked)}
+            />
+            Aktif
+          </label>
+          <div className="btn-row">
+            <button type="submit" className="btn btn--primary" disabled={busy}>
+              {busy ? "Memproses…" : editingId ? "Simpan perubahan" : "Tambah kantor"}
             </button>
-          ) : null}
+            {editingId ? (
+              <button type="button" className="btn btn--secondary" onClick={reset} disabled={busy}>
+                Batal
+              </button>
+            ) : null}
+          </div>
         </div>
       </form>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-        <thead>
-          <tr>
-            {["Nama", "Alamat", "Koordinat", "Radius", "Timezone", "Jam", "Status", "Aksi"].map(
-              (label) => (
-                <th
-                  key={label}
-                  style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}
-                >
-                  {label}
-                </th>
-              ),
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {offices.length === 0 ? (
-            <tr>
-              <td colSpan={8} style={{ padding: "0.75rem", color: "#555" }}>
-                Belum ada kantor. Tambahkan minimal satu agar check-in dapat dipakai.
-              </td>
-            </tr>
-          ) : null}
-          {offices.map((office) => (
-            <tr key={office.id}>
-              <td style={{ padding: "0.5rem" }}>{office.name}</td>
-              <td style={{ padding: "0.5rem" }}>{office.address ?? "—"}</td>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                {office.latitude}, {office.longitude}
-              </td>
-              <td style={{ padding: "0.5rem" }}>{office.radiusMeters} m</td>
-              <td style={{ padding: "0.5rem" }}>{office.timezone}</td>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                {office.workStart}–{office.workEnd}
-              </td>
-              <td style={{ padding: "0.5rem" }}>{office.isActive ? "Aktif" : "Nonaktif"}</td>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                <button
-                  type="button"
-                  onClick={() => edit(office)}
-                  disabled={busy}
-                  style={{ padding: "0.35rem 0.6rem", marginRight: "0.25rem" }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActive(office, !office.isActive)}
-                  disabled={busy}
-                  style={{ padding: "0.35rem 0.6rem" }}
-                >
-                  {office.isActive ? "Nonaktifkan" : "Aktifkan"}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Daftar kantor</h2>
+            <p className="section-note">{offices.length} lokasi terdaftar</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Nama", "Alamat", "Koordinat", "Radius", "Timezone", "Jam", "Status", "Aksi"].map(
+                  (label) => (
+                    <th key={label}>{label}</th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {offices.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="empty">
+                    Belum ada kantor. Tambahkan minimal satu agar check-in dapat dipakai.
+                  </td>
+                </tr>
+              ) : null}
+              {offices.map((office) => (
+                <tr key={office.id}>
+                  <td>
+                    <span className="cell-title">{office.name}</span>
+                  </td>
+                  <td className="muted">{office.address ?? "—"}</td>
+                  <td className="mono nowrap">
+                    {office.latitude}, {office.longitude}
+                  </td>
+                  <td className="num">{office.radiusMeters} m</td>
+                  <td>{office.timezone}</td>
+                  <td className="mono nowrap">
+                    {office.workStart}–{office.workEnd}
+                  </td>
+                  <td>
+                    <span className={office.isActive ? "badge badge--green" : "badge badge--neutral"}>
+                      {office.isActive ? "Aktif" : "Nonaktif"}
+                    </span>
+                  </td>
+                  <td className="nowrap">
+                    <div className="btn-row">
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm"
+                        onClick={() => edit(office)}
+                        disabled={busy}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className={office.isActive ? "btn btn--danger btn--sm" : "btn btn--primary btn--sm"}
+                        onClick={() => setActive(office, !office.isActive)}
+                        disabled={busy}
+                      >
+                        {office.isActive ? "Nonaktifkan" : "Aktifkan"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }

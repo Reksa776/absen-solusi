@@ -13,30 +13,33 @@ export default async function AcceptInvitationPage({
   const token = typeof params.token === "string" ? params.token : "";
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "32rem",
-        margin: "0 auto",
-        padding: "4rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <h1 style={{ fontSize: "1.5rem" }}>Terima undangan workspace</h1>
-      <p style={{ color: "#555" }}>
-        Undangan ini mengaktifkan keanggotaan Anda. Jika akun sudah ada, login
-        terlebih dahulu; jika belum, isi nama dan password.
-      </p>
-      {token ? (
-        <AcceptInvitationForm token={token} />
-      ) : (
-        <p role="alert" style={{ color: "#b00020" }}>
-          Token undangan tidak ditemukan pada URL.
+    <main className="centered-shell">
+      <section className="centered-card">
+        <div className="brand" style={{ padding: "0 0 1rem" }}>
+          <span className="brand-mark" aria-hidden="true">
+            A
+          </span>
+          <div>
+            <div className="brand-title">Absensi Admin</div>
+            <div className="brand-sub">Undangan workspace</div>
+          </div>
+        </div>
+        <h1>Terima undangan workspace</h1>
+        <p>
+          Undangan ini mengaktifkan keanggotaan Anda. Jika akun sudah ada, login
+          terlebih dahulu; jika belum, isi nama dan password.
         </p>
-      )}
-      <p style={{ marginTop: "1.5rem" }}>
-        <Link href="/sign-in">Kembali ke halaman masuk</Link>
-      </p>
+        {token ? (
+          <AcceptInvitationForm token={token} />
+        ) : (
+          <p role="alert" className="alert">
+            Token undangan tidak ditemukan pada URL.
+          </p>
+        )}
+        <p style={{ marginTop: "1.25rem", fontSize: "0.8rem" }}>
+          <Link href="/sign-in">Kembali ke halaman masuk</Link>
+        </p>
+      </section>
     </main>
   );
 }

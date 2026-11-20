@@ -25,7 +25,7 @@ export function SignOutButton() {
   }
 
   return (
-    <button type="button" onClick={signOut} disabled={busy} style={{ padding: "0.5rem 0.9rem" }}>
+    <button type="button" className="btn btn--secondary" onClick={signOut} disabled={busy}>
       {busy ? "Keluar…" : "Keluar"}
     </button>
   );

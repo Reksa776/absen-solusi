@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { listOffices } from "@absensi/auth";
@@ -19,23 +18,18 @@ export default async function OfficeSettingsPage({
   const offices = await listOffices({ ctx, workspaceId: id });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "64rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/dashboard`}>← Dashboard</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Pengaturan kantor</h1>
-      <p style={{ color: "#555" }}>
-        Koordinat, radius, timezone, dan jam kerja dipakai server untuk geofence
-        serta perhitungan keterlambatan. Hanya satu kantor yang dapat aktif.
-      </p>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Geofence</p>
+          <h1 className="page-title">Pengaturan kantor</h1>
+          <p className="page-subtitle">
+            Koordinat, radius, timezone, dan jam kerja dipakai server untuk geofence
+            serta perhitungan keterlambatan. Hanya satu kantor yang dapat aktif.
+          </p>
+        </div>
+        <span className="badge badge--neutral">{offices.length} kantor</span>
+      </div>
       <OfficeManager workspaceId={id} offices={offices} />
     </main>
   );

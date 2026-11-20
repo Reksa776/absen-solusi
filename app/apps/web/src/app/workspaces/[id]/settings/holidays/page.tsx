@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { listHolidays } from "@absensi/auth";
@@ -19,22 +18,17 @@ export default async function HolidaysPage({
   const holidays = await listHolidays({ ctx, workspaceId: id });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "56rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/dashboard`}>← Dashboard</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Hari libur workspace</h1>
-      <p style={{ color: "#555" }}>
-        Tanggal libur tidak dihitung sebagai alpha pada rekap bulanan.
-      </p>
+    <main className="page page--narrow">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Kalender kerja</p>
+          <h1 className="page-title">Hari libur workspace</h1>
+          <p className="page-subtitle">
+            Tanggal libur tidak dihitung sebagai alpha pada rekap bulanan.
+          </p>
+        </div>
+        <span className="badge badge--yellow">{holidays.length} tanggal</span>
+      </div>
       <HolidayManager workspaceId={id} holidays={holidays} />
     </main>
   );

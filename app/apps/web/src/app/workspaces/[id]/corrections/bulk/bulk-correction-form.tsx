@@ -107,16 +107,31 @@ export function BulkCorrectionForm({
 
   return (
     <form onSubmit={submit} data-testid="bulk-correction-form">
-      <fieldset style={{ border: "1px solid #ddd", borderRadius: "0.5rem", padding: "1rem" }}>
-        <legend style={{ padding: "0 0.4rem", fontWeight: 600 }}>Karyawan</legend>
-        <button type="button" onClick={toggleAll} style={{ marginBottom: "0.75rem", padding: "0.35rem 0.6rem" }}>
-          {selected.size === members.length && members.length > 0
-            ? "Batalkan semua"
-            : "Pilih semua"}
-        </button>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(15rem, 1fr))", gap: "0.4rem" }}>
+      <div className="form-card">
+        <div className="table-head" style={{ padding: "0 0 0.75rem", borderBottom: "none" }}>
+          <div>
+            <h2 className="section-title">Karyawan</h2>
+            <p className="section-note">{selected.size} dari {members.length} dipilih</p>
+          </div>
+          <button type="button" onClick={toggleAll} className="btn btn--secondary btn--sm">
+            {selected.size === members.length && members.length > 0
+              ? "Batalkan semua"
+              : "Pilih semua"}
+          </button>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(15rem, 1fr))",
+            gap: "0.4rem",
+          }}
+        >
           {members.map((member) => (
-            <label key={member.id} style={{ display: "flex", gap: "0.45rem", alignItems: "flex-start" }}>
+            <label
+              key={member.id}
+              className="field--check"
+              style={{ alignItems: "flex-start", paddingBottom: 0 }}
+            >
               <input
                 type="checkbox"
                 checked={selected.has(member.id)}
@@ -125,57 +140,53 @@ export function BulkCorrectionForm({
                 style={{ marginTop: "0.25rem" }}
               />
               <span>
-                {member.name}
-                <br />
-                <span style={{ color: "#666", fontSize: "0.8rem" }}>{member.email}</span>
+                <span className="cell-title">{member.name}</span>
+                <span className="cell-sub">{member.email}</span>
               </span>
             </label>
           ))}
         </div>
-        {members.length === 0 ? <p style={{ color: "#555" }}>Belum ada karyawan aktif.</p> : null}
-      </fieldset>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginTop: "1rem" }}>
-        <label>
-          Tanggal
-          <br />
-          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
-        </label>
-        <label>
-          Tipe
-          <br />
-          <select value={type} onChange={(event) => setType(event.target.value)}>
-            <option value="CHECK_IN">Check-in</option>
-            <option value="CHECK_OUT">Check-out</option>
-          </select>
-        </label>
-        <label>
-          Jam baru
-          <br />
-          <input type="time" value={time} onChange={(event) => setTime(event.target.value)} required />
-        </label>
+        {members.length === 0 ? <p className="empty">Belum ada karyawan aktif.</p> : null}
       </div>
 
-      <label style={{ display: "block", marginTop: "1rem" }}>
-        Alasan wajib
-        <br />
-        <textarea
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          minLength={MIN_REASON}
-          maxLength={1000}
-          rows={3}
-          required
-          style={{ width: "min(42rem, 100%)", padding: "0.5rem" }}
-          placeholder="Contoh: gangguan jaringan kantor cabang pada pagi hari"
-        />
-      </label>
+      <div className="form-card">
+        <div className="form-grid">
+          <label className="field">
+            Tanggal
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
+          </label>
+          <label className="field">
+            Tipe
+            <select value={type} onChange={(event) => setType(event.target.value)}>
+              <option value="CHECK_IN">Check-in</option>
+              <option value="CHECK_OUT">Check-out</option>
+            </select>
+          </label>
+          <label className="field">
+            Jam baru
+            <input type="time" value={time} onChange={(event) => setTime(event.target.value)} required />
+          </label>
+        </div>
 
-      {error ? <p role="alert" style={{ color: "#b00020" }}>{error}</p> : null}
-      {notice ? <p role="status">{notice}</p> : null}
-      <button type="submit" disabled={busy} style={{ marginTop: "1rem", padding: "0.6rem 1rem" }}>
-        {busy ? "Memproses…" : "Eksekusi koreksi massal"}
-      </button>
+        <label className="field" style={{ marginTop: "0.75rem" }}>
+          Alasan wajib
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            minLength={MIN_REASON}
+            maxLength={1000}
+            rows={3}
+            required
+            placeholder="Contoh: gangguan jaringan kantor cabang pada pagi hari"
+          />
+        </label>
+
+        {error ? <p role="alert" className="alert" style={{ marginTop: "0.75rem" }}>{error}</p> : null}
+        {notice ? <p role="status" className="notice" style={{ marginTop: "0.75rem" }}>{notice}</p> : null}
+        <button type="submit" disabled={busy} className="btn btn--primary" style={{ marginTop: "0.75rem" }}>
+          {busy ? "Memproses…" : "Eksekusi koreksi massal"}
+        </button>
+      </div>
     </form>
   );
 }

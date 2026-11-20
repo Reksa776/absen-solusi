@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
@@ -28,23 +27,18 @@ export default async function ShiftsPage({
   ]);
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "64rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/dashboard`}>← Dashboard</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Shift kerja</h1>
-      <p style={{ color: "#555" }}>
-        Shift menentukan jam masuk, toleransi keterlambatan, dan pengingat worker.
-        Tanpa penugasan, laporan memakai jam kantor.
-      </p>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Jadwal</p>
+          <h1 className="page-title">Shift kerja</h1>
+          <p className="page-subtitle">
+            Shift menentukan jam masuk, toleransi keterlambatan, dan pengingat worker.
+            Tanpa penugasan, laporan memakai jam kantor.
+          </p>
+        </div>
+        <span className="badge badge--yellow">{shifts.filter((shift) => shift.isActive).length} shift aktif</span>
+      </div>
       <ShiftManager
         workspaceId={id}
         shifts={shifts}

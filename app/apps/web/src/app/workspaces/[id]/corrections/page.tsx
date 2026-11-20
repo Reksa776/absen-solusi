@@ -33,36 +33,37 @@ export default async function CorrectionsPage({
   });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "72rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href="/workspaces">← Workspace</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Antrian revisi kehadiran</h1>
-      {ctx.permissions.includes("correction.review") ? (
-        <p>
-          <Link href={`/workspaces/${id}/corrections/bulk`}>Koreksi massal</Link>
-        </p>
-      ) : null}
-      <form method="get" style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <select name="status" defaultValue={status} style={{ padding: "0.5rem" }}>
-          <option value="PENDING">Menunggu</option>
-          <option value="APPROVED">Disetujui</option>
-          <option value="REJECTED">Ditolak</option>
-          <option value="ALL">Semua</option>
-        </select>
-        <button type="submit" style={{ padding: "0.6rem" }}>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Kontrol kehadiran</p>
+          <h1 className="page-title">Antrian revisi kehadiran</h1>
+          <p className="page-subtitle">
+            {result.pagination.total} revisi · bukti dan riwayat tercatat pada audit log
+          </p>
+        </div>
+        {ctx.permissions.includes("correction.review") ? (
+          <Link href={`/workspaces/${id}/corrections/bulk`} className="btn btn--secondary">
+            Koreksi massal
+          </Link>
+        ) : null}
+      </div>
+
+      <form method="get" className="toolbar">
+        <label className="field" style={{ minWidth: "11rem" }}>
+          Status
+          <select name="status" defaultValue={status}>
+            <option value="PENDING">Menunggu</option>
+            <option value="APPROVED">Disetujui</option>
+            <option value="REJECTED">Ditolak</option>
+            <option value="ALL">Semua</option>
+          </select>
+        </label>
+        <button type="submit" className="btn btn--primary">
           Filter
         </button>
       </form>
-      <p style={{ color: "#555" }}>{result.pagination.total} revisi</p>
+
       <CorrectionQueue
         workspaceId={id}
         corrections={result.corrections}

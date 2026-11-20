@@ -17,6 +17,16 @@ const STATUS_LABELS: Record<string, string> = {
   FUTURE: "Belum terjadi",
 };
 
+const STATUS_BADGES: Record<string, string> = {
+  PRESENT: "badge badge--green",
+  INCOMPLETE: "badge badge--yellow",
+  ANOMALY: "badge badge--yellow",
+  ABSENT: "badge badge--red",
+  HOLIDAY: "badge badge--neutral",
+  WEEKEND: "badge badge--neutral",
+  FUTURE: "badge badge--neutral",
+};
+
 function time(value: string | null, timeZone: string): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("id-ID", {
@@ -53,111 +63,86 @@ export default async function ReportsPage({
   const timezone = report.timezone ?? "UTC";
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "76rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href="/workspaces">← Workspace</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Rekap bulanan</h1>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Rekap bulanan</p>
+          <h1 className="page-title">Rekap bulanan</h1>
+          <p className="page-subtitle">
+            Periode {monthLabel} · {report.pagination.total} member · Zona waktu {timezone}
+          </p>
+        </div>
+        <div className="btn-row">
+          <a
+            className="btn btn--secondary"
+            href={`/api/workspaces/${id}/reports/monthly/export?year=${report.year}&month=${report.month}&format=csv`}
+          >
+            Unduh CSV
+          </a>
+          <Link
+            className="btn btn--primary"
+            href={`/workspaces/${id}/reports/late?year=${report.year}&month=${report.month}`}
+          >
+            Statistik keterlambatan
+          </Link>
+        </div>
+      </div>
 
-      <form method="get" style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <label>
+      <form method="get" className="toolbar">
+        <label className="field" style={{ maxWidth: "7rem" }}>
           Tahun
-          <input
-            type="number"
-            name="year"
-            defaultValue={report.year}
-            min={2000}
-            max={2100}
-            style={{ padding: "0.4rem", marginLeft: "0.35rem", width: "6rem" }}
-          />
+          <input type="number" name="year" defaultValue={report.year} min={2000} max={2100} />
         </label>
-        <label>
+        <label className="field" style={{ maxWidth: "5rem" }}>
           Bulan
-          <input
-            type="number"
-            name="month"
-            defaultValue={report.month}
-            min={1}
-            max={12}
-            style={{ padding: "0.4rem", marginLeft: "0.35rem", width: "4rem" }}
-          />
+          <input type="number" name="month" defaultValue={report.month} min={1} max={12} />
         </label>
-        <button type="submit" style={{ padding: "0.5rem 0.75rem" }}>
+        <button type="submit" className="btn btn--primary">
           Tampilkan
         </button>
       </form>
 
-      <p style={{ color: "#555" }}>
-        Periode {monthLabel} · {report.pagination.total} member · Zona waktu {timezone}
-      </p>
-      <p>
-        <a
-          href={`/api/workspaces/${id}/reports/monthly/export?year=${report.year}&month=${report.month}&format=csv`}
-        >
-          Unduh CSV
-        </a>
-        {" · "}
-        <Link href={`/workspaces/${id}/reports/late?year=${report.year}&month=${report.month}`}>
-          Statistik keterlambatan
-        </Link>
-      </p>
-
-      {report.members.map((member) => (
-        <details
-          key={member.memberId}
-          style={{
-            border: "1px solid #ddd",
-            borderRadius: "0.5rem",
-            padding: "0.75rem",
-            marginBottom: "0.75rem",
-          }}
-        >
-          <summary style={{ cursor: "pointer" }}>
-            <strong>{member.name}</strong> · {member.totalWorkHours} jam ·{" "}
-            {member.totalLate} menit terlambat · {member.totalAbsent} alpha
-          </summary>
-          <table
-            style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", marginTop: "0.75rem" }}
-          >
-            <thead>
-              <tr>
-                {["Tanggal", "Masuk", "Keluar", "Jam kerja", "Terlambat", "Status"].map((label) => (
-                  <th
-                    key={label}
-                    style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.35rem" }}
-                  >
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {member.days.map((day) => (
-                <tr key={day.date}>
-                  <td style={{ padding: "0.35rem" }}>{day.date}</td>
-                  <td style={{ padding: "0.35rem" }}>{time(day.checkIn, timezone)}</td>
-                  <td style={{ padding: "0.35rem" }}>{time(day.checkOut, timezone)}</td>
-                  <td style={{ padding: "0.35rem" }}>{day.workHours}</td>
-                  <td style={{ padding: "0.35rem" }}>
-                    {day.late > 0 ? `${day.late} menit` : "—"}
-                  </td>
-                  <td style={{ padding: "0.35rem" }}>
-                    {STATUS_LABELS[day.status] ?? day.status}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      ))}
+      <div className="report-list">
+        {report.members.map((member) => (
+          <details key={member.memberId} className="report-card">
+            <summary>
+              <strong>{member.name}</strong>
+              <span className="mono">{member.totalWorkHours} jam</span>
+              <span className="mono">{member.totalLate} menit terlambat</span>
+              <span className="mono">{member.totalAbsent} alpha</span>
+            </summary>
+            <div className="table-scroll">
+              <table className="data">
+                <thead>
+                  <tr>
+                    {["Tanggal", "Masuk", "Keluar", "Jam kerja", "Terlambat", "Status"].map((label) => (
+                      <th key={label}>{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {member.days.map((day) => (
+                    <tr key={day.date}>
+                      <td className="mono nowrap">{day.date}</td>
+                      <td className="mono nowrap">{time(day.checkIn, timezone)}</td>
+                      <td className="mono nowrap">{time(day.checkOut, timezone)}</td>
+                      <td className="mono nowrap">{day.workHours}</td>
+                      <td className={day.late > 0 ? "mono nowrap" : "muted"}>
+                        {day.late > 0 ? `${day.late} menit` : "—"}
+                      </td>
+                      <td>
+                        <span className={STATUS_BADGES[day.status] ?? "badge badge--neutral"}>
+                          {STATUS_LABELS[day.status] ?? day.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        ))}
+      </div>
     </main>
   );
 }

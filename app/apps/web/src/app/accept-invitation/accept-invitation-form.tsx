@@ -62,9 +62,9 @@ export function AcceptInvitationForm({ token }: { token: string }) {
 
   if (result?.workspace) {
     return (
-      <section role="status" style={{ padding: "1rem", background: "#e8f5e9" }}>
-        <h2 style={{ fontSize: "1.1rem", marginTop: 0 }}>Undangan diterima</h2>
-        <p>
+      <section role="status" className="notice">
+        <h2 style={{ fontSize: "1.05rem", marginTop: 0 }}>Undangan diterima</h2>
+        <p style={{ margin: "0.3rem 0", color: "inherit" }}>
           Anda sekarang menjadi member <strong>{result.workspace.name}</strong> dengan role{" "}
           <strong>{result.roleKey}</strong>.
         </p>
@@ -74,37 +74,35 @@ export function AcceptInvitationForm({ token }: { token: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.75rem" }}>
-      <p style={{ margin: 0, color: "#555" }}>
+    <form onSubmit={onSubmit} className="stack">
+      <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.82rem" }}>
         Untuk akun baru, isi nama dan password. Untuk akun yang sudah ada, login
         lalu buka kembali tautan ini.
       </p>
-      <label style={{ display: "grid", gap: "0.25rem" }}>
+      <label className="field">
         Nama (akun baru)
         <input
           type="text"
           autoComplete="name"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          style={{ padding: "0.5rem" }}
         />
       </label>
-      <label style={{ display: "grid", gap: "0.25rem" }}>
+      <label className="field">
         Password (akun baru)
         <input
           type="password"
           autoComplete="new-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          style={{ padding: "0.5rem" }}
         />
       </label>
       {error ? (
-        <p role="alert" style={{ color: "#b00020", margin: 0 }}>
+        <p role="alert" className="alert" style={{ margin: 0 }}>
           {error}
         </p>
       ) : null}
-      <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
+      <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
         {busy ? "Memproses…" : "Terima undangan"}
       </button>
     </form>

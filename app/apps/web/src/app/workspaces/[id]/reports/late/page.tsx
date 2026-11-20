@@ -10,20 +10,19 @@ export const dynamic = "force-dynamic";
 function Bars({ rows }: { rows: Array<{ label: string; count: number }> }) {
   const max = Math.max(1, ...rows.map((row) => row.count));
   return (
-    <div style={{ display: "grid", gap: "0.4rem" }}>
+    <div style={{ display: "grid", gap: "0.45rem" }}>
       {rows.map((row) => (
-        <div key={row.label} style={{ display: "grid", gridTemplateColumns: "10rem 1fr 3rem" }}>
-          <span style={{ fontSize: "0.85rem" }}>{row.label}</span>
-          <span
-            aria-hidden
-            style={{
-              background: "#00695c",
-              borderRadius: "0.25rem",
-              height: "1rem",
-              width: `${Math.max(4, (row.count / max) * 100)}%`,
-            }}
-          />
-          <span style={{ fontSize: "0.85rem" }}>{row.count}</span>
+        <div key={row.label} className="bar-row">
+          <span>{row.label}</span>
+          <span className="bar-track" aria-hidden="true">
+            <span
+              className="bar-fill"
+              style={{ display: "block", width: `${Math.max(4, (row.count / max) * 100)}%` }}
+            />
+          </span>
+          <span className="bar-count" aria-label={`${row.count} kejadian`}>
+            {row.count}
+          </span>
         </div>
       ))}
     </div>
@@ -51,38 +50,43 @@ export default async function LateStatsPage({
   });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "60rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/reports`}>← Rekap bulanan</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Statistik keterlambatan</h1>
-      <p style={{ color: "#555" }}>
-        {stats.totalLate} kejadian · rata-rata {stats.averageLateMinutes} menit
-      </p>
+    <main className="page page--narrow">
+      <Link href={`/workspaces/${id}/reports`} className="back-link">
+        ← Rekap bulanan
+      </Link>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Disiplin waktu</p>
+          <h1 className="page-title">Statistik keterlambatan</h1>
+          <p className="page-subtitle">
+            {stats.totalLate} kejadian · rata-rata {stats.averageLateMinutes} menit
+          </p>
+        </div>
+      </div>
 
-      <h2 style={{ fontSize: "1.1rem" }}>Per hari</h2>
-      {stats.lateByDay.length === 0 ? (
-        <p style={{ color: "#555" }}>Tidak ada keterlambatan.</p>
-      ) : (
-        <Bars rows={stats.lateByDay.map((row) => ({ label: row.date, count: row.count }))} />
-      )}
+      <section className="card card-pad" style={{ marginBottom: "1rem" }}>
+        <h2 className="section-title" style={{ marginBottom: "0.6rem" }}>
+          Per hari
+        </h2>
+        {stats.lateByDay.length === 0 ? (
+          <p className="empty">Tidak ada keterlambatan.</p>
+        ) : (
+          <Bars rows={stats.lateByDay.map((row) => ({ label: row.date, count: row.count }))} />
+        )}
+      </section>
 
-      <h2 style={{ fontSize: "1.1rem", marginTop: "1.5rem" }}>Per member</h2>
-      {stats.lateByMember.length === 0 ? (
-        <p style={{ color: "#555" }}>Tidak ada keterlambatan.</p>
-      ) : (
-        <Bars
-          rows={stats.lateByMember.map((row) => ({ label: row.name, count: row.count }))}
-        />
-      )}
+      <section className="card card-pad">
+        <h2 className="section-title" style={{ marginBottom: "0.6rem" }}>
+          Per member
+        </h2>
+        {stats.lateByMember.length === 0 ? (
+          <p className="empty">Tidak ada keterlambatan.</p>
+        ) : (
+          <Bars
+            rows={stats.lateByMember.map((row) => ({ label: row.name, count: row.count }))}
+          />
+        )}
+      </section>
     </main>
   );
 }

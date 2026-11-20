@@ -31,6 +31,18 @@ async function csrfToken(): Promise<string> {
   return body.csrfToken;
 }
 
+function statusLabel(value: string): string {
+  if (value === "APPROVED") return "Disetujui";
+  if (value === "REJECTED") return "Ditolak";
+  return "Menunggu";
+}
+
+function statusBadge(value: string): string {
+  if (value === "APPROVED") return "badge badge--green";
+  if (value === "REJECTED") return "badge badge--red";
+  return "badge badge--yellow";
+}
+
 export function RequestReview({
   kind,
   rows,
@@ -84,70 +96,94 @@ export function RequestReview({
 
   return (
     <section>
-      {error ? <p role="alert" style={{ color: "#b00020" }}>{error}</p> : null}
-      {notice ? <p role="status">{notice}</p> : null}
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-        <thead>
-          <tr>
-            {["Member", "Tanggal", "Detail", "Alasan", "Status", "Aksi"].map((label) => (
-              <th key={label} style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={6} style={{ padding: "0.75rem", color: "#555" }}>
-                Tidak ada pengajuan.
-              </td>
-            </tr>
-          ) : null}
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td style={{ padding: "0.5rem" }}>{row.memberName}</td>
-              <td style={{ padding: "0.5rem" }}>{row.date}</td>
-              <td style={{ padding: "0.5rem" }}>
-                {kind === "overtime"
-                  ? `${row.startTime}–${row.endTime} (${row.durationMinutes} menit)`
-                  : "Remote / WFH"}
-              </td>
-              <td style={{ padding: "0.5rem", maxWidth: "18rem" }}>
-                {row.reason}
-                {row.rejectionReason ? (
-                  <div style={{ color: "#b00020", fontSize: "0.8rem" }}>
-                    Ditolak: {row.rejectionReason}
-                  </div>
-                ) : null}
-              </td>
-              <td style={{ padding: "0.5rem" }}>{row.status}</td>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
-                {canReview && row.status === "PENDING" ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => review(row.id, "APPROVE")}
-                      disabled={busyId === row.id}
-                      style={{ padding: "0.35rem 0.6rem", marginRight: "0.25rem" }}
-                    >
-                      Setujui
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => review(row.id, "REJECT")}
-                      disabled={busyId === row.id}
-                      style={{ padding: "0.35rem 0.6rem" }}
-                    >
-                      Tolak
-                    </button>
-                  </>
-                ) : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {error ? (
+        <p role="alert" className="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      ) : null}
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">
+              {kind === "overtime" ? "Pengajuan lembur" : "Pengajuan WFH"}
+            </h2>
+            <p className="section-note">{rows.length} pengajuan</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Member", "Tanggal", "Detail", "Alasan", "Status", "Aksi"].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty">
+                    Tidak ada pengajuan.
+                  </td>
+                </tr>
+              ) : null}
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    <span className="cell-title">{row.memberName}</span>
+                  </td>
+                  <td className="mono nowrap">{row.date}</td>
+                  <td className="mono">
+                    {kind === "overtime"
+                      ? `${row.startTime}–${row.endTime} (${row.durationMinutes} menit)`
+                      : "Remote / WFH"}
+                  </td>
+                  <td style={{ maxWidth: "18rem" }}>
+                    {row.reason}
+                    {row.rejectionReason ? (
+                      <span className="cell-sub" style={{ color: "#991b1b" }}>
+                        Ditolak: {row.rejectionReason}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>
+                    <span className={statusBadge(row.status)}>{statusLabel(row.status)}</span>
+                  </td>
+                  <td className="nowrap">
+                    {canReview && row.status === "PENDING" ? (
+                      <div className="btn-row">
+                        <button
+                          type="button"
+                          className="btn btn--primary btn--sm"
+                          onClick={() => review(row.id, "APPROVE")}
+                          disabled={busyId === row.id}
+                        >
+                          Setujui
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--danger btn--sm"
+                          onClick={() => review(row.id, "REJECT")}
+                          disabled={busyId === row.id}
+                        >
+                          Tolak
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }

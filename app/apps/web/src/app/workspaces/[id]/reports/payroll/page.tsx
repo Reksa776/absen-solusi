@@ -37,122 +37,114 @@ export default async function PayrollPage({
     to,
   });
 
-  return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "76rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/reports`}>← Rekap bulanan</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Rekap payroll</h1>
-      <p style={{ color: "#555" }}>
-        Periode {summary.from} s/d {summary.to} · {summary.members.length} karyawan
-        {summary.timezone ? ` · ${summary.timezone}` : ""}
-      </p>
+  const columns = [
+    "Hadir",
+    "Office",
+    "WFH",
+    "Libur",
+    "Weekend",
+    "Alpha",
+    "Terlambat",
+    "Menit telat",
+    "Jam kerja",
+    "Lembur (jam)",
+  ];
 
-      <form method="get" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-        <label>
-          Dari
-          <input
-            type="date"
-            name="from"
-            required
-            defaultValue={summary.from}
-            style={{ padding: "0.4rem", marginLeft: "0.35rem" }}
-          />
-        </label>
-        <label>
-          Sampai
-          <input
-            type="date"
-            name="to"
-            required
-            defaultValue={summary.to}
-            style={{ padding: "0.4rem", marginLeft: "0.35rem" }}
-          />
-        </label>
-        <button type="submit" style={{ padding: "0.5rem 0.75rem" }}>
-          Tampilkan
-        </button>
+  return (
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Payroll</p>
+          <h1 className="page-title">Rekap payroll</h1>
+          <p className="page-subtitle">
+            Periode {summary.from} s/d {summary.to} · {summary.members.length} karyawan
+            {summary.timezone ? ` · ${summary.timezone}` : ""}
+          </p>
+        </div>
         <a
+          className="btn btn--secondary"
           href={`/api/workspaces/${id}/reports/payroll-summary/export?from=${summary.from}&to=${summary.to}&format=csv`}
-          style={{ padding: "0.5rem 0.75rem" }}
         >
           Download CSV
         </a>
+      </div>
+
+      <form method="get" className="toolbar">
+        <label className="field">
+          Dari
+          <input type="date" name="from" required defaultValue={summary.from} />
+        </label>
+        <label className="field">
+          Sampai
+          <input type="date" name="to" required defaultValue={summary.to} />
+        </label>
+        <button type="submit" className="btn btn--primary">
+          Tampilkan
+        </button>
       </form>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-        <thead>
-          <tr>
-            {[
-              "Karyawan",
-              "Hadir",
-              "Office",
-              "WFH",
-              "Libur",
-              "Weekend",
-              "Alpha",
-              "Terlambat",
-              "Menit telat",
-              "Jam kerja",
-              "Lembur (jam)",
-            ].map((label) => (
-              <th
-                key={label}
-                style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.4rem" }}
-              >
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {summary.members.map((member) => (
-            <tr key={member.memberId}>
-              <td style={{ padding: "0.4rem" }}>{member.name}</td>
-              <td style={{ padding: "0.4rem" }}>{member.presentDays}</td>
-              <td style={{ padding: "0.4rem" }}>{member.officeDays}</td>
-              <td style={{ padding: "0.4rem" }}>{member.wfhDays}</td>
-              <td style={{ padding: "0.4rem" }}>{member.holidayDays}</td>
-              <td style={{ padding: "0.4rem" }}>{member.weekendDays}</td>
-              <td style={{ padding: "0.4rem" }}>{member.absentDays}</td>
-              <td style={{ padding: "0.4rem" }}>{member.lateIncidents}</td>
-              <td style={{ padding: "0.4rem" }}>{member.lateMinutes}</td>
-              <td style={{ padding: "0.4rem" }}>{member.workHours}</td>
-              <td style={{ padding: "0.4rem" }}>{member.overtimeHours}</td>
-            </tr>
-          ))}
-          {summary.members.length === 0 ? (
-            <tr>
-              <td colSpan={11} style={{ padding: "0.75rem", color: "#555" }}>
-                Tidak ada karyawan aktif pada periode ini.
-              </td>
-            </tr>
-          ) : null}
-        </tbody>
-        <tfoot>
-          <tr style={{ fontWeight: 600, borderTop: "1px solid #ccc" }}>
-            <td style={{ padding: "0.4rem" }}>Total</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.presentDays}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.officeDays}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.wfhDays}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.holidayDays}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.weekendDays}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.absentDays}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.lateIncidents}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.lateMinutes}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.workHours}</td>
-            <td style={{ padding: "0.4rem" }}>{summary.totals.overtimeHours}</td>
-          </tr>
-        </tfoot>
-      </table>
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Ringkasan per karyawan</h2>
+            <p className="section-note">Angka siap dipakai untuk perhitungan payroll</p>
+          </div>
+          <span className="badge badge--yellow">{summary.members.length} karyawan</span>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Karyawan</th>
+                {columns.map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {summary.members.map((member) => (
+                <tr key={member.memberId}>
+                  <td>
+                    <span className="cell-title">{member.name}</span>
+                  </td>
+                  <td className="num">{member.presentDays}</td>
+                  <td className="num">{member.officeDays}</td>
+                  <td className="num">{member.wfhDays}</td>
+                  <td className="num">{member.holidayDays}</td>
+                  <td className="num">{member.weekendDays}</td>
+                  <td className="num">{member.absentDays}</td>
+                  <td className="num">{member.lateIncidents}</td>
+                  <td className="num">{member.lateMinutes}</td>
+                  <td className="num">{member.workHours}</td>
+                  <td className="num">{member.overtimeHours}</td>
+                </tr>
+              ))}
+              {summary.members.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="empty">
+                    Tidak ada karyawan aktif pada periode ini.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>Total</td>
+                <td className="num">{summary.totals.presentDays}</td>
+                <td className="num">{summary.totals.officeDays}</td>
+                <td className="num">{summary.totals.wfhDays}</td>
+                <td className="num">{summary.totals.holidayDays}</td>
+                <td className="num">{summary.totals.weekendDays}</td>
+                <td className="num">{summary.totals.absentDays}</td>
+                <td className="num">{summary.totals.lateIncidents}</td>
+                <td className="num">{summary.totals.lateMinutes}</td>
+                <td className="num">{summary.totals.workHours}</td>
+                <td className="num">{summary.totals.overtimeHours}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </main>
   );
 }

@@ -22,6 +22,12 @@ function statusLabel(value: string): string {
   return "Menunggu";
 }
 
+function statusBadge(value: string): string {
+  if (value === "APPROVED") return "badge badge--green";
+  if (value === "REJECTED") return "badge badge--red";
+  return "badge badge--yellow";
+}
+
 export default async function CorrectionDetailPage({
   params,
 }: {
@@ -50,72 +56,79 @@ export default async function CorrectionDetailPage({
     correction.proofUrl !== null && !correction.proofUrl.toLowerCase().endsWith(".pdf");
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "56rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/corrections`}>← Antrian revisi</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Detail revisi</h1>
-      <p style={{ color: "#555" }}>
-        {correction.member.name} · {correction.member.email}
-      </p>
+    <main className="page page--narrow">
+      <Link href={`/workspaces/${id}/corrections`} className="back-link">
+        ← Antrian revisi
+      </Link>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "1.5rem" }}>
-        <tbody>
-          {[
-            ["Tipe", typeLabel(correction.requestType)],
-            ["Status", statusLabel(correction.status)],
-            ["Alasan", correction.reason],
-            ["Diajukan", stamp(correction.createdAt)],
-          ].map(([label, value]) => (
-            <tr key={label}>
-              <th
-                scope="row"
-                style={{ textAlign: "left", padding: "0.5rem", borderBottom: "1px solid #eee", width: "10rem" }}
-              >
-                {label}
-              </th>
-              <td style={{ padding: "0.5rem", borderBottom: "1px solid #eee" }}>{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Detail revisi</p>
+          <h1 className="page-title">Detail revisi</h1>
+          <p className="page-subtitle">
+            {correction.member.name} · {correction.member.email}
+          </p>
+        </div>
+        <span className={statusBadge(correction.status)}>{statusLabel(correction.status)}</span>
+      </div>
 
-      <h2 style={{ fontSize: "1.15rem" }}>Perbandingan waktu absensi</h2>
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "1.5rem" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Sebelum
-            </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-              Sesudah
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style={{ padding: "0.5rem" }}>{stamp(correction.originalTimestamp)}</td>
-            <td style={{ padding: "0.5rem" }}>{stamp(correction.requestedTimestamp)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="card card-pad" style={{ marginBottom: "1.25rem" }}>
+        <div className="form-grid">
+          <div>
+            <div className="kpi-label">Tipe</div>
+            <div>{typeLabel(correction.requestType)}</div>
+          </div>
+          <div>
+            <div className="kpi-label">Status</div>
+            <div>{statusLabel(correction.status)}</div>
+          </div>
+          <div>
+            <div className="kpi-label">Diajukan</div>
+            <div className="mono">{stamp(correction.createdAt)}</div>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="kpi-label">Alasan</div>
+            <div>{correction.reason}</div>
+          </div>
+        </div>
+      </div>
 
-      <h2 style={{ fontSize: "1.15rem" }}>Bukti</h2>
+      <h2 className="section-title" style={{ marginBottom: "0.5rem" }}>
+        Perbandingan waktu absensi
+      </h2>
+      <div className="table-wrap" style={{ marginBottom: "1.25rem" }}>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Sebelum</th>
+                <th>Sesudah</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="mono">{stamp(correction.originalTimestamp)}</td>
+                <td className="mono">{stamp(correction.requestedTimestamp)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h2 className="section-title" style={{ marginBottom: "0.5rem" }}>
+        Bukti revisi
+      </h2>
       {correction.proofUrl ? (
         isImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`/api/corrections/${correction.id}/proof`}
             alt="Bukti revisi"
-            style={{ maxWidth: "100%", borderRadius: "0.5rem" }}
+            style={{
+              maxWidth: "100%",
+              borderRadius: "10px",
+              border: "1px solid var(--line)",
+            }}
           />
         ) : (
           <p>
@@ -129,48 +142,58 @@ export default async function CorrectionDetailPage({
           </p>
         )
       ) : (
-        <p style={{ color: "#555" }}>Tidak ada bukti dilampirkan.</p>
+        <p className="muted">Tidak ada bukti dilampirkan.</p>
       )}
 
       {correction.status === "REJECTED" ? (
         <>
-          <h2 style={{ fontSize: "1.15rem" }}>Alasan penolakan</h2>
-          <p role="alert" style={{ color: "#b00020" }}>
+          <h2 className="section-title" style={{ marginTop: "1.25rem" }}>
+            Alasan penolakan
+          </h2>
+          <p role="alert" className="alert" style={{ marginTop: "0.5rem" }}>
             {correction.rejectionReason ?? "—"}
           </p>
         </>
       ) : null}
 
-      <h2 style={{ fontSize: "1.15rem" }}>Riwayat audit terkait</h2>
-      <p style={{ color: "#555" }}>Read-only, {audit.pagination.total} entri.</p>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-        <thead>
-          <tr>
-            {["Waktu", "Action", "Actor", "Metadata"].map((label) => (
-              <th
-                key={label}
-                style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}
-              >
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {audit.logs.map((log) => (
-            <tr key={log.id}>
-              <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>{stamp(log.createdAt)}</td>
-              <td style={{ padding: "0.5rem" }}>{log.action}</td>
-              <td style={{ padding: "0.5rem" }}>{log.actorMemberId ?? log.actorType}</td>
-              <td
-                style={{ padding: "0.5rem", maxWidth: "26rem", overflowWrap: "anywhere" }}
-              >
-                {JSON.stringify(log.metadata)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <h2 className="section-title" style={{ marginTop: "1.25rem" }}>
+        Riwayat audit terkait
+      </h2>
+      <p className="section-note" style={{ marginBottom: "0.6rem" }}>
+        Read-only, {audit.pagination.total} entri.
+      </p>
+      <div className="table-wrap">
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Waktu", "Action", "Actor", "Metadata"].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {audit.logs.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="empty">
+                    Belum ada audit terkait revisi ini.
+                  </td>
+                </tr>
+              ) : null}
+              {audit.logs.map((log) => (
+                <tr key={log.id}>
+                  <td className="mono nowrap">{stamp(log.createdAt)}</td>
+                  <td>{log.action}</td>
+                  <td>{log.actorMemberId ?? log.actorType}</td>
+                  <td className="mono" style={{ maxWidth: "26rem", overflowWrap: "anywhere" }}>
+                    {JSON.stringify(log.metadata)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </main>
   );
 }

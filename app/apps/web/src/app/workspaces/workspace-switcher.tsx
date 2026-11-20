@@ -56,28 +56,27 @@ export function WorkspaceSwitcher({
     }
   }
 
-  if (workspaces.length === 0) return <p>Belum ada workspace.</p>;
+  if (workspaces.length === 0) return <p className="muted">Belum ada workspace.</p>;
 
   return (
-    <div style={{ display: "grid", gap: "0.5rem", marginBottom: "1rem" }}>
-      <label htmlFor="workspace-switcher" style={{ fontWeight: 600 }}>
+    <div style={{ display: "grid", gap: "0.35rem", marginBottom: "1rem" }}>
+      <label htmlFor="workspace-switcher" className="field">
         Workspace aktif
+        <select
+          id="workspace-switcher"
+          value={activeTenantId ?? ""}
+          onChange={onChange}
+          disabled={busy}
+        >
+          {workspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+            </option>
+          ))}
+        </select>
       </label>
-      <select
-        id="workspace-switcher"
-        value={activeTenantId ?? ""}
-        onChange={onChange}
-        disabled={busy}
-        style={{ padding: "0.5rem", maxWidth: "24rem" }}
-      >
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-          </option>
-        ))}
-      </select>
       {error ? (
-        <p role="alert" style={{ color: "#b00020", margin: 0 }}>
+        <p role="alert" className="alert" style={{ margin: 0 }}>
           {error}
         </p>
       ) : null}

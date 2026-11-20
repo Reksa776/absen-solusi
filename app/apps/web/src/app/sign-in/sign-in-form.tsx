@@ -96,11 +96,11 @@ export function SignInForm() {
 
   if (challengeToken) {
     return (
-      <form onSubmit={onVerify} style={{ display: "grid", gap: "0.75rem" }}>
-        <p style={{ margin: 0 }}>
+      <form onSubmit={onVerify} className="auth-form-grid">
+        <p className="auth-inline-hint">
           Masukkan kode 6 digit dari aplikasi authenticator, atau salah satu backup code.
         </p>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
+        <label className="field">
           Kode 2FA
           <input
             autoComplete="one-time-code"
@@ -108,25 +108,24 @@ export function SignInForm() {
             required
             value={code}
             onChange={(event) => setCode(event.target.value)}
-            style={{ padding: "0.5rem" }}
           />
         </label>
         {error ? (
-          <p role="alert" style={{ color: "#b00020", margin: 0 }}>
+          <p role="alert" className="alert" style={{ margin: 0 }}>
             {error}
           </p>
         ) : null}
-        <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
+        <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
           {busy ? "Memverifikasi…" : "Verifikasi 2FA"}
         </button>
         <button
           type="button"
+          className="btn btn--secondary btn--block"
           onClick={() => {
             setChallengeToken(null);
             setCode("");
             setError(null);
           }}
-          style={{ padding: "0.5rem" }}
         >
           Kembali
         </button>
@@ -135,8 +134,8 @@ export function SignInForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.75rem" }}>
-      <label style={{ display: "grid", gap: "0.25rem" }}>
+    <form onSubmit={onSubmit} className="auth-form-grid">
+      <label className="field">
         Email
         <input
           type="email"
@@ -144,10 +143,9 @@ export function SignInForm() {
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          style={{ padding: "0.5rem" }}
         />
       </label>
-      <label style={{ display: "grid", gap: "0.25rem" }}>
+      <label className="field">
         Password
         <input
           type="password"
@@ -155,15 +153,14 @@ export function SignInForm() {
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          style={{ padding: "0.5rem" }}
         />
       </label>
       {error ? (
-        <p role="alert" style={{ color: "#b00020", margin: 0 }}>
+        <p role="alert" className="alert" style={{ margin: 0 }}>
           {error}
         </p>
       ) : null}
-      <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
+      <button type="submit" className="btn btn--primary btn--block" disabled={busy}>
         {busy ? "Memproses…" : "Masuk"}
       </button>
     </form>

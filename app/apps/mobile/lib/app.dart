@@ -4,6 +4,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/workspace_picker_screen.dart';
 import 'services/auth_service.dart';
+import 'theme/app_theme.dart';
 
 class AbsensiApp extends StatefulWidget {
   const AbsensiApp({super.key, required this.auth});
@@ -28,10 +29,7 @@ class _AbsensiAppState extends State<AbsensiApp> {
     return MaterialApp(
       title: 'Absensi',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00695C)),
-        useMaterial3: true,
-      ),
+      theme: buildAppTheme(),
       home: AnimatedBuilder(
         animation: widget.auth,
         builder: (context, _) {

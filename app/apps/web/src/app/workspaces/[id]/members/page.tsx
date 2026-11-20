@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { listOffices, listShifts, listWorkspaceMembers } from "@absensi/auth";
@@ -34,22 +33,17 @@ export default async function MembersPage({
     : [];
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "72rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href="/workspaces">← Workspace</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Karyawan</h1>
-      <p style={{ color: "#555" }}>
-        {result.pagination.total} karyawan · role Anda: {ctx.roleKeys.join(", ") || "—"}
-      </p>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">People operations</p>
+          <h1 className="page-title">Karyawan</h1>
+          <p className="page-subtitle">
+            {result.pagination.total} karyawan · role Anda:{" "}
+            {ctx.roleKeys.join(", ") || "—"}
+          </p>
+        </div>
+      </div>
       <MemberAdmin
         workspaceId={id}
         currentMemberId={ctx.memberId}

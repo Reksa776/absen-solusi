@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { listWorkspaceWfh } from "@absensi/auth";
@@ -30,19 +29,30 @@ export default async function WfhPage({
   });
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: "72rem", margin: "0 auto", padding: "3rem 1.5rem", lineHeight: 1.6 }}>
-      <p><Link href={`/workspaces/${id}/dashboard`}>← Dashboard</Link></p>
-      <h1 style={{ fontSize: "1.5rem" }}>Antrian approval WFH</h1>
-      <form method="get" style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <select name="status" defaultValue={status} style={{ padding: "0.5rem" }}>
-          <option value="PENDING">Menunggu</option>
-          <option value="APPROVED">Disetujui</option>
-          <option value="REJECTED">Ditolak</option>
-          <option value="ALL">Semua</option>
-        </select>
-        <button type="submit" style={{ padding: "0.6rem" }}>Filter</button>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Approval</p>
+          <h1 className="page-title">Antrian approval WFH</h1>
+          <p className="page-subtitle">{rows.length} pengajuan pada filter ini</p>
+        </div>
+      </div>
+
+      <form method="get" className="toolbar">
+        <label className="field" style={{ minWidth: "11rem" }}>
+          Status
+          <select name="status" defaultValue={status}>
+            <option value="PENDING">Menunggu</option>
+            <option value="APPROVED">Disetujui</option>
+            <option value="REJECTED">Ditolak</option>
+            <option value="ALL">Semua</option>
+          </select>
+        </label>
+        <button type="submit" className="btn btn--primary">
+          Filter
+        </button>
       </form>
-      <p style={{ color: "#555" }}>{rows.length} pengajuan</p>
+
       <RequestReview kind="wfh" rows={rows} canReview={ctx.permissions.includes("correction.review")} />
     </main>
   );

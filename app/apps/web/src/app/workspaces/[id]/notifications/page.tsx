@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { listMyNotifications } from "@absensi/auth";
@@ -19,22 +18,16 @@ export default async function NotificationsPage({
   const inbox = await listMyNotifications({ ctx, limit: 100 });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "56rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/dashboard`}>← Dashboard</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Notifikasi</h1>
-      <p style={{ color: "#555" }}>
-        {inbox.unreadCount} notifikasi belum dibaca dari {inbox.notifications.length} terbaru.
-      </p>
+    <main className="page page--narrow">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Kotak masuk</p>
+          <h1 className="page-title">Notifikasi</h1>
+          <p className="page-subtitle">
+            {inbox.unreadCount} notifikasi belum dibaca dari {inbox.notifications.length} terbaru.
+          </p>
+        </div>
+      </div>
       <NotificationInbox
         notifications={inbox.notifications}
         unreadCount={inbox.unreadCount}

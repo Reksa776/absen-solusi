@@ -53,39 +53,63 @@ function labelsFor(pathname: string): Array<{ label: string; href: string }> {
   return crumbs;
 }
 
+/** Breadcrumb top bar: halaman aktif dengan tautan antar level. */
+export function WorkspaceBreadcrumb({ workspaceId }: { workspaceId: string }) {
+  const pathname = usePathname();
+  const base = `/workspaces/${workspaceId}`;
+  const crumbs = labelsFor(pathname);
+
+  return (
+    <nav aria-label="Breadcrumb" className="breadcrumb">
+      <Link href={base}>Workspace</Link>
+      {crumbs.map((crumb, index) => (
+        <span key={`${crumb.href}-${index}`} style={{ display: "contents" }}>
+          <span className="sep" aria-hidden="true">
+            /
+          </span>
+          {index === crumbs.length - 1 ? (
+            <span aria-current="page">{crumb.label}</span>
+          ) : (
+            <Link href={`${base}${crumb.href}`}>{crumb.label}</Link>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
 export function WorkspaceSidebar({
   workspaceId,
+  workspaceName,
   permissions,
   userEmail,
 }: {
   workspaceId: string;
+  workspaceName: string;
   permissions: readonly string[];
   userEmail: string;
 }) {
   const pathname = usePathname();
   const base = `/workspaces/${workspaceId}`;
   const allowed = NAV_ITEMS.filter((item) => permissions.includes(item.permission));
-  const crumbs = labelsFor(pathname);
 
   return (
-    <aside
-      style={{
-        width: "15rem",
-        flexShrink: 0,
-        borderRight: "1px solid #ddd",
-        background: "#fff",
-        padding: "1.25rem 1rem",
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "0.9rem",
-      }}
-    >
-      <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Absensi Admin</div>
-      <div style={{ color: "#555", fontSize: "0.75rem", marginBottom: "1rem" }}>
-        {userEmail}
+    <aside className="sidebar">
+      <div className="brand">
+        <span className="brand-mark" aria-hidden="true">
+          A
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div className="brand-title">Absensi Admin</div>
+          <div className="brand-sub" title={workspaceName}>
+            {workspaceName}
+          </div>
+        </div>
       </div>
 
       <nav aria-label="Navigasi workspace">
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "0.25rem" }}>
+        <div className="nav-group-label">Menu</div>
+        <ul className="nav-list">
           {allowed.map((item) => {
             const href = `${base}/${item.slug}`;
             const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -94,16 +118,10 @@ export function WorkspaceSidebar({
                 <Link
                   href={href}
                   aria-current={active ? "page" : undefined}
-                  style={{
-                    display: "block",
-                    padding: "0.4rem 0.5rem",
-                    borderRadius: "0.35rem",
-                    textDecoration: "none",
-                    color: active ? "#fff" : "#111",
-                    background: active ? "#00695c" : "transparent",
-                  }}
+                  className="nav-link"
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {active ? <span className="nav-dot" aria-hidden="true" /> : null}
                 </Link>
               </li>
             );
@@ -111,32 +129,18 @@ export function WorkspaceSidebar({
         </ul>
       </nav>
 
-      <div style={{ marginTop: "1.5rem", display: "grid", gap: "0.5rem" }}>
-        <Link href="/settings/security" style={{ color: "#00695c" }}>
+      <div className="sidebar-footer">
+        <div className="sidebar-user">
+          <span>Masuk sebagai</span>
+          <strong>{userEmail}</strong>
+        </div>
+        <Link href="/settings/security" className="nav-link nav-link--sub">
           Keamanan 2FA
         </Link>
-        <Link href="/workspaces" style={{ color: "#00695c" }}>
-          ← Ganti workspace
+        <Link href="/workspaces" className="nav-link nav-link--sub">
+          Ganti workspace
         </Link>
       </div>
-
-      <nav aria-label="Breadcrumb" style={{ marginTop: "1rem", color: "#555" }}>
-        <Link href={base} style={{ color: "#555" }}>
-          Workspace
-        </Link>
-        {crumbs.map((crumb, index) => (
-          <span key={`${crumb.href}-${index}`}>
-            {" / "}
-            {index === crumbs.length - 1 ? (
-              <span aria-current="page">{crumb.label}</span>
-            ) : (
-              <Link href={`${base}${crumb.href}`} style={{ color: "#555" }}>
-                {crumb.label}
-              </Link>
-            )}
-          </span>
-        ))}
-      </nav>
     </aside>
   );
 }

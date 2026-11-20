@@ -166,190 +166,199 @@ export function MemberAdmin({
   return (
     <section>
       {canInvite ? (
-        <form
-          onSubmit={addEmployee}
-          aria-label="Tambah Karyawan Langsung"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
-            gap: "0.75rem",
-            alignItems: "end",
-            padding: "1rem",
-            background: "#f5f5f5",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <h2 style={{ gridColumn: "1 / -1", fontSize: "1.1rem", margin: 0 }}>
-            Tambah Karyawan Langsung
-          </h2>
-          <label style={{ display: "grid", gap: "0.25rem" }}>
-            Nama
-            <input
-              required
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              style={{ padding: "0.5rem" }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: "0.25rem" }}>
-            Email
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              style={{ padding: "0.5rem" }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: "0.25rem" }}>
-            Password awal
-            <input
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={PASSWORD_MIN_LENGTH}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              style={{ padding: "0.5rem" }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: "0.25rem" }}>
-            Role
-            <select
-              value={role}
-              onChange={(event) => setRole(event.target.value as RoleKey)}
-              style={{ padding: "0.5rem" }}
-            >
-              {assignableRoles.map((key) => (
-                <option key={key} value={key}>
-                  {ROLE_LABELS[key]}
-                </option>
-              ))}
-            </select>
-          </label>
-          {canAssignOffice ? (
-            <label style={{ display: "grid", gap: "0.25rem" }}>
-              Kantor
-              <select
-                value={officeId}
-                onChange={(event) => setOfficeId(event.target.value)}
-                style={{ padding: "0.5rem" }}
-              >
-                <option value="">Semua kantor aktif</option>
-                {offices.map((office) => (
-                  <option key={office.id} value={office.id}>
-                    {office.name}
+        <form onSubmit={addEmployee} aria-label="Tambah Karyawan Langsung" className="form-card">
+          <div className="card-head" style={{ padding: "0 0 0.85rem", borderBottom: "none" }}>
+            <div>
+              <h2 className="section-title">Tambah Karyawan Langsung</h2>
+              <p className="section-note">
+                Akun langsung aktif tanpa undangan email.
+              </p>
+            </div>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              Nama
+              <input
+                required
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              Email
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              Password awal
+              <input
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              Role
+              <select value={role} onChange={(event) => setRole(event.target.value as RoleKey)}>
+                {assignableRoles.map((key) => (
+                  <option key={key} value={key}>
+                    {ROLE_LABELS[key]}
                   </option>
                 ))}
               </select>
             </label>
-          ) : null}
-          {canAssignOffice ? (
-            <label style={{ display: "grid", gap: "0.25rem" }}>
-              Shift
-              <select
-                value={shiftId}
-                onChange={(event) => setShiftId(event.target.value)}
-                style={{ padding: "0.5rem" }}
-              >
-                <option value="">Tanpa shift default</option>
-                {shifts.map((shift) => (
-                  <option key={shift.id} value={shift.id}>
-                    {shift.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
-            {busy ? "Memproses…" : "Tambah Karyawan"}
-          </button>
+            {canAssignOffice ? (
+              <label className="field">
+                Kantor
+                <select value={officeId} onChange={(event) => setOfficeId(event.target.value)}>
+                  <option value="">Semua kantor aktif</option>
+                  {offices.map((office) => (
+                    <option key={office.id} value={office.id}>
+                      {office.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {canAssignOffice ? (
+              <label className="field">
+                Shift
+                <select value={shiftId} onChange={(event) => setShiftId(event.target.value)}>
+                  <option value="">Tanpa shift default</option>
+                  {shifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {shift.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div>
+              <button type="submit" className="btn btn--primary" disabled={busy}>
+                {busy ? "Memproses…" : "Tambah Karyawan"}
+              </button>
+            </div>
+          </div>
         </form>
       ) : null}
 
       {error ? (
-        <p role="alert" style={{ color: "#b00020" }}>
+        <p role="alert" className="alert">
           {error}
         </p>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      ) : null}
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Nama</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Email</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Status</th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Role</th>
-            {canAssignOffice ? (
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Kantor</th>
-            ) : null}
-            {canResetPassword ? (
-              <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>Aksi</th>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((member) => (
-            <tr key={member.id}>
-              <td style={{ padding: "0.5rem" }}>{member.user.name}</td>
-              <td style={{ padding: "0.5rem" }}>{member.user.email}</td>
-              <td style={{ padding: "0.5rem" }}>{member.status}</td>
-              <td style={{ padding: "0.5rem" }}>
-                {canManageRoles && member.id !== currentMemberId && member.status === "ACTIVE" ? (
-                  <select
-                    defaultValue={member.roleKeys[0] ?? "EMPLOYEE"}
-                    onChange={(event) => changeRole(member.id, event.target.value)}
-                    disabled={busy}
-                    style={{ padding: "0.35rem" }}
-                  >
-                    {assignableRoles.map((key) => (
-                      <option key={key} value={key}>
-                        {ROLE_LABELS[key]}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  member.roleKeys.join(", ") || "—"
-                )}
-              </td>
-              {canAssignOffice ? (
-                <td style={{ padding: "0.5rem" }}>
-                  <select
-                    value={member.officeLocationId ?? ""}
-                    onChange={(event) => assignOffice(member.id, event.target.value)}
-                    disabled={busy || member.status !== "ACTIVE"}
-                    style={{ padding: "0.35rem" }}
-                  >
-                    <option value="">Semua kantor aktif</option>
-                    {offices.map((office) => (
-                      <option key={office.id} value={office.id}>
-                        {office.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Daftar karyawan</h2>
+            <p className="section-note">{members.length} akun pada halaman ini</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Role</th>
+                {canAssignOffice ? <th>Kantor</th> : null}
+                {canResetPassword ? <th>Aksi</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {members.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty">
+                    Belum ada karyawan pada workspace ini.
+                  </td>
+                </tr>
               ) : null}
-              {canResetPassword ? (
-                <td style={{ padding: "0.5rem" }}>
-                  {member.status === "ACTIVE" && member.id !== currentMemberId ? (
-                    <button
-                      type="button"
-                      onClick={() => resetPassword(member)}
-                      disabled={busy}
-                      style={{ padding: "0.4rem 0.6rem" }}
+              {members.map((member) => (
+                <tr key={member.id}>
+                  <td>
+                    <span className="cell-title">{member.user.name}</span>
+                  </td>
+                  <td className="muted">{member.user.email}</td>
+                  <td>
+                    <span
+                      className={
+                        member.status === "ACTIVE" ? "badge badge--green" : "badge badge--neutral"
+                      }
                     >
-                      Reset Password
-                    </button>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              ) : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                      {member.status === "ACTIVE" ? "Aktif" : member.status}
+                    </span>
+                  </td>
+                  <td>
+                    {canManageRoles && member.id !== currentMemberId && member.status === "ACTIVE" ? (
+                      <select
+                        defaultValue={member.roleKeys[0] ?? "EMPLOYEE"}
+                        onChange={(event) => changeRole(member.id, event.target.value)}
+                        disabled={busy}
+                        className="select-inline"
+                      >
+                        {assignableRoles.map((key) => (
+                          <option key={key} value={key}>
+                            {ROLE_LABELS[key]}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      member.roleKeys.join(", ") || "—"
+                    )}
+                  </td>
+                  {canAssignOffice ? (
+                    <td>
+                      <select
+                        value={member.officeLocationId ?? ""}
+                        onChange={(event) => assignOffice(member.id, event.target.value)}
+                        disabled={busy || member.status !== "ACTIVE"}
+                        className="select-inline"
+                      >
+                        <option value="">Semua kantor aktif</option>
+                        {offices.map((office) => (
+                          <option key={office.id} value={office.id}>
+                            {office.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  ) : null}
+                  {canResetPassword ? (
+                    <td>
+                      {member.status === "ACTIVE" && member.id !== currentMemberId ? (
+                        <button
+                          type="button"
+                          className="btn btn--secondary btn--sm"
+                          onClick={() => resetPassword(member)}
+                          disabled={busy}
+                        >
+                          Reset Password
+                        </button>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }

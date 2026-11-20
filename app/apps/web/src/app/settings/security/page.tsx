@@ -16,26 +16,23 @@ export default async function SecuritySettingsPage() {
   });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "48rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={ctx ? `/workspaces/${ctx.tenantId}/dashboard` : "/workspaces"}>
-          ← Kembali
-        </Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Keamanan akun</h1>
-      <p style={{ color: "#555" }}>
-        Lindungi akun Admin/Owner dengan kode TOTP dari Google Authenticator, Authy,
-        atau aplikasi yang kompatibel dengan RFC 6238.
-      </p>
-      <SecuritySettings enabled={user?.twoFactorEnabled === true} />
+    <main className="page page--narrow">
+      <Link href={ctx ? `/workspaces/${ctx.tenantId}/dashboard` : "/workspaces"} className="back-link">
+        ← Kembali
+      </Link>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Keamanan akun</p>
+          <h1 className="page-title">Keamanan akun</h1>
+          <p className="page-subtitle">
+            Lindungi akun Admin/Owner dengan kode TOTP dari Google Authenticator, Authy,
+            atau aplikasi yang kompatibel dengan RFC 6238.
+          </p>
+        </div>
+      </div>
+      <div className="card card-pad">
+        <SecuritySettings enabled={user?.twoFactorEnabled === true} />
+      </div>
     </main>
   );
 }

@@ -15,6 +15,14 @@ const STATUS_LABELS: Record<string, string> = {
   HOLIDAY: "Hari libur",
 };
 
+const STATUS_BADGES: Record<string, string> = {
+  PRESENT: "badge badge--green",
+  ON_SITE: "badge badge--green",
+  LATE: "badge badge--yellow",
+  ABSENT: "badge badge--red",
+  HOLIDAY: "badge badge--neutral",
+};
+
 function time(value: string | null, timeZone: string): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("id-ID", {
@@ -24,6 +32,14 @@ function time(value: string | null, timeZone: string): string {
     hour12: false,
   }).format(new Date(value));
 }
+
+type KpiCard = {
+  label: string;
+  value: number;
+  hint: string;
+  bar?: number;
+  tone?: "yellow" | "red";
+};
 
 export default async function DashboardPage({
   params,
@@ -44,81 +60,103 @@ export default async function DashboardPage({
   });
 
   const timezone = dashboard.timezone ?? "UTC";
-  const cards = [
-    ["Total member", dashboard.totalMembers],
-    ["Sudah masuk", dashboard.checkedIn],
-    ["Terlambat", dashboard.late],
-    ["Absen", dashboard.absent],
-    ["Masih di kantor", dashboard.onSite],
-    ["Revisi pending", dashboard.correctionsPending],
-  ] as const;
+  const total = Math.max(1, dashboard.totalMembers);
+  const pct = (value: number) => Math.min(100, Math.round((value / total) * 100));
+  const cards: KpiCard[] = [
+    { label: "Total member", value: dashboard.totalMembers, hint: "member aktif", bar: 100 },
+    { label: "Sudah masuk", value: dashboard.checkedIn, hint: `${pct(dashboard.checkedIn)}% kehadiran`, bar: pct(dashboard.checkedIn) },
+    { label: "Terlambat", value: dashboard.late, hint: "perlu perhatian", bar: pct(dashboard.late), tone: "yellow" },
+    { label: "Absen", value: dashboard.absent, hint: "belum check-in", bar: pct(dashboard.absent), tone: "red" },
+    { label: "Masih di kantor", value: dashboard.onSite, hint: "belum check-out", bar: pct(dashboard.onSite) },
+    { label: "Revisi pending", value: dashboard.correctionsPending, hint: "menunggu review" },
+  ];
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "72rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href="/workspaces">← Workspace</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Dashboard hari ini</h1>
-      <p style={{ color: "#555" }}>
-        {dashboard.date}
-        {dashboard.holiday ? ` · Libur: ${dashboard.holiday}` : ""}
-        {` · Zona waktu: ${timezone}`}
-      </p>
+    <main className="page">
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Ringkasan operasional</p>
+          <h1 className="page-title">Dashboard hari ini</h1>
+          <p className="page-subtitle">
+            {dashboard.date}
+            {dashboard.holiday ? ` · Libur: ${dashboard.holiday}` : ""}
+            {` · Zona waktu: ${timezone}`}
+          </p>
+        </div>
+        <div className="btn-row">
+          <Link href={`/workspaces/${id}/reports`} className="btn btn--secondary">
+            Rekap bulanan
+          </Link>
+          <Link href={`/workspaces/${id}/corrections`} className="btn btn--primary">
+            Tinjau revisi
+          </Link>
+        </div>
+      </div>
 
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(10rem, 1fr))",
-          gap: "0.75rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        {cards.map(([label, value]) => (
-          <div
-            key={label}
-            style={{ border: "1px solid #ddd", borderRadius: "0.5rem", padding: "0.75rem" }}
-          >
-            <div style={{ color: "#555", fontSize: "0.85rem" }}>{label}</div>
-            <div style={{ fontSize: "1.5rem", fontWeight: 600 }}>{value}</div>
-          </div>
+      <section className="kpi-grid" aria-label="Ringkasan hari ini">
+        {cards.map((card) => (
+          <article key={card.label} className="kpi">
+            <div className="kpi-label">{card.label}</div>
+            <div className="kpi-value">{card.value}</div>
+            {card.bar === undefined ? null : (
+              <div
+                className={`kpi-bar${card.tone ? ` kpi-bar--${card.tone}` : ""}`}
+                aria-hidden="true"
+              >
+                <span style={{ width: `${card.bar}%` }} />
+              </div>
+            )}
+            <div className="kpi-foot">{card.hint}</div>
+          </article>
         ))}
       </section>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
-        <thead>
-          <tr>
-            {["Member", "Status", "Masuk", "Keluar", "Terlambat"].map((label) => (
-              <th
-                key={label}
-                style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}
-              >
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {dashboard.members.map((member) => (
-            <tr key={member.memberId}>
-              <td style={{ padding: "0.5rem" }}>{member.name}</td>
-              <td style={{ padding: "0.5rem" }}>{STATUS_LABELS[member.status] ?? member.status}</td>
-              <td style={{ padding: "0.5rem" }}>{time(member.checkIn, timezone)}</td>
-              <td style={{ padding: "0.5rem" }}>{time(member.checkOut, timezone)}</td>
-              <td style={{ padding: "0.5rem" }}>
-                {member.lateMinutes > 0 ? `${member.lateMinutes} menit` : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <section className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Status kehadiran</h2>
+            <p className="section-note">Check-in dan check-out yang tercatat server</p>
+          </div>
+          <span className="badge badge--neutral">{dashboard.members.length} member</span>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Member", "Status", "Masuk", "Keluar", "Terlambat"].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dashboard.members.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="empty">
+                    Belum ada data kehadiran untuk tanggal ini.
+                  </td>
+                </tr>
+              ) : null}
+              {dashboard.members.map((member) => (
+                <tr key={member.memberId}>
+                  <td>
+                    <span className="cell-title">{member.name}</span>
+                  </td>
+                  <td>
+                    <span className={STATUS_BADGES[member.status] ?? "badge badge--neutral"}>
+                      {STATUS_LABELS[member.status] ?? member.status}
+                    </span>
+                  </td>
+                  <td className="mono nowrap">{time(member.checkIn, timezone)}</td>
+                  <td className="mono nowrap">{time(member.checkOut, timezone)}</td>
+                  <td className={member.lateMinutes > 0 ? "mono nowrap" : "muted"}>
+                    {member.lateMinutes > 0 ? `${member.lateMinutes} menit` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </main>
   );
 }

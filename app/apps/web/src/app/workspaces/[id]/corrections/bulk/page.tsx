@@ -19,23 +19,20 @@ export default async function BulkCorrectionsPage({
   const result = await listWorkspaceMembers({ ctx, workspaceId: id, limit: 100 });
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: "64rem",
-        margin: "0 auto",
-        padding: "3rem 1.5rem",
-        lineHeight: 1.6,
-      }}
-    >
-      <p>
-        <Link href={`/workspaces/${id}/corrections`}>← Antrian revisi</Link>
-      </p>
-      <h1 style={{ fontSize: "1.5rem" }}>Koreksi massal</h1>
-      <p style={{ color: "#555" }}>
-        Pilih beberapa karyawan, lalu tetapkan jam check-in/check-out yang sama.
-        Seluruh perubahan disimpan atomik dan setiap karyawan menerima notifikasi.
-      </p>
+    <main className="page page--narrow">
+      <Link href={`/workspaces/${id}/corrections`} className="back-link">
+        ← Antrian revisi
+      </Link>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Koreksi massal</p>
+          <h1 className="page-title">Koreksi massal</h1>
+          <p className="page-subtitle">
+            Pilih beberapa karyawan, lalu tetapkan jam check-in/check-out yang sama.
+            Seluruh perubahan disimpan atomik dan setiap karyawan menerima notifikasi.
+          </p>
+        </div>
+      </div>
       <BulkCorrectionForm
         workspaceId={id}
         members={result.members

@@ -135,151 +135,219 @@ export function ShiftManager({
 
   return (
     <section>
-      {error ? <p role="alert" style={{ color: "#b00020" }}>{error}</p> : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {error ? (
+        <p role="alert" className="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      ) : null}
 
-      <h2 style={{ fontSize: "1.1rem" }}>Daftar shift</h2>
-      <form
-        onSubmit={create}
-        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "end" }}
-      >
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Nama
-          <input
-            required
-            maxLength={120}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Pagi"
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Masuk
-          <input
-            type="time"
-            required
-            value={startTime}
-            onChange={(event) => setStartTime(event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Pulang
-          <input
-            type="time"
-            required
-            value={endTime}
-            onChange={(event) => setEndTime(event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Toleransi (menit)
-          <input
-            type="number"
-            min={0}
-            max={120}
-            required
-            value={tolerance}
-            onChange={(event) => setTolerance(event.target.value)}
-            style={{ padding: "0.5rem" }}
-          />
-        </label>
-        <button type="submit" disabled={busy} style={{ padding: "0.6rem" }}>
-          {busy ? "Memproses…" : "Tambah shift"}
-        </button>
-      </form>
+      <div className="form-card">
+        <h2 className="section-title">Daftar shift</h2>
+        <p className="section-note" style={{ marginBottom: "0.75rem" }}>
+          Tambahkan shift baru atau nonaktifkan yang tidak dipakai.
+        </p>
+        <form onSubmit={create} className="form-row">
+          <label className="field" style={{ flex: "1 1 12rem" }}>
+            Nama
+            <input
+              required
+              maxLength={120}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Pagi"
+            />
+          </label>
+          <label className="field">
+            Masuk
+            <input
+              type="time"
+              required
+              className="mono"
+              value={startTime}
+              onChange={(event) => setStartTime(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Pulang
+            <input
+              type="time"
+              required
+              className="mono"
+              value={endTime}
+              onChange={(event) => setEndTime(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Toleransi (menit)
+            <input
+              type="number"
+              min={0}
+              max={120}
+              required
+              className="mono"
+              value={tolerance}
+              onChange={(event) => setTolerance(event.target.value)}
+            />
+          </label>
+          <button type="submit" className="btn btn--primary" disabled={busy}>
+            {busy ? "Memproses…" : "Tambah shift"}
+          </button>
+        </form>
+      </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "1rem" }}>
-        <thead>
-          <tr>
-            {["Nama", "Jam", "Toleransi", "Status", "Aksi"].map((label) => (
-              <th key={label} style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {shifts.length === 0 ? (
-            <tr><td colSpan={5} style={{ padding: "0.75rem", color: "#555" }}>Belum ada shift.</td></tr>
-          ) : null}
-          {shifts.map((shift) => (
-            <tr key={shift.id}>
-              <td style={{ padding: "0.5rem" }}>{shift.name}</td>
-              <td style={{ padding: "0.5rem" }}>
-                {shift.startTime}–{shift.endTime}
-                {shift.isOvernight ? " (lintas hari)" : ""}
-              </td>
-              <td style={{ padding: "0.5rem" }}>{shift.lateToleranceMinutes} menit</td>
-              <td style={{ padding: "0.5rem" }}>{shift.isActive ? "Aktif" : "Nonaktif"}</td>
-              <td style={{ padding: "0.5rem" }}>
-                {shift.isActive ? (
-                  <button type="button" onClick={() => deactivate(shift.id)} disabled={busy} style={{ padding: "0.35rem 0.6rem" }}>
-                    Nonaktifkan
-                  </button>
-                ) : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Shift terdaftar</h2>
+            <p className="section-note">{shifts.length} shift</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Nama", "Jam", "Toleransi", "Status", "Aksi"].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {shifts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="empty">
+                    Belum ada shift.
+                  </td>
+                </tr>
+              ) : null}
+              {shifts.map((shift) => (
+                <tr key={shift.id}>
+                  <td>
+                    <span className="cell-title">{shift.name}</span>
+                  </td>
+                  <td className="mono nowrap">
+                    {shift.startTime}–{shift.endTime}
+                    {shift.isOvernight ? " (lintas hari)" : ""}
+                  </td>
+                  <td className="num">{shift.lateToleranceMinutes} menit</td>
+                  <td>
+                    <span className={shift.isActive ? "badge badge--green" : "badge badge--neutral"}>
+                      {shift.isActive ? "Aktif" : "Nonaktif"}
+                    </span>
+                  </td>
+                  <td>
+                    {shift.isActive ? (
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--sm"
+                        onClick={() => deactivate(shift.id)}
+                        disabled={busy}
+                      >
+                        Nonaktifkan
+                      </button>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      <h2 style={{ fontSize: "1.1rem", marginTop: "2rem" }}>Penugasan shift</h2>
-      <form
-        onSubmit={assign}
-        style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "end" }}
-      >
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Member
-          <select value={memberId} onChange={(event) => setMemberId(event.target.value)} style={{ padding: "0.5rem" }}>
-            {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
-          </select>
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Shift
-          <select value={shiftId} onChange={(event) => setShiftId(event.target.value)} style={{ padding: "0.5rem" }}>
-            {shifts.filter((shift) => shift.isActive).map((shift) => (
-              <option key={shift.id} value={shift.id}>{shift.name}</option>
-            ))}
-          </select>
-        </label>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
-          Tanggal (kosong = default)
-          <input type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} style={{ padding: "0.5rem" }} />
-        </label>
-        <button
-          type="submit"
-          disabled={busy || !memberId || !shiftId}
-          style={{ padding: "0.6rem" }}
-        >
-          Simpan penugasan
-        </button>
-      </form>
+      <div className="form-card" style={{ marginTop: "1.25rem" }}>
+        <h2 className="section-title">Penugasan shift</h2>
+        <p className="section-note" style={{ marginBottom: "0.75rem" }}>
+          Tanpa tanggal berarti penugasan default untuk karyawan tersebut.
+        </p>
+        <form onSubmit={assign} className="form-row">
+          <label className="field" style={{ flex: "1 1 12rem" }}>
+            Member
+            <select value={memberId} onChange={(event) => setMemberId(event.target.value)}>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field" style={{ flex: "1 1 10rem" }}>
+            Shift
+            <select value={shiftId} onChange={(event) => setShiftId(event.target.value)}>
+              {shifts
+                .filter((shift) => shift.isActive)
+                .map((shift) => (
+                  <option key={shift.id} value={shift.id}>
+                    {shift.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="field">
+            Tanggal (kosong = default)
+            <input
+              type="date"
+              value={workDate}
+              onChange={(event) => setWorkDate(event.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={busy || !memberId || !shiftId}
+          >
+            Simpan penugasan
+          </button>
+        </form>
+      </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "1rem" }}>
-        <thead>
-          <tr>
-            {["Member", "Shift", "Tanggal", "Jenis"].map((label) => (
-              <th key={label} style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: "0.5rem" }}>{label}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {assignments.length === 0 ? (
-            <tr><td colSpan={4} style={{ padding: "0.75rem", color: "#555" }}>Belum ada penugasan.</td></tr>
-          ) : null}
-          {assignments.map((assignment) => (
-            <tr key={assignment.id}>
-              <td style={{ padding: "0.5rem" }}>{assignment.memberName}</td>
-              <td style={{ padding: "0.5rem" }}>{assignment.shiftName}</td>
-              <td style={{ padding: "0.5rem" }}>{assignment.workDate ?? "—"}</td>
-              <td style={{ padding: "0.5rem" }}>{assignment.workDate ? "Per tanggal" : "Default"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Penugasan aktif</h2>
+            <p className="section-note">{assignments.length} penugasan</p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {["Member", "Shift", "Tanggal", "Jenis"].map((label) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {assignments.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="empty">
+                    Belum ada penugasan.
+                  </td>
+                </tr>
+              ) : null}
+              {assignments.map((assignment) => (
+                <tr key={assignment.id}>
+                  <td>
+                    <span className="cell-title">{assignment.memberName}</span>
+                  </td>
+                  <td>{assignment.shiftName}</td>
+                  <td className="mono nowrap">{assignment.workDate ?? "—"}</td>
+                  <td>
+                    <span className="badge badge--neutral">
+                      {assignment.workDate ? "Per tanggal" : "Default"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   );
 }
