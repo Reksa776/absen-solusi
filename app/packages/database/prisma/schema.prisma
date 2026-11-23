@@ -12,16 +12,16 @@ datasource db {
 }
 
 model User {
-  id           String   @id @db.Char(36)
-  email        String   @unique @db.VarChar(255)
-  passwordHash String   @map("password_hash") @db.VarChar(255)
-  name         String   @db.VarChar(120)
-  status       String   @default("ACTIVE") @db.VarChar(20)
-  twoFactorSecret String? @map("two_factor_secret") @db.VarChar(512)
-  twoFactorEnabled Boolean @default(false) @map("two_factor_enabled")
-  twoFactorBackupCodesHash Json? @map("two_factor_backup_codes_hash")
-  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  id                       String   @id @db.Char(36)
+  email                    String   @unique @db.VarChar(255)
+  passwordHash             String   @map("password_hash") @db.VarChar(255)
+  name                     String   @db.VarChar(120)
+  status                   String   @default("ACTIVE") @db.VarChar(20)
+  twoFactorSecret          String?  @map("two_factor_secret") @db.VarChar(512)
+  twoFactorEnabled         Boolean  @default(false) @map("two_factor_enabled")
+  twoFactorBackupCodesHash Json?    @map("two_factor_backup_codes_hash")
+  createdAt                DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt                DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
   sessions        Session[]
   memberships     WorkspaceMember[]
@@ -49,86 +49,115 @@ model Session {
 }
 
 model Workspace {
-  id        String   @id @db.Char(36)
-  name      String   @db.VarChar(120)
-  slug      String   @unique @db.VarChar(80)
-  status    String   @default("ACTIVE") @db.VarChar(20)
-  requireDeviceApproval Boolean @default(true) @map("require_device_approval")
-  autoApproveFirstDevice Boolean @default(true) @map("auto_approve_first_device")
-  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  id                     String   @id @db.Char(36)
+  name                   String   @db.VarChar(120)
+  slug                   String   @unique @db.VarChar(80)
+  status                 String   @default("ACTIVE") @db.VarChar(20)
+  requireDeviceApproval  Boolean  @default(true) @map("require_device_approval")
+  autoApproveFirstDevice Boolean  @default(true) @map("auto_approve_first_device")
+  createdAt              DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
-  members          WorkspaceMember[]
-  roles            Role[]
-  invitations      WorkspaceInvitation[]
-  jobs             BackgroundJob[]
-  officeLocations  OfficeLocation[]
-  attendanceLogs   AttendanceLog[]
-  workShifts       WorkShift[]
-  memberShifts     MemberShift[]
-  overtimeRequests OvertimeRequest[]
-  wfhRequests      WfhRequest[]
-  corrections      CorrectionRequest[]
-  holidays         WorkspaceHoliday[]
-  divisions        Division[]
-  positions        Position[]
-  deviceTokens     DeviceToken[]
-  memberDevices    MemberDevice[]
-  approvalWorkflows ApprovalWorkflow[]
-  inAppNotifications InAppNotification[]
-  workPermits      WorkPermit[]
-  leavePolicy      LeavePolicy?
-  leaveBalances    MemberLeaveBalance[]
-  leaveRequests    LeaveRequest[]
-  warningLetters   WarningLetter[]
-  broadcasts       BroadcastMessage[]
+  members                WorkspaceMember[]
+  roles                  Role[]
+  invitations            WorkspaceInvitation[]
+  jobs                   BackgroundJob[]
+  officeLocations        OfficeLocation[]
+  attendanceLogs         AttendanceLog[]
+  workShifts             WorkShift[]
+  memberShifts           MemberShift[]
+  overtimeRequests       OvertimeRequest[]
+  wfhRequests            WfhRequest[]
+  corrections            CorrectionRequest[]
+  holidays               WorkspaceHoliday[]
+  divisions              Division[]
+  positions              Position[]
+  deviceTokens           DeviceToken[]
+  memberDevices          MemberDevice[]
+  approvalWorkflows      ApprovalWorkflow[]
+  inAppNotifications     InAppNotification[]
+  workPermits            WorkPermit[]
+  leavePolicy            LeavePolicy?
+  leaveBalances          MemberLeaveBalance[]
+  leaveRequests          LeaveRequest[]
+  warningLetters         WarningLetter[]
+  broadcasts             BroadcastMessage[]
+  companyProfile         CompanyProfile?
+  clients                Client[]
+  clientVisitSchedules   ClientVisitSchedule[]
+  clientVisitLogs        ClientVisitLog[]
+  clientVisitSetting     ClientVisitSetting?
+  workProjections        WorkProjection[]
+  payrollSetting         PayrollSetting?
+  memberCompensations    MemberCompensation[]
+  payrollRuns            PayrollRun[]
+  payrollItems           PayrollItem[]
+  workPatterns           WorkPattern[]
+  workPatternDays        WorkPatternDay[]
+  workPatternAssignments WorkPatternAssignment[]
+  attendanceSetting      AttendanceSetting?
+  overtimeSetting        OvertimeSetting?
+  overtimeSchedules      OvertimeSchedule[]
 
   @@map("workspaces")
 }
 
 model WorkspaceMember {
-  id               String    @id @db.Char(36)
-  tenantId         String    @map("tenant_id") @db.Char(36)
-  userId           String    @map("user_id") @db.Char(36)
-  status           String    @default("ACTIVE") @db.VarChar(20)
-  officeLocationId String?   @map("office_location_id") @db.Char(36)
-  divisionId       String?   @map("division_id") @db.Char(36)
-  positionId       String?   @map("position_id") @db.Char(36)
-  photoUrl         String?   @map("photo_url") @db.VarChar(512)
-  photoStatus      String    @default("NONE") @map("photo_status") @db.VarChar(20)
-  photoSubmittedAt DateTime? @map("photo_submitted_at") @db.DateTime(3)
-  photoReviewedAt  DateTime? @map("photo_reviewed_at") @db.DateTime(3)
-  photoReviewedByMemberId String? @map("photo_reviewed_by_member_id") @db.Char(36)
-  photoRejectionReason String? @map("photo_rejection_reason") @db.VarChar(500)
-  joinedAt         DateTime? @map("joined_at") @db.DateTime(3)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  id                      String    @id @db.Char(36)
+  tenantId                String    @map("tenant_id") @db.Char(36)
+  userId                  String    @map("user_id") @db.Char(36)
+  status                  String    @default("ACTIVE") @db.VarChar(20)
+  officeLocationId        String?   @map("office_location_id") @db.Char(36)
+  divisionId              String?   @map("division_id") @db.Char(36)
+  positionId              String?   @map("position_id") @db.Char(36)
+  photoUrl                String?   @map("photo_url") @db.VarChar(512)
+  photoStatus             String    @default("NONE") @map("photo_status") @db.VarChar(20)
+  photoSubmittedAt        DateTime? @map("photo_submitted_at") @db.DateTime(3)
+  photoReviewedAt         DateTime? @map("photo_reviewed_at") @db.DateTime(3)
+  photoReviewedByMemberId String?   @map("photo_reviewed_by_member_id") @db.Char(36)
+  photoRejectionReason    String?   @map("photo_rejection_reason") @db.VarChar(500)
+  joinedAt                DateTime? @map("joined_at") @db.DateTime(3)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
-  workspace           Workspace           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedOffice      OfficeLocation?     @relation("MemberAssignedOffice", fields: [tenantId, officeLocationId], references: [tenantId, id], onDelete: Restrict)
-  division            Division?           @relation("MemberDivision", fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
-  position            Position?           @relation("MemberPosition", fields: [tenantId, positionId], references: [tenantId, id], onDelete: Restrict)
-  roles               MemberRole[]
-  attendanceLogs      AttendanceLog[]
-  corrections         CorrectionRequest[] @relation("CorrectionMember")
-  correctionsReviewed CorrectionRequest[] @relation("CorrectionReviewer")
-  deviceTokens        DeviceToken[]       @relation("DeviceTokenMember")
-  devices             MemberDevice[]
-  shifts              MemberShift[]
-  overtimeRequests    OvertimeRequest[]   @relation("OvertimeMember")
-  overtimeReviewed    OvertimeRequest[]   @relation("OvertimeReviewer")
-  wfhRequests         WfhRequest[]        @relation("WfhMember")
-  wfhReviewed         WfhRequest[]        @relation("WfhReviewer")
-  inAppNotifications  InAppNotification[]
-  workPermits         WorkPermit[]        @relation("WorkPermitMember")
-  workPermitsReviewed WorkPermit[]        @relation("WorkPermitReviewer")
-  leaveBalances       MemberLeaveBalance[]
-  leaveRequests       LeaveRequest[]      @relation("LeaveRequestMember")
-  leaveRequestsReviewed LeaveRequest[]    @relation("LeaveRequestReviewer")
-  warningLetters      WarningLetter[]     @relation("WarningLetterMember")
-  warningLettersIssued WarningLetter[]    @relation("WarningLetterIssuer")
-  broadcasts          BroadcastMessage[]  @relation("BroadcastCreator")
+  workspace                   Workspace              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedOffice              OfficeLocation?        @relation("MemberAssignedOffice", fields: [tenantId, officeLocationId], references: [tenantId, id], onDelete: Restrict)
+  division                    Division?              @relation("MemberDivision", fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
+  position                    Position?              @relation("MemberPosition", fields: [tenantId, positionId], references: [tenantId, id], onDelete: Restrict)
+  roles                       MemberRole[]
+  attendanceLogs              AttendanceLog[]
+  corrections                 CorrectionRequest[]    @relation("CorrectionMember")
+  correctionsReviewed         CorrectionRequest[]    @relation("CorrectionReviewer")
+  deviceTokens                DeviceToken[]          @relation("DeviceTokenMember")
+  devices                     MemberDevice[]
+  shifts                      MemberShift[]
+  overtimeRequests            OvertimeRequest[]      @relation("OvertimeMember")
+  overtimeReviewed            OvertimeRequest[]      @relation("OvertimeReviewer")
+  wfhRequests                 WfhRequest[]           @relation("WfhMember")
+  wfhReviewed                 WfhRequest[]           @relation("WfhReviewer")
+  inAppNotifications          InAppNotification[]
+  workPermits                 WorkPermit[]           @relation("WorkPermitMember")
+  workPermitsReviewed         WorkPermit[]           @relation("WorkPermitReviewer")
+  leaveBalances               MemberLeaveBalance[]
+  leaveRequests               LeaveRequest[]         @relation("LeaveRequestMember")
+  leaveRequestsReviewed       LeaveRequest[]         @relation("LeaveRequestReviewer")
+  warningLetters              WarningLetter[]        @relation("WarningLetterMember")
+  warningLettersIssued        WarningLetter[]        @relation("WarningLetterIssuer")
+  broadcasts                  BroadcastMessage[]     @relation("BroadcastCreator")
+  clientVisitSchedules        ClientVisitSchedule[]  @relation("ClientVisitScheduleMember")
+  clientVisitSchedulesCreated ClientVisitSchedule[]  @relation("ClientVisitScheduleCreator")
+  clientVisitLogs             ClientVisitLog[]       @relation("ClientVisitLogMember")
+  clientVisitLogsReviewed     ClientVisitLog[]       @relation("ClientVisitLogReviewer")
+  workProjections             WorkProjection[]       @relation("WorkProjectionMember")
+  workProjectionsCreated      WorkProjection[]       @relation("WorkProjectionCreator")
+  workProjectionsReviewed     WorkProjection[]       @relation("WorkProjectionReviewer")
+  payrollCompensation         MemberCompensation?
+  payrollRuns                 PayrollRun[]           @relation("PayrollRunGenerator")
+  payrollItems                PayrollItem[]
+  workPatternAssignment       WorkPatternAssignment?
+  overtimeSchedules           OvertimeSchedule[]     @relation("OvertimeScheduleMember")
+  overtimeSchedulesCreated    OvertimeSchedule[]     @relation("OvertimeScheduleCreator")
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -251,9 +280,9 @@ model OfficeLocation {
   createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
-  workspace       Workspace         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignedMembers WorkspaceMember[] @relation("MemberAssignedOffice")
-  attendanceLogs  AttendanceLog[]   @relation("AttendanceOffice")
+  workspace       Workspace          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedMembers WorkspaceMember[]  @relation("MemberAssignedOffice")
+  attendanceLogs  AttendanceLog[]    @relation("AttendanceOffice")
   broadcasts      BroadcastMessage[]
 
   @@unique([tenantId, id])
@@ -262,36 +291,38 @@ model OfficeLocation {
 }
 
 model AttendanceLog {
-  id               String   @id @db.Char(36)
-  tenantId         String   @map("tenant_id") @db.Char(36)
-  memberId         String   @map("member_id") @db.Char(36)
-  workDate         DateTime @map("work_date") @db.Date
-  type             String   @db.VarChar(20)
-  timestampServer  DateTime @map("timestamp_server") @db.DateTime(3)
-  latitude         Float    @db.Double
-  longitude        Float    @db.Double
-  accuracyMeters   Float    @map("accuracy_meters")
-  distanceMeters   Float    @map("distance_meters")
-  officeLocationId String?  @map("office_location_id") @db.Char(36)
-  workMode         String   @default("OFFICE") @map("work_mode") @db.VarChar(20)
-  outOfRadius      Boolean  @default(false) @map("out_of_radius")
-  outOfTownReason  String?  @map("out_of_town_reason") @db.VarChar(500)
-  approvalStatus   String   @default("APPROVED") @map("approval_status") @db.VarChar(20)
-  currentApprovalLevel Int  @default(0) @map("current_approval_level")
-  reviewedByMemberId String? @map("reviewed_by_member_id") @db.Char(36)
-  reviewedAt       DateTime? @map("reviewed_at") @db.DateTime(3)
-  rejectionReason  String?  @map("rejection_reason") @db.VarChar(500)
-  isMockLocation   Boolean  @map("is_mock_location")
-  isSuspicious     Boolean  @default(false) @map("is_suspicious")
-  isCorrection     Boolean  @default(false) @map("is_correction")
-  photoUrl         String   @map("photo_url") @db.VarChar(512)
-  photoHash        String   @map("photo_hash") @db.Char(64)
-  idempotencyKey   String?  @map("idempotency_key") @db.VarChar(128)
-  deviceInfo       String?  @map("device_info") @db.VarChar(255)
-  ipHash           Bytes?   @map("ip_hash") @db.VarBinary(32)
-  userAgent        String?  @map("user_agent") @db.VarChar(255)
-  createdAt        DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  id                   String    @id @db.Char(36)
+  tenantId             String    @map("tenant_id") @db.Char(36)
+  memberId             String    @map("member_id") @db.Char(36)
+  workDate             DateTime  @map("work_date") @db.Date
+  type                 String    @db.VarChar(20)
+  timestampServer      DateTime  @map("timestamp_server") @db.DateTime(3)
+  latitude             Float     @db.Double
+  longitude            Float     @db.Double
+  accuracyMeters       Float     @map("accuracy_meters")
+  distanceMeters       Float     @map("distance_meters")
+  officeLocationId     String?   @map("office_location_id") @db.Char(36)
+  workMode             String    @default("OFFICE") @map("work_mode") @db.VarChar(20)
+  outOfRadius          Boolean   @default(false) @map("out_of_radius")
+  outOfTownReason      String?   @map("out_of_town_reason") @db.VarChar(500)
+  approvalStatus       String    @default("APPROVED") @map("approval_status") @db.VarChar(20)
+  currentApprovalLevel Int       @default(0) @map("current_approval_level")
+  reviewedByMemberId   String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt           DateTime? @map("reviewed_at") @db.DateTime(3)
+  rejectionReason      String?   @map("rejection_reason") @db.VarChar(500)
+  isMockLocation       Boolean   @map("is_mock_location")
+  isSuspicious         Boolean   @default(false) @map("is_suspicious")
+  isCorrection         Boolean   @default(false) @map("is_correction")
+  photoUrl             String    @map("photo_url") @db.VarChar(512)
+  photoHash            String    @map("photo_hash") @db.Char(64)
+  idempotencyKey       String?   @map("idempotency_key") @db.VarChar(128)
+  deviceInfo           String?   @map("device_info") @db.VarChar(255)
+  notes                String?   @db.VarChar(500)
+  faceVerified         Boolean   @default(false) @map("face_verified")
+  ipHash               Bytes?    @map("ip_hash") @db.VarBinary(32)
+  userAgent            String?   @map("user_agent") @db.VarChar(255)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   workspace   Workspace           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   member      WorkspaceMember     @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
@@ -312,19 +343,19 @@ model AttendanceLog {
 }
 
 model MemberDevice {
-  id         String   @id @db.Char(36)
-  tenantId   String   @map("tenant_id") @db.Char(36)
-  memberId   String   @map("member_id") @db.Char(36)
-  deviceId   String   @map("device_id") @db.VarChar(128)
-  deviceName String   @map("device_name") @db.VarChar(120)
-  platform   String   @db.VarChar(20)
-  status     String   @default("PENDING") @db.VarChar(20)
-  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.DateTime(3)
-  approvedByMemberId String? @map("approved_by_member_id") @db.Char(36)
-  approvedAt DateTime? @map("approved_at") @db.DateTime(3)
-  revokedAt  DateTime? @map("revoked_at") @db.DateTime(3)
-  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  id                 String    @id @db.Char(36)
+  tenantId           String    @map("tenant_id") @db.Char(36)
+  memberId           String    @map("member_id") @db.Char(36)
+  deviceId           String    @map("device_id") @db.VarChar(128)
+  deviceName         String    @map("device_name") @db.VarChar(120)
+  platform           String    @db.VarChar(20)
+  status             String    @default("PENDING") @db.VarChar(20)
+  lastSeenAt         DateTime  @default(now()) @map("last_seen_at") @db.DateTime(3)
+  approvedByMemberId String?   @map("approved_by_member_id") @db.Char(36)
+  approvedAt         DateTime? @map("approved_at") @db.DateTime(3)
+  revokedAt          DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
@@ -411,9 +442,9 @@ model Division {
   createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
-  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  positions Position[]
-  members   WorkspaceMember[] @relation("MemberDivision")
+  workspace  Workspace          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  positions  Position[]
+  members    WorkspaceMember[]  @relation("MemberDivision")
   broadcasts BroadcastMessage[]
 
   @@unique([tenantId, id])
@@ -511,6 +542,124 @@ model MemberShift {
   @@map("member_shifts")
 }
 
+model WorkPattern {
+  id        String   @id @db.Char(36)
+  tenantId  String   @map("tenant_id") @db.Char(36)
+  name      String   @db.VarChar(120)
+  timezone  String   @default("UTC") @db.VarChar(64)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace   Workspace               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  days        WorkPatternDay[]
+  assignments WorkPatternAssignment[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("work_patterns")
+}
+
+model WorkPatternDay {
+  id                     String   @id @db.Char(36)
+  tenantId               String   @map("tenant_id") @db.Char(36)
+  workPatternId          String   @map("work_pattern_id") @db.Char(36)
+  dayOfWeek              Int      @map("day_of_week")
+  isWorkday              Boolean  @default(true) @map("is_workday")
+  startTime              String   @map("start_time") @db.VarChar(5)
+  endTime                String   @map("end_time") @db.VarChar(5)
+  earliestCheckInMinutes Int      @default(120) @map("earliest_check_in_minutes")
+  lateToleranceMinutes   Int      @default(15) @map("late_tolerance_minutes")
+  createdAt              DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace   Workspace   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workPattern WorkPattern @relation(fields: [tenantId, workPatternId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, workPatternId, dayOfWeek])
+  @@index([tenantId, dayOfWeek])
+  @@map("work_pattern_days")
+}
+
+model WorkPatternAssignment {
+  id            String   @id @db.Char(36)
+  tenantId      String   @map("tenant_id") @db.Char(36)
+  memberId      String   @map("member_id") @db.Char(36)
+  workPatternId String   @map("work_pattern_id") @db.Char(36)
+  assignedAt    DateTime @default(now()) @map("assigned_at") @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace   Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member      WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  workPattern WorkPattern     @relation(fields: [tenantId, workPatternId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, memberId])
+  @@index([tenantId, workPatternId])
+  @@map("work_pattern_assignments")
+}
+
+model AttendanceSetting {
+  id                          String   @id @db.Char(36)
+  tenantId                    String   @unique @map("tenant_id") @db.Char(36)
+  defaultLateToleranceMinutes Int      @default(15) @map("default_late_tolerance_minutes")
+  earliestCheckInMinutes      Int      @default(120) @map("earliest_check_in_minutes")
+  maxCheckOutMinutes          Int      @default(240) @map("max_check_out_minutes")
+  requireSelfie               Boolean  @default(true) @map("require_selfie")
+  gpsRadiusPolicy             String   @default("STRICT") @map("gps_radius_policy") @db.VarChar(20)
+  createdAt                   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("attendance_settings")
+}
+
+model OvertimeSetting {
+  id                 String   @id @db.Char(36)
+  tenantId           String   @unique @map("tenant_id") @db.Char(36)
+  minDurationMinutes Int      @default(30) @map("min_duration_minutes")
+  roundingMinutes    Int      @default(15) @map("rounding_minutes")
+  maxDailyMinutes    Int      @default(240) @map("max_daily_minutes")
+  maxMonthlyMinutes  Int      @default(4800) @map("max_monthly_minutes")
+  weekdayMultiplier  Float    @default(1.5) @map("weekday_multiplier")
+  holidayMultiplier  Float    @default(2) @map("holiday_multiplier")
+  createdAt          DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("overtime_settings")
+}
+
+model OvertimeSchedule {
+  id                String   @id @db.Char(36)
+  tenantId          String   @map("tenant_id") @db.Char(36)
+  memberId          String   @map("member_id") @db.Char(36)
+  date              DateTime @db.Date
+  startTime         String   @map("start_time") @db.VarChar(5)
+  endTime           String   @map("end_time") @db.VarChar(5)
+  durationMinutes   Int      @map("duration_minutes")
+  notes             String?  @db.VarChar(1000)
+  status            String   @default("PLANNED") @db.VarChar(20)
+  createdByMemberId String   @map("created_by_member_id") @db.Char(36)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember @relation("OvertimeScheduleMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  creator   WorkspaceMember @relation("OvertimeScheduleCreator", fields: [tenantId, createdByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, date, status])
+  @@index([tenantId, memberId, date])
+  @@map("overtime_schedules")
+}
+
 model OvertimeRequest {
   id                 String    @id @db.Char(36)
   tenantId           String    @map("tenant_id") @db.Char(36)
@@ -561,24 +710,24 @@ model WfhRequest {
 }
 
 model WorkPermit {
-  id                 String    @id @db.Char(36)
-  tenantId           String    @map("tenant_id") @db.Char(36)
-  memberId           String    @map("member_id") @db.Char(36)
-  permitType         String    @map("permit_type") @db.VarChar(30)
-  startDate          DateTime  @map("start_date") @db.Date
-  endDate            DateTime  @map("end_date") @db.Date
-  reason             String    @db.VarChar(1000)
-  proofUrl           String?   @map("proof_url") @db.VarChar(512)
-  proofHash          String?   @map("proof_hash") @db.Char(64)
-  proofContentType   String?   @map("proof_content_type") @db.VarChar(100)
-  proofFileName      String?   @map("proof_file_name") @db.VarChar(255)
-  status             String    @default("PENDING") @db.VarChar(20)
-  currentApprovalLevel Int     @default(0) @map("current_approval_level")
-  reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
-  reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
-  rejectionReason    String?   @map("rejection_reason") @db.VarChar(1000)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  id                   String    @id @db.Char(36)
+  tenantId             String    @map("tenant_id") @db.Char(36)
+  memberId             String    @map("member_id") @db.Char(36)
+  permitType           String    @map("permit_type") @db.VarChar(30)
+  startDate            DateTime  @map("start_date") @db.Date
+  endDate              DateTime  @map("end_date") @db.Date
+  reason               String    @db.VarChar(1000)
+  proofUrl             String?   @map("proof_url") @db.VarChar(512)
+  proofHash            String?   @map("proof_hash") @db.Char(64)
+  proofContentType     String?   @map("proof_content_type") @db.VarChar(100)
+  proofFileName        String?   @map("proof_file_name") @db.VarChar(255)
+  status               String    @default("PENDING") @db.VarChar(20)
+  currentApprovalLevel Int       @default(0) @map("current_approval_level")
+  reviewedByMemberId   String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt           DateTime? @map("reviewed_at") @db.DateTime(3)
+  rejectionReason      String?   @map("rejection_reason") @db.VarChar(1000)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   member    WorkspaceMember  @relation("WorkPermitMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
@@ -591,11 +740,11 @@ model WorkPermit {
 }
 
 model LeavePolicy {
-  id               String   @id @db.Char(36)
-  tenantId         String   @unique @map("tenant_id") @db.Char(36)
-  annualQuotaDays  Int      @default(12) @map("annual_quota_days")
-  createdAt        DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  id              String   @id @db.Char(36)
+  tenantId        String   @unique @map("tenant_id") @db.Char(36)
+  annualQuotaDays Int      @default(12) @map("annual_quota_days")
+  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
   workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -604,14 +753,14 @@ model LeavePolicy {
 }
 
 model MemberLeaveBalance {
-  id            String   @id @db.Char(36)
-  tenantId      String   @map("tenant_id") @db.Char(36)
-  memberId      String   @map("member_id") @db.Char(36)
-  year          Int
-  entitledDays  Int      @default(0) @map("entitled_days")
-  usedDays      Int      @default(0) @map("used_days")
-  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+  id           String   @id @db.Char(36)
+  tenantId     String   @map("tenant_id") @db.Char(36)
+  memberId     String   @map("member_id") @db.Char(36)
+  year         Int
+  entitledDays Int      @default(0) @map("entitled_days")
+  usedDays     Int      @default(0) @map("used_days")
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
   workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
@@ -623,21 +772,21 @@ model MemberLeaveBalance {
 }
 
 model LeaveRequest {
-  id                 String    @id @db.Char(36)
-  tenantId           String    @map("tenant_id") @db.Char(36)
-  memberId           String    @map("member_id") @db.Char(36)
-  leaveType          String    @map("leave_type") @db.VarChar(30)
-  startDate          DateTime  @map("start_date") @db.Date
-  endDate            DateTime  @map("end_date") @db.Date
-  workingDays        Int       @map("working_days")
-  reason             String    @db.VarChar(1000)
-  status             String    @default("PENDING") @db.VarChar(20)
-  currentApprovalLevel Int     @default(0) @map("current_approval_level")
-  reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
-  reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
-  rejectionReason    String?   @map("rejection_reason") @db.VarChar(1000)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  id                   String    @id @db.Char(36)
+  tenantId             String    @map("tenant_id") @db.Char(36)
+  memberId             String    @map("member_id") @db.Char(36)
+  leaveType            String    @map("leave_type") @db.VarChar(30)
+  startDate            DateTime  @map("start_date") @db.Date
+  endDate              DateTime  @map("end_date") @db.Date
+  workingDays          Int       @map("working_days")
+  reason               String    @db.VarChar(1000)
+  status               String    @default("PENDING") @db.VarChar(20)
+  currentApprovalLevel Int       @default(0) @map("current_approval_level")
+  reviewedByMemberId   String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt           DateTime? @map("reviewed_at") @db.DateTime(3)
+  rejectionReason      String?   @map("rejection_reason") @db.VarChar(1000)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
   workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   member    WorkspaceMember  @relation("LeaveRequestMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
@@ -650,22 +799,22 @@ model LeaveRequest {
 }
 
 model WarningLetter {
-  id                  String    @id @db.Char(36)
-  tenantId            String    @map("tenant_id") @db.Char(36)
-  memberId            String    @map("member_id") @db.Char(36)
-  level               String    @db.VarChar(10)
-  letterNumber        String    @map("letter_number") @db.VarChar(80)
-  issuedAt            DateTime  @map("issued_at") @db.Date
-  validUntil          DateTime  @map("valid_until") @db.Date
-  violationReason     String    @map("violation_reason") @db.VarChar(1000)
-  acknowledgedAt      DateTime? @map("acknowledged_at") @db.DateTime(3)
-  issuedByMemberId    String    @map("issued_by_member_id") @db.Char(36)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.DateTime(3)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+  id               String    @id @db.Char(36)
+  tenantId         String    @map("tenant_id") @db.Char(36)
+  memberId         String    @map("member_id") @db.Char(36)
+  level            String    @db.VarChar(10)
+  letterNumber     String    @map("letter_number") @db.VarChar(80)
+  issuedAt         DateTime  @map("issued_at") @db.Date
+  validUntil       DateTime  @map("valid_until") @db.Date
+  violationReason  String    @map("violation_reason") @db.VarChar(1000)
+  acknowledgedAt   DateTime? @map("acknowledged_at") @db.DateTime(3)
+  issuedByMemberId String    @map("issued_by_member_id") @db.Char(36)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
-  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  member    WorkspaceMember  @relation("WarningLetterMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
-  issuer    WorkspaceMember  @relation("WarningLetterIssuer", fields: [tenantId, issuedByMemberId], references: [tenantId, id], onDelete: Restrict)
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember @relation("WarningLetterMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  issuer    WorkspaceMember @relation("WarningLetterIssuer", fields: [tenantId, issuedByMemberId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, id])
   @@unique([tenantId, letterNumber])
@@ -688,15 +837,277 @@ model BroadcastMessage {
   createdAt         DateTime  @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
 
-  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  division  Division?        @relation(fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
-  location  OfficeLocation?  @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
-  creator   WorkspaceMember  @relation("BroadcastCreator", fields: [tenantId, createdByMemberId], references: [tenantId, id], onDelete: Restrict)
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  division  Division?       @relation(fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
+  location  OfficeLocation? @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+  creator   WorkspaceMember @relation("BroadcastCreator", fields: [tenantId, createdByMemberId], references: [tenantId, id], onDelete: Restrict)
 
   @@unique([tenantId, id])
   @@index([tenantId, publishedAt])
   @@index([tenantId, audienceType])
   @@map("broadcast_messages")
+}
+
+model CompanyProfile {
+  id             String   @id @db.Char(36)
+  tenantId       String   @unique @map("tenant_id") @db.Char(36)
+  legalName      String   @map("legal_name") @db.VarChar(160)
+  address        String?  @db.VarChar(500)
+  taxNumber      String?  @map("tax_number") @db.VarChar(80)
+  contactEmail   String?  @map("contact_email") @db.VarChar(255)
+  contactPhone   String?  @map("contact_phone") @db.VarChar(40)
+  operatingHours String?  @map("operating_hours") @db.VarChar(160)
+  createdAt      DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("company_profiles")
+}
+
+model Client {
+  id           String   @id @db.Char(36)
+  tenantId     String   @map("tenant_id") @db.Char(36)
+  name         String   @db.VarChar(160)
+  picName      String   @map("pic_name") @db.VarChar(120)
+  phone        String?  @db.VarChar(40)
+  address      String?  @db.VarChar(500)
+  latitude     Float    @db.Double
+  longitude    Float    @db.Double
+  radiusMeters Int      @default(100) @map("radius_meters")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedules ClientVisitSchedule[]
+  logs      ClientVisitLog[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("clients")
+}
+
+model ClientVisitSetting {
+  id                  String   @id @db.Char(36)
+  tenantId            String   @unique @map("tenant_id") @db.Char(36)
+  defaultRadiusMeters Int      @default(100) @map("default_radius_meters")
+  requirePhoto        Boolean  @default(true) @map("require_photo")
+  requireCheckout     Boolean  @default(true) @map("require_checkout")
+  allowOutsideRadius  Boolean  @default(true) @map("allow_outside_radius")
+  createdAt           DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("client_visit_settings")
+}
+
+model ClientVisitSchedule {
+  id                String   @id @db.Char(36)
+  tenantId          String   @map("tenant_id") @db.Char(36)
+  clientId          String   @map("client_id") @db.Char(36)
+  memberId          String   @map("member_id") @db.Char(36)
+  scheduledDate     DateTime @map("scheduled_date") @db.Date
+  plannedStartTime  String   @map("planned_start_time") @db.VarChar(5)
+  plannedEndTime    String   @map("planned_end_time") @db.VarChar(5)
+  purpose           String   @db.VarChar(1000)
+  status            String   @default("SCHEDULED") @db.VarChar(20)
+  createdByMemberId String   @map("created_by_member_id") @db.Char(36)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client    Client           @relation(fields: [tenantId, clientId], references: [tenantId, id], onDelete: Restrict)
+  member    WorkspaceMember  @relation("ClientVisitScheduleMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  creator   WorkspaceMember  @relation("ClientVisitScheduleCreator", fields: [tenantId, createdByMemberId], references: [tenantId, id], onDelete: Restrict)
+  logs      ClientVisitLog[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, scheduledDate, memberId])
+  @@index([tenantId, clientId, scheduledDate])
+  @@index([tenantId, status])
+  @@map("client_visit_schedules")
+}
+
+model ClientVisitLog {
+  id                 String    @id @db.Char(36)
+  tenantId           String    @map("tenant_id") @db.Char(36)
+  scheduleId         String    @map("schedule_id") @db.Char(36)
+  clientId           String    @map("client_id") @db.Char(36)
+  memberId           String    @map("member_id") @db.Char(36)
+  type               String    @db.VarChar(20)
+  timestampServer    DateTime  @map("timestamp_server") @db.DateTime(3)
+  latitude           Float     @db.Double
+  longitude          Float     @db.Double
+  accuracyMeters     Float     @map("accuracy_meters")
+  distanceMeters     Float     @map("distance_meters")
+  isInsideRadius     Boolean   @map("is_inside_radius")
+  photoUrl           String?   @map("photo_url") @db.VarChar(512)
+  photoHash          String?   @map("photo_hash") @db.Char(64)
+  photoFileName      String?   @map("photo_file_name") @db.VarChar(255)
+  photoContentType   String?   @map("photo_content_type") @db.VarChar(100)
+  notes              String?   @db.VarChar(1000)
+  durationMinutes    Int?      @map("duration_minutes")
+  validationStatus   String    @default("VALID") @map("validation_status") @db.VarChar(20)
+  reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedule  ClientVisitSchedule @relation(fields: [tenantId, scheduleId], references: [tenantId, id], onDelete: Cascade)
+  client    Client              @relation(fields: [tenantId, clientId], references: [tenantId, id], onDelete: Restrict)
+  member    WorkspaceMember     @relation("ClientVisitLogMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  reviewer  WorkspaceMember?    @relation("ClientVisitLogReviewer", fields: [tenantId, reviewedByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, scheduleId, type])
+  @@index([tenantId, memberId, timestampServer])
+  @@index([tenantId, clientId, timestampServer])
+  @@index([tenantId, validationStatus])
+  @@map("client_visit_logs")
+}
+
+model WorkProjection {
+  id                 String    @id @db.Char(36)
+  tenantId           String    @map("tenant_id") @db.Char(36)
+  memberId           String    @map("member_id") @db.Char(36)
+  title              String    @db.VarChar(160)
+  description        String?   @db.VarChar(1000)
+  periodType         String    @map("period_type") @db.VarChar(20)
+  startDate          DateTime  @map("start_date") @db.Date
+  endDate            DateTime  @map("end_date") @db.Date
+  progress           Int       @default(0)
+  status             String    @default("PLANNED") @db.VarChar(20)
+  blockerNote        String?   @map("blocker_note") @db.VarChar(1000)
+  reviewNote         String?   @map("review_note") @db.VarChar(1000)
+  reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
+  createdByMemberId  String    @map("created_by_member_id") @db.Char(36)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember  @relation("WorkProjectionMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  creator   WorkspaceMember  @relation("WorkProjectionCreator", fields: [tenantId, createdByMemberId], references: [tenantId, id], onDelete: Restrict)
+  reviewer  WorkspaceMember? @relation("WorkProjectionReviewer", fields: [tenantId, reviewedByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, memberId, startDate])
+  @@index([tenantId, status, endDate])
+  @@map("work_projections")
+}
+
+model PayrollSetting {
+  id                       String   @id @db.Char(36)
+  tenantId                 String   @unique @map("tenant_id") @db.Char(36)
+  currency                 String   @default("IDR") @db.VarChar(3)
+  baseSalary               Int      @default(0) @map("base_salary")
+  attendanceAllowance      Int      @default(0) @map("attendance_allowance")
+  transportAllowance       Int      @default(0) @map("transport_allowance")
+  mealAllowance            Int      @default(0) @map("meal_allowance")
+  overtimeHourlyRate       Int      @default(0) @map("overtime_hourly_rate")
+  lateDeductionPerMinute   Int      @default(0) @map("late_deduction_per_minute")
+  lateDeductionPerIncident Int      @default(0) @map("late_deduction_per_incident")
+  sp1Deduction             Int      @default(0) @map("sp1_deduction")
+  sp2Deduction             Int      @default(0) @map("sp2_deduction")
+  sp3Deduction             Int      @default(0) @map("sp3_deduction")
+  createdAt                DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt                DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("payroll_settings")
+}
+
+model MemberCompensation {
+  id                  String    @id @db.Char(36)
+  tenantId            String    @map("tenant_id") @db.Char(36)
+  memberId            String    @map("member_id") @db.Char(36)
+  baseSalary          Int?      @map("base_salary")
+  attendanceAllowance Int?      @map("attendance_allowance")
+  transportAllowance  Int?      @map("transport_allowance")
+  mealAllowance       Int?      @map("meal_allowance")
+  overtimeHourlyRate  Int?      @map("overtime_hourly_rate")
+  effectiveFrom       DateTime? @map("effective_from") @db.Date
+  notes               String?   @db.VarChar(500)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, memberId])
+  @@map("member_compensations")
+}
+
+model PayrollRun {
+  id                  String    @id @db.Char(36)
+  tenantId            String    @map("tenant_id") @db.Char(36)
+  periodYear          Int       @map("period_year")
+  periodMonth         Int       @map("period_month")
+  status              String    @default("DRAFT") @db.VarChar(20)
+  currency            String    @default("IDR") @db.VarChar(3)
+  totalGross          Int       @default(0) @map("total_gross")
+  totalDeductions     Int       @default(0) @map("total_deductions")
+  totalNet            Int       @default(0) @map("total_net")
+  notes               String?   @db.VarChar(1000)
+  generatedByMemberId String    @map("generated_by_member_id") @db.Char(36)
+  finalizedAt         DateTime? @map("finalized_at") @db.DateTime(3)
+  paidAt              DateTime? @map("paid_at") @db.DateTime(3)
+  paymentReference    String?   @map("payment_reference") @db.VarChar(120)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  generator WorkspaceMember @relation("PayrollRunGenerator", fields: [tenantId, generatedByMemberId], references: [tenantId, id], onDelete: Restrict)
+  items     PayrollItem[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, periodYear, periodMonth])
+  @@index([tenantId, status, periodYear, periodMonth])
+  @@map("payroll_runs")
+}
+
+model PayrollItem {
+  id                  String   @id @db.Char(36)
+  tenantId            String   @map("tenant_id") @db.Char(36)
+  runId               String   @map("run_id") @db.Char(36)
+  memberId            String   @map("member_id") @db.Char(36)
+  baseSalary          Int      @default(0) @map("base_salary")
+  attendanceAllowance Int      @default(0) @map("attendance_allowance")
+  transportAllowance  Int      @default(0) @map("transport_allowance")
+  mealAllowance       Int      @default(0) @map("meal_allowance")
+  overtimeMinutes     Int      @default(0) @map("overtime_minutes")
+  overtimeRate        Int      @default(0) @map("overtime_rate")
+  overtimePay         Int      @default(0) @map("overtime_pay")
+  lateMinutes         Int      @default(0) @map("late_minutes")
+  lateIncidents       Int      @default(0) @map("late_incidents")
+  lateDeduction       Int      @default(0) @map("late_deduction")
+  spLevel             String?  @map("sp_level") @db.VarChar(10)
+  spDeduction         Int      @default(0) @map("sp_deduction")
+  leaveDays           Int      @default(0) @map("leave_days")
+  permitDays          Int      @default(0) @map("permit_days")
+  grossPay            Int      @default(0) @map("gross_pay")
+  totalDeductions     Int      @default(0) @map("total_deductions")
+  netPay              Int      @default(0) @map("net_pay")
+  createdAt           DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run       PayrollRun      @relation(fields: [tenantId, runId], references: [tenantId, id], onDelete: Cascade)
+  member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, runId, memberId])
+  @@index([tenantId, memberId, createdAt])
+  @@map("payroll_items")
 }
 
 model InAppNotification {

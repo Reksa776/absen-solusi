@@ -75,11 +75,13 @@ export function OrganizationManager({
   divisions,
   positions,
   canManage,
+  mode = "all",
 }: {
   workspaceId: string;
   divisions: Division[];
   positions: Position[];
   canManage: boolean;
+  mode?: "all" | "divisions" | "positions";
 }) {
   const router = useRouter();
   const [editingDivisionId, setEditingDivisionId] = useState<string | null>(null);
@@ -221,7 +223,7 @@ export function OrganizationManager({
   }
 
   return (
-    <section>
+    <section className="organization-manager" data-mode={mode}>
       {error ? (
         <p role="alert" className="alert">
           {error}
@@ -234,7 +236,7 @@ export function OrganizationManager({
       ) : null}
 
       {canManage ? (
-        <form onSubmit={submitDivision} className="form-card" aria-label="Form divisi">
+        <form onSubmit={submitDivision} className="form-card" id="division-form" aria-label="Form divisi">
           <div className="table-head" style={{ padding: "0 0 0.85rem", borderBottom: "none" }}>
             <div>
               <h2 className="section-title">
@@ -314,7 +316,7 @@ export function OrganizationManager({
         </form>
       ) : null}
 
-      <div className="table-wrap">
+      <div className="table-wrap" id="division-list">
         <div className="table-head">
           <div>
             <h2 className="section-title">Daftar divisi</h2>
@@ -392,6 +394,7 @@ export function OrganizationManager({
         <form
           onSubmit={submitPosition}
           className="form-card"
+          id="position-form"
           style={{ marginTop: "1.25rem" }}
           aria-label="Form jabatan"
         >
@@ -495,7 +498,7 @@ export function OrganizationManager({
         </form>
       ) : null}
 
-      <div className="table-wrap">
+      <div className="table-wrap" id="position-list">
         <div className="table-head">
           <div>
             <h2 className="section-title">Daftar jabatan</h2>

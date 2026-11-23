@@ -179,14 +179,178 @@ textarea {
   max-width: 11.5rem;
 }
 
-.nav-group-label {
-  margin: 0.35rem 0 0.3rem;
-  padding: 0 0.6rem;
-  font-size: 0.67rem;
+.nav-group {
+  margin-bottom: 0.18rem;
+}
+
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #334155;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.09em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.nav-group-toggle:hover {
+  background: var(--table-head);
+  color: var(--ink);
+}
+
+.nav-group-toggle[aria-expanded="true"] {
+  color: var(--green-800);
+}
+
+.nav-group-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-chevron {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+
+.nav-group-toggle[aria-expanded="true"] .nav-chevron {
+  transform: rotate(225deg);
+}
+
+.nav-group-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition: grid-template-rows 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.nav-group-panel--open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 0.2s ease, visibility 0s linear 0s;
+}
+
+.nav-group-panel > div {
+  overflow: hidden;
+}
+
+.nav-group-panel .nav-list {
+  margin: 0.1rem 0 0.3rem 0.55rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--line-soft);
+}
+
+.nav-group-panel .nav-link {
+  padding: 0.38rem 0.55rem;
+  font-size: 0.81rem;
+}
+
+.nav-standalone {
+  margin-top: 0.18rem;
+}
+
+.nav-standalone .nav-link {
+  font-weight: 700;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pattern-days {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+  min-width: 0;
+}
+
+.pattern-day-head,
+.pattern-day-row {
+  display: grid;
+  grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)) 4.5rem;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pattern-day-head {
+  padding: 0 0.45rem 0.35rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--muted);
+}
+
+.pattern-day-row {
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+}
+
+.pattern-day-row > strong {
+  font-size: 0.8rem;
+}
+
+.field--compact {
+  gap: 0;
+}
+
+.field--compact input {
+  padding: 0.32rem 0.4rem;
+  font-size: 0.78rem;
+}
+
+.modal--wide {
+  width: min(52rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.organization-manager[data-mode="divisions"] #position-form,
+.organization-manager[data-mode="divisions"] #position-list,
+.organization-manager[data-mode="positions"] #division-form,
+.organization-manager[data-mode="positions"] #division-list {
+  display: none;
 }
 
 .nav-list {
@@ -1284,12 +1448,29 @@ table.data {
     padding: 0.85rem 1rem;
   }
 
-  .sidebar nav[aria-label="Navigasi workspace"] .nav-list {
-    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  .sidebar nav[aria-label="Navigasi workspace"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.2rem 0.6rem;
   }
 
-  .sidebar nav[aria-label="Navigasi workspace"] .nav-group-label {
+  .nav-group-panel .nav-list {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+  }
+
+  .pattern-day-head {
     display: none;
+  }
+
+  .pattern-day-row {
+    grid-template-columns: 4.5rem repeat(2, minmax(0, 1fr));
+  }
+
+  .pattern-day-row .field--check {
+    grid-column: 1 / -1;
+    padding-bottom: 0.2rem;
   }
 
   .sidebar-footer {
@@ -1354,5 +1535,30 @@ table.data {
 
   .date-pill {
     font-size: 0.7rem;
+  }
+}
+
+/* ---------- Print slip gaji ---------- */
+
+@media print {
+  .sidebar,
+  .topbar,
+  .page-head .btn,
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell,
+  .shell-main,
+  .page {
+    display: block;
+    max-width: none;
+    padding: 0;
+    background: #fff;
+  }
+
+  .card {
+    border-color: #d8e0db;
+    break-inside: avoid;
   }
 }

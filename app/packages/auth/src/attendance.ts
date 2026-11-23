@@ -44,6 +44,8 @@ export type RecordAttendanceInput = {
   deviceIdentity?: DeviceIdentity | null;
   workMode?: "OFFICE" | "WFH" | "OUT_OF_TOWN";
   outOfTownReason?: string | null;
+  notes?: string | null;
+  faceVerified?: boolean;
   photo: AttendancePhoto;
   ip?: string | null;
   userAgent?: string | null;
@@ -64,6 +66,8 @@ export type AttendanceResult = {
   outOfRadius?: boolean;
   approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
   outOfTownReason?: string | null;
+  notes?: string | null;
+  faceVerified?: boolean;
 };
 
 function assertCoordinate(value: number, label: string, min: number, max: number): void {
@@ -160,6 +164,8 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
         where: { isActive: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
+      const attendanceSetting = await db.attendanceSetting.findFirst();
+      const radiusPolicy = attendanceSetting?.gpsRadiusPolicy ?? "STRICT";
       const timezone = offices[0]?.timezone ?? "UTC";
       const localMinutes = zonedMinutesOfDay(now, timezone);
       const today = utcDay(now);
@@ -247,11 +253,12 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             office.latitude,
             office.longitude,
           );
-          if (distance > office.radiusMeters) {
+          if (distance > office.radiusMeters && radiusPolicy === "STRICT") {
             throw new HttpError(403, "GEOFENCE_VIOLATION", "Anda berada di luar radius kantor");
           }
         } else {
-          // Tanpa penugasan: pilih titik aktif terdekat yang berada dalam radius.
+          // Tanpa penugasan: pilih titik terdekat. Di luar radius hanya
+          // ditolak saat kebijakan STRICT; FLAG menandai untuk approval.
           let best: { office: (typeof offices)[number]; distance: number } | null = null;
           for (const candidate of offices) {
             const candidateDistance = haversineMeters(
@@ -267,6 +274,19 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
               best = { office: candidate, distance: candidateDistance };
             }
           }
+          if (!best && radiusPolicy !== "STRICT") {
+            for (const candidate of offices) {
+              const candidateDistance = haversineMeters(
+                input.latitude,
+                input.longitude,
+                candidate.latitude,
+                candidate.longitude,
+              );
+              if (!best || candidateDistance < best.distance) {
+                best = { office: candidate, distance: candidateDistance };
+              }
+            }
+          }
           if (!best) {
             throw new HttpError(403, "GEOFENCE_VIOLATION", "Anda berada di luar radius kantor");
           }
@@ -274,10 +294,48 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           distance = best.distance;
         }
       }
-      const outOfRadius = isOutOfTown
-        ? office === null || distance > office.radiusMeters
-        : false;
-      const approvalStatus = isOutOfTown ? "PENDING" : "APPROVED";
+      const outOfRadius = office ? distance > office.radiusMeters : isOutOfTown;
+      const approvalStatus =
+        isOutOfTown || (outOfRadius && radiusPolicy === "FLAG") ? "PENDING" : "APPROVED";
+
+      if (attendanceSetting) {
+        const shiftRule = shiftForDate(workDate);
+        const selectedOffice = office ? offices.find((row) => row.id === office?.id) ?? null : null;
+        const startTime = shiftRule?.startTime ?? selectedOffice?.workStart;
+        const endTime = shiftRule?.endTime ?? selectedOffice?.workEnd;
+        if (startTime && endTime) {
+          const zone = selectedOffice?.timezone ?? timezone;
+          const localNow = zonedMinutesOfDay(now, zone);
+          const startMinute = shiftMinutes(startTime);
+          const endMinuteRaw = shiftMinutes(endTime);
+          const endMinute = endMinuteRaw <= startMinute ? endMinuteRaw + 1440 : endMinuteRaw;
+          const adjustedNow = endMinute > 1440 && localNow < startMinute ? localNow + 1440 : localNow;
+          if (
+            input.type === "CHECK_IN" &&
+            localNow < startMinute - attendanceSetting.earliestCheckInMinutes
+          ) {
+            throw new HttpError(
+              403,
+              "CHECK_IN_TOO_EARLY",
+              "Batas awal check-in belum tercapai",
+            );
+          }
+          if (
+            input.type === "CHECK_OUT" &&
+            adjustedNow > endMinute + attendanceSetting.maxCheckOutMinutes
+          ) {
+            throw new HttpError(
+              403,
+              "CHECK_OUT_WINDOW_CLOSED",
+              "Batas waktu check-out sudah berakhir",
+            );
+          }
+        }
+      }
+      const notes = (input.notes ?? "").trim();
+      if (notes.length > 500) {
+        throw new HttpError(400, "INVALID_NOTES", "Catatan presensi maksimal 500 karakter");
+      }
 
       const previous = await db.attendanceLog.findFirst({
         where: { memberId: input.ctx.memberId },
@@ -327,6 +385,8 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             workMode,
             outOfRadius,
             outOfTownReason: isOutOfTown ? outOfTownReason : null,
+            notes: notes || null,
+            faceVerified: Boolean(input.faceVerified),
             approvalStatus,
             isMockLocation: false,
             isSuspicious: suspiciousReasons.length > 0,
@@ -377,6 +437,8 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           outOfRadius,
           approvalStatus: approvalStatus as "PENDING" | "APPROVED",
           outOfTownReason: isOutOfTown ? outOfTownReason : null,
+          notes: notes || null,
+          faceVerified: Boolean(input.faceVerified),
         };
       } catch (error) {
         if (typeof error === "object" && error !== null && "code" in error) {

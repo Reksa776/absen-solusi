@@ -4,13 +4,16 @@ import '../api/api_client.dart';
 import '../models/correction.dart';
 import '../models/employee_request.dart';
 import '../models/leave.dart';
+import '../models/overtime_schedule.dart';
 import '../models/work_permit.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import 'client_visits_screen.dart';
 import 'correction_form_screen.dart';
 import 'employee_requests_screen.dart';
 import 'leave_form_screen.dart';
 import 'work_permit_form_screen.dart';
+import 'work_projections_screen.dart';
 
 /// Tab Pengajuan: satu tempat untuk revisi absensi, lembur, dan WFH.
 class RequestsTab extends StatefulWidget {
@@ -48,6 +51,7 @@ class _RequestsTabState extends State<RequestsTab> {
   String _segment = 'CORRECTION';
   List<CorrectionRequest> _corrections = const [];
   List<OvertimeRequest> _overtime = const [];
+  List<OvertimeSchedule> _overtimeSchedules = const [];
   List<WfhRequest> _wfh = const [];
   List<WorkPermitRequest> _permits = const [];
   List<LeaveRequest> _leave = const [];
@@ -70,6 +74,7 @@ class _RequestsTabState extends State<RequestsTab> {
       final results = await Future.wait([
         widget.auth.api.myCorrections(),
         widget.auth.api.myOvertime(),
+        widget.auth.api.myOvertimeSchedules(),
         widget.auth.api.myWfh(),
         widget.auth.api.myWorkPermits(),
         widget.auth.api.myLeave(),
@@ -79,10 +84,11 @@ class _RequestsTabState extends State<RequestsTab> {
       setState(() {
         _corrections = results[0] as List<CorrectionRequest>;
         _overtime = results[1] as List<OvertimeRequest>;
-        _wfh = results[2] as List<WfhRequest>;
-        _permits = results[3] as List<WorkPermitRequest>;
-        _leave = results[4] as List<LeaveRequest>;
-        _balance = results[5] as LeaveBalance;
+        _overtimeSchedules = results[2] as List<OvertimeSchedule>;
+        _wfh = results[3] as List<WfhRequest>;
+        _permits = results[4] as List<WorkPermitRequest>;
+        _leave = results[5] as List<LeaveRequest>;
+        _balance = results[6] as LeaveBalance;
         _loading = false;
       });
     } on ApiException catch (error) {
@@ -287,6 +293,38 @@ class _RequestsTabState extends State<RequestsTab> {
                     label: const Text('Buat Pengajuan'),
                   ),
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const Key('requests-client-visits'),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                ClientVisitsScreen(auth: widget.auth),
+                          ),
+                        ),
+                        icon: const Icon(Icons.location_on_outlined, size: 16),
+                        label: const Text('Kunjungan Client'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const Key('requests-work-projections'),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                WorkProjectionsScreen(auth: widget.auth),
+                          ),
+                        ),
+                        icon: const Icon(Icons.track_changes, size: 16),
+                        label: const Text('Proyeksi Kerja'),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -428,6 +466,17 @@ class _RequestsTabState extends State<RequestsTab> {
   List<Widget> _cards() {
     if (_segment == 'OVERTIME') {
       return [
+        for (final schedule in _overtimeSchedules)
+          _requestCard(
+            key: Key('overtime-schedule-${schedule.id}'),
+            icon: Icons.event_available_outlined,
+            title: 'Jadwal lembur • ${_date(schedule.date)}',
+            subtitle:
+                '${schedule.startTime}–${schedule.endTime} • '
+                '${schedule.durationMinutes} menit',
+            status: 'APPROVED',
+            statusLabel: schedule.statusLabel,
+          ),
         for (final row in _overtime)
           _requestCard(
             icon: Icons.more_time,
@@ -542,6 +591,7 @@ class _RequestsTabState extends State<RequestsTab> {
   }
 
   Widget _requestCard({
+    Key? key,
     required IconData icon,
     required String title,
     required String subtitle,
@@ -549,6 +599,7 @@ class _RequestsTabState extends State<RequestsTab> {
     required String statusLabel,
   }) {
     return Container(
+      key: key,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surface,

@@ -49,6 +49,8 @@ export async function POST(request: Request): Promise<Response> {
         typeof form.get("out_of_town_reason") === "string"
           ? String(form.get("out_of_town_reason"))
           : null,
+      notes: typeof form.get("notes") === "string" ? String(form.get("notes")) : null,
+      faceVerified: form.get("face_verified") === "true",
       photo: await photoField(form),
       ip: getClientIp(request),
       userAgent: request.headers.get("user-agent"),

@@ -7,6 +7,7 @@ import 'package:http_parser/http_parser.dart';
 import '../core/app_config.dart';
 import '../models/attendance_log.dart';
 import '../models/broadcast.dart';
+import '../models/client_visit.dart';
 import '../models/correction.dart';
 import '../models/leave.dart';
 import '../models/employee_request.dart';
@@ -14,6 +15,7 @@ import '../models/in_app_notification.dart';
 import '../models/member_device.dart';
 import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
+import '../models/overtime_schedule.dart';
 import '../models/organization.dart';
 import '../models/profile_photo.dart';
 import '../models/schedule.dart';
@@ -362,6 +364,18 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<List<OvertimeSchedule>> myOvertimeSchedules() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/overtime/schedules'),
+      headers: await _authHeaders(),
+    );
+    final json = _decodeObject(response);
+    return (json['schedules'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(OvertimeSchedule.fromJson)
+        .toList(growable: false);
+  }
+
   Future<WfhRequest> submitWfh({
     required DateTime date,
     required String reason,
@@ -605,6 +619,119 @@ class ApiClient {
       headers: await _authHeaders(json: true),
     );
     _decodeObject(response);
+  }
+
+  Future<ClientVisitDay> myClientVisits({DateTime? date}) async {
+    final uri = Uri.parse('$baseUrl/api/mobile/client-visits').replace(
+      queryParameters: date == null ? null : {'date': _dateOnly(date)},
+    );
+    final response = await _client.get(uri, headers: await _authHeaders());
+    return ClientVisitDay.fromJson(_decodeObject(response));
+  }
+
+  Future<ClientVisitLog> recordClientVisit({
+    required String scheduleId,
+    required String type,
+    required double latitude,
+    required double longitude,
+    required double accuracyMeters,
+    required Uint8List photoBytes,
+    String? notes,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/mobile/client-visits/$scheduleId'),
+    );
+    request.headers.addAll(await _authHeaders());
+    request.fields.addAll({
+      'type': type,
+      'latitude': '$latitude',
+      'longitude': '$longitude',
+      'accuracy_meters': '$accuracyMeters',
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    });
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'photo',
+        photoBytes,
+        filename: 'kunjungan.jpg',
+        contentType: MediaType('image', 'jpeg'),
+      ),
+    );
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    return ClientVisitLog.fromJson(_decodeObject(response));
+  }
+
+  Future<List<WorkProjection>> myWorkProjections() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/work-projections'),
+      headers: await _authHeaders(),
+    );
+    final json = _decodeObject(response);
+    return (json['projections'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(WorkProjection.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<WorkProjection> createWorkProjection({
+    required String title,
+    required String periodType,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? description,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/mobile/work-projections'),
+      headers: await _authHeaders(json: true),
+      body: jsonEncode({
+        'title': title,
+        'periodType': periodType,
+        'startDate': _dateOnly(startDate),
+        'endDate': _dateOnly(endDate),
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+      }),
+    );
+    return WorkProjection.fromJson(_decodeObject(response));
+  }
+
+  Future<WorkProjection> updateWorkProjection({
+    required String projectionId,
+    required int progress,
+    String? status,
+    String? blockerNote,
+  }) async {
+    final payload = <String, Object>{'progress': progress};
+    if (status != null) payload['status'] = status;
+    if (blockerNote != null) payload['blockerNote'] = blockerNote;
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/mobile/work-projections/$projectionId'),
+      headers: await _authHeaders(json: true),
+      body: jsonEncode(payload),
+    );
+    return WorkProjection.fromJson(_decodeObject(response));
+  }
+
+  Future<List<Payslip>> myPayslips() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/payslips'),
+      headers: await _authHeaders(),
+    );
+    final json = _decodeObject(response);
+    return (json['payslips'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(Payslip.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<Payslip> payslip(String runId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/payslips/$runId'),
+      headers: await _authHeaders(),
+    );
+    return Payslip.fromJson(_decodeObject(response));
   }
 
   String photoUrl(String path) {

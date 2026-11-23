@@ -19,8 +19,71 @@ test("organisasi: halaman admin, CRUD, dan navigasi terhubung", () => {
   assert.match(manager, /"DELETE"/);
   assert.match(manager, /role="alert"/);
   assert.match(manager, /className="num"/);
-  assert.match(sidebar, /settings\/organization/);
-  assert.match(sidebar, /organization: "Divisi & jabatan"/);
+  assert.match(sidebar, /slug: "divisions"/);
+  assert.match(sidebar, /slug: "positions"/);
+  assert.match(sidebar, /slug: "work-schedules"/);
+  assert.match(sidebar, /label: "Kelola Karyawan"/);
+  assert.doesNotMatch(sidebar, /settings\/organization/);
+});
+
+test("sidebar operasional: seluruh sub-nav standar Kerjoo punya halaman nyata", () => {
+  const sidebar = read("workspaces/[id]/workspace-sidebar.tsx");
+  for (const label of [
+    "Divisi",
+    "Jabatan",
+    "Lokasi Kehadiran",
+    "Data Karyawan",
+    "Jadwal Hari Kerja",
+    "Jadwal Shift",
+    "Kirim Surat Peringatan",
+    "Hari Kerja",
+    "Kehadiran Harian",
+    "Ringkasan Kehadiran",
+    "Review Kehadiran Luar Kota",
+    "Revisi Kehadiran",
+    "Persetujuan Presensi",
+    "Persetujuan Perangkat",
+    "Persetujuan Foto Profil",
+    "Rekap Catatan Presensi",
+    "Pengaturan Kehadiran",
+    "Jadwal",
+    "Permohonan",
+    "Laporan",
+    "Kunjungan",
+    "Virtualisasi Kunjungan",
+    "Ringkasan Kunjungan",
+    "AI Insight",
+    "Client",
+    "Jadwal Kunjungan",
+    "Proyeksi",
+    "Broadcast",
+    "Hitung",
+    "Pembayaran",
+    "Perusahaan",
+    "Pengaturan Mobile",
+    "Alur Persetujuan",
+    "Kalender Libur",
+    "Akun Admin",
+    "Panduan",
+  ]) {
+    assert.match(sidebar, new RegExp(`label: "${label}"`));
+  }
+  for (const page of [
+    "workspaces/[id]/divisions/page.tsx",
+    "workspaces/[id]/positions/page.tsx",
+    "workspaces/[id]/work-patterns/page.tsx",
+    "workspaces/[id]/work-schedules/page.tsx",
+    "workspaces/[id]/attendance/page.tsx",
+    "workspaces/[id]/attendance/summary/page.tsx",
+    "workspaces/[id]/attendance/approvals/page.tsx",
+    "workspaces/[id]/attendance/notes/page.tsx",
+    "workspaces/[id]/attendance/settings/page.tsx",
+    "workspaces/[id]/overtime/schedule/page.tsx",
+    "workspaces/[id]/overtime/settings/page.tsx",
+    "workspaces/[id]/client-visits/insights/page.tsx",
+  ]) {
+    assert.ok(read(page).length > 500, `${page} harus berupa halaman nyata`);
+  }
 });
 
 test("organisasi: penugasan karyawan dan filter laporan memakai divisi", () => {

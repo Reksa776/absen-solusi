@@ -113,6 +113,29 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "attendance.read",
   },
+  "/api/workspaces/:id/attendance/settings": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "attendance.read" },
+      PATCH: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/attendance/records": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/attendance/records/export": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/attendance/approvals": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/attendance/approvals/:attendanceId": {
+    kind: "permission",
+    permission: "correction.review",
+  },
   "/api/notifications/register-device": {
     kind: "permission",
     permission: "workspace.read",
@@ -180,6 +203,24 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/overtime/me": { kind: "permission", permission: "workspace.read" },
   "/api/overtime/:id": { kind: "permission", permission: "correction.review" },
   "/api/workspaces/:id/overtime": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/overtime/settings": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "correction.review" },
+      PATCH: { kind: "permission", permission: "correction.review" },
+    },
+  },
+  "/api/workspaces/:id/overtime/schedules": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "correction.review" },
+      POST: { kind: "permission", permission: "correction.review" },
+    },
+  },
+  "/api/workspaces/:id/overtime/schedules/:scheduleId": {
     kind: "permission",
     permission: "correction.review",
   },
@@ -258,6 +299,28 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/workspaces/:id/shifts/:shiftId": {
     kind: "permission",
     permission: "office.manage",
+  },
+  "/api/workspaces/:id/work-patterns": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/work-patterns/:patternId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/work-pattern-assignments": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/work-pattern-assignments/:memberId": {
+    kind: "permission",
+    permission: "member.manage",
   },
   "/api/workspaces/:id/shift-assignments": {
     kind: "permission",
@@ -373,6 +436,138 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
       GET: { kind: "permission", permission: "workspace.manage" },
       POST: { kind: "permission", permission: "workspace.manage" },
     },
+  },
+  "/api/workspaces/:id/clients": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "attendance.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/clients/:clientId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/client-visits": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "attendance.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/client-visits/logs": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/client-visits/logs/:logId/review": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/client-visits/logs/:logId/photo": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/workspaces/:id/client-visits/summary": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/client-visits/insights": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/client-visits/settings": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "attendance.read" },
+      PATCH: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/work-projections": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/work-projections/:projectionId/review": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/settings/company": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "workspace.read" },
+      PATCH: { kind: "permission", permission: "workspace.manage" },
+    },
+  },
+  "/api/workspaces/:id/payroll/settings": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/compensations": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/compensations/:memberId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/preview": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/runs": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/runs/:runId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/runs/:runId/finalize": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/runs/:runId/pay": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/runs/:runId/csv": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/payroll/slips/:runId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/mobile/client-visits": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/client-visits/:scheduleId": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/client-visits/logs/:logId/photo": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/work-projections": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/work-projections/:projectionId": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/payslips": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/payslips/:runId": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/overtime/schedules": {
+    kind: "permission",
+    permission: "workspace.read",
   },
 };
 

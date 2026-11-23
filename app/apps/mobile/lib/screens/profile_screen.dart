@@ -17,6 +17,7 @@ import '../services/offline_attendance_queue.dart';
 import '../theme/app_theme.dart';
 import '../widgets/update_dialog.dart';
 import 'camera_screen.dart';
+import 'payslips_screen.dart';
 import 'schedule_screen.dart';
 import 'warning_letters_screen.dart';
 
@@ -433,6 +434,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _organizationCard(),
               const SizedBox(height: 12),
               _scheduleCard(),
+              const SizedBox(height: 12),
+              _payslipCard(),
               const SizedBox(height: 12),
               _reminderCard(),
               const SizedBox(height: 12),
@@ -1116,6 +1119,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               icon: const Icon(Icons.event_note_outlined, size: 16),
               label: const Text('Lihat jadwal & hari libur'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _payslipCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.receipt_long_outlined,
+                size: 15,
+                color: AppColors.muted,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Slip gaji',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              const Text(
+                'FINALIZED / PAID',
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Lihat rincian penerimaan, potongan, dan take home pay milik Anda.',
+            style: TextStyle(fontSize: 11.5, height: 1.4, color: AppColors.muted),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const Key('profile-payslips'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => PayslipsScreen(auth: widget.auth),
+                ),
+              ),
+              icon: const Icon(Icons.payments_outlined, size: 16),
+              label: const Text('Buka slip gaji'),
             ),
           ),
         ],
