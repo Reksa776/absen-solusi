@@ -33,6 +33,7 @@ export async function assertWorkspaceWriteLimit(
     | "workspace.role"
     | "workspace.switch"
     | "workspace.office"
+    | "workspace.organization"
     | "correction.bulk",
 ): Promise<void> {
   const outcome = await enforceUserRateLimit({ userId, bucket });

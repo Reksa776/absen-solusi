@@ -53,6 +53,8 @@ model Workspace {
   name      String   @db.VarChar(120)
   slug      String   @unique @db.VarChar(80)
   status    String   @default("ACTIVE") @db.VarChar(20)
+  requireDeviceApproval Boolean @default(true) @map("require_device_approval")
+  autoApproveFirstDevice Boolean @default(true) @map("auto_approve_first_device")
   createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 
@@ -68,8 +70,18 @@ model Workspace {
   wfhRequests      WfhRequest[]
   corrections      CorrectionRequest[]
   holidays         WorkspaceHoliday[]
+  divisions        Division[]
+  positions        Position[]
   deviceTokens     DeviceToken[]
+  memberDevices    MemberDevice[]
+  approvalWorkflows ApprovalWorkflow[]
   inAppNotifications InAppNotification[]
+  workPermits      WorkPermit[]
+  leavePolicy      LeavePolicy?
+  leaveBalances    MemberLeaveBalance[]
+  leaveRequests    LeaveRequest[]
+  warningLetters   WarningLetter[]
+  broadcasts       BroadcastMessage[]
 
   @@map("workspaces")
 }
@@ -80,6 +92,14 @@ model WorkspaceMember {
   userId           String    @map("user_id") @db.Char(36)
   status           String    @default("ACTIVE") @db.VarChar(20)
   officeLocationId String?   @map("office_location_id") @db.Char(36)
+  divisionId       String?   @map("division_id") @db.Char(36)
+  positionId       String?   @map("position_id") @db.Char(36)
+  photoUrl         String?   @map("photo_url") @db.VarChar(512)
+  photoStatus      String    @default("NONE") @map("photo_status") @db.VarChar(20)
+  photoSubmittedAt DateTime? @map("photo_submitted_at") @db.DateTime(3)
+  photoReviewedAt  DateTime? @map("photo_reviewed_at") @db.DateTime(3)
+  photoReviewedByMemberId String? @map("photo_reviewed_by_member_id") @db.Char(36)
+  photoRejectionReason String? @map("photo_rejection_reason") @db.VarChar(500)
   joinedAt         DateTime? @map("joined_at") @db.DateTime(3)
   createdAt        DateTime  @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
@@ -87,22 +107,35 @@ model WorkspaceMember {
   workspace           Workspace           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedOffice      OfficeLocation?     @relation("MemberAssignedOffice", fields: [tenantId, officeLocationId], references: [tenantId, id], onDelete: Restrict)
+  division            Division?           @relation("MemberDivision", fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
+  position            Position?           @relation("MemberPosition", fields: [tenantId, positionId], references: [tenantId, id], onDelete: Restrict)
   roles               MemberRole[]
   attendanceLogs      AttendanceLog[]
   corrections         CorrectionRequest[] @relation("CorrectionMember")
   correctionsReviewed CorrectionRequest[] @relation("CorrectionReviewer")
   deviceTokens        DeviceToken[]       @relation("DeviceTokenMember")
+  devices             MemberDevice[]
   shifts              MemberShift[]
   overtimeRequests    OvertimeRequest[]   @relation("OvertimeMember")
   overtimeReviewed    OvertimeRequest[]   @relation("OvertimeReviewer")
   wfhRequests         WfhRequest[]        @relation("WfhMember")
   wfhReviewed         WfhRequest[]        @relation("WfhReviewer")
   inAppNotifications  InAppNotification[]
+  workPermits         WorkPermit[]        @relation("WorkPermitMember")
+  workPermitsReviewed WorkPermit[]        @relation("WorkPermitReviewer")
+  leaveBalances       MemberLeaveBalance[]
+  leaveRequests       LeaveRequest[]      @relation("LeaveRequestMember")
+  leaveRequestsReviewed LeaveRequest[]    @relation("LeaveRequestReviewer")
+  warningLetters      WarningLetter[]     @relation("WarningLetterMember")
+  warningLettersIssued WarningLetter[]    @relation("WarningLetterIssuer")
+  broadcasts          BroadcastMessage[]  @relation("BroadcastCreator")
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
   @@index([userId])
   @@index([tenantId, officeLocationId])
+  @@index([tenantId, divisionId])
+  @@index([tenantId, positionId])
   @@map("workspace_members")
 }
 
@@ -221,6 +254,7 @@ model OfficeLocation {
   workspace       Workspace         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignedMembers WorkspaceMember[] @relation("MemberAssignedOffice")
   attendanceLogs  AttendanceLog[]   @relation("AttendanceOffice")
+  broadcasts      BroadcastMessage[]
 
   @@unique([tenantId, id])
   @@index([tenantId, isActive])
@@ -240,6 +274,13 @@ model AttendanceLog {
   distanceMeters   Float    @map("distance_meters")
   officeLocationId String?  @map("office_location_id") @db.Char(36)
   workMode         String   @default("OFFICE") @map("work_mode") @db.VarChar(20)
+  outOfRadius      Boolean  @default(false) @map("out_of_radius")
+  outOfTownReason  String?  @map("out_of_town_reason") @db.VarChar(500)
+  approvalStatus   String   @default("APPROVED") @map("approval_status") @db.VarChar(20)
+  currentApprovalLevel Int  @default(0) @map("current_approval_level")
+  reviewedByMemberId String? @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt       DateTime? @map("reviewed_at") @db.DateTime(3)
+  rejectionReason  String?  @map("rejection_reason") @db.VarChar(500)
   isMockLocation   Boolean  @map("is_mock_location")
   isSuspicious     Boolean  @default(false) @map("is_suspicious")
   isCorrection     Boolean  @default(false) @map("is_correction")
@@ -266,7 +307,65 @@ model AttendanceLog {
   @@index([tenantId, workDate])
   @@index([tenantId, memberId, workDate])
   @@index([tenantId, type, workDate])
+  @@index([tenantId, approvalStatus, createdAt])
   @@map("attendance_logs")
+}
+
+model MemberDevice {
+  id         String   @id @db.Char(36)
+  tenantId   String   @map("tenant_id") @db.Char(36)
+  memberId   String   @map("member_id") @db.Char(36)
+  deviceId   String   @map("device_id") @db.VarChar(128)
+  deviceName String   @map("device_name") @db.VarChar(120)
+  platform   String   @db.VarChar(20)
+  status     String   @default("PENDING") @db.VarChar(20)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.DateTime(3)
+  approvedByMemberId String? @map("approved_by_member_id") @db.Char(36)
+  approvedAt DateTime? @map("approved_at") @db.DateTime(3)
+  revokedAt  DateTime? @map("revoked_at") @db.DateTime(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, memberId, deviceId])
+  @@index([tenantId, status, lastSeenAt])
+  @@index([tenantId, memberId, status])
+  @@index([tenantId, memberId, approvedByMemberId])
+  @@map("member_devices")
+}
+
+model ApprovalWorkflow {
+  id          String   @id @db.Char(36)
+  tenantId    String   @map("tenant_id") @db.Char(36)
+  requestType String   @map("request_type") @db.VarChar(30)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  steps     ApprovalStep[]
+
+  @@unique([tenantId, requestType])
+  @@unique([tenantId, id])
+  @@map("approval_workflows")
+}
+
+model ApprovalStep {
+  id              String   @id @db.Char(36)
+  tenantId        String   @map("tenant_id") @db.Char(36)
+  workflowId      String   @map("workflow_id") @db.Char(36)
+  level           Int
+  approverRoleKey String   @map("approver_role_key") @db.VarChar(40)
+  createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  workflow ApprovalWorkflow @relation(fields: [tenantId, workflowId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, workflowId, level])
+  @@index([tenantId, workflowId])
+  @@map("approval_steps")
 }
 
 model DeviceToken {
@@ -300,6 +399,49 @@ model WorkspaceHoliday {
   @@unique([tenantId, date])
   @@index([tenantId, date])
   @@map("workspace_holidays")
+}
+
+model Division {
+  id          String   @id @db.Char(36)
+  tenantId    String   @map("tenant_id") @db.Char(36)
+  name        String   @db.VarChar(120)
+  code        String?  @db.VarChar(30)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  positions Position[]
+  members   WorkspaceMember[] @relation("MemberDivision")
+  broadcasts BroadcastMessage[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("divisions")
+}
+
+model Position {
+  id          String   @id @db.Char(36)
+  tenantId    String   @map("tenant_id") @db.Char(36)
+  divisionId  String?  @map("division_id") @db.Char(36)
+  name        String   @db.VarChar(120)
+  code        String?  @db.VarChar(30)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  division  Division?         @relation(fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
+  members   WorkspaceMember[] @relation("MemberPosition")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@index([tenantId, divisionId])
+  @@map("positions")
 }
 
 model CorrectionRequest {
@@ -416,6 +558,145 @@ model WfhRequest {
   @@index([tenantId, memberId, date])
   @@index([tenantId, status, createdAt])
   @@map("wfh_requests")
+}
+
+model WorkPermit {
+  id                 String    @id @db.Char(36)
+  tenantId           String    @map("tenant_id") @db.Char(36)
+  memberId           String    @map("member_id") @db.Char(36)
+  permitType         String    @map("permit_type") @db.VarChar(30)
+  startDate          DateTime  @map("start_date") @db.Date
+  endDate            DateTime  @map("end_date") @db.Date
+  reason             String    @db.VarChar(1000)
+  proofUrl           String?   @map("proof_url") @db.VarChar(512)
+  proofHash          String?   @map("proof_hash") @db.Char(64)
+  proofContentType   String?   @map("proof_content_type") @db.VarChar(100)
+  proofFileName      String?   @map("proof_file_name") @db.VarChar(255)
+  status             String    @default("PENDING") @db.VarChar(20)
+  currentApprovalLevel Int     @default(0) @map("current_approval_level")
+  reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
+  rejectionReason    String?   @map("rejection_reason") @db.VarChar(1000)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember  @relation("WorkPermitMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  reviewer  WorkspaceMember? @relation("WorkPermitReviewer", fields: [tenantId, reviewedByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, memberId, startDate])
+  @@index([tenantId, status, createdAt])
+  @@map("work_permits")
+}
+
+model LeavePolicy {
+  id               String   @id @db.Char(36)
+  tenantId         String   @unique @map("tenant_id") @db.Char(36)
+  annualQuotaDays  Int      @default(12) @map("annual_quota_days")
+  createdAt        DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@map("leave_policies")
+}
+
+model MemberLeaveBalance {
+  id            String   @id @db.Char(36)
+  tenantId      String   @map("tenant_id") @db.Char(36)
+  memberId      String   @map("member_id") @db.Char(36)
+  year          Int
+  entitledDays  Int      @default(0) @map("entitled_days")
+  usedDays      Int      @default(0) @map("used_days")
+  createdAt     DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, memberId, year])
+  @@index([tenantId, year])
+  @@map("member_leave_balances")
+}
+
+model LeaveRequest {
+  id                 String    @id @db.Char(36)
+  tenantId           String    @map("tenant_id") @db.Char(36)
+  memberId           String    @map("member_id") @db.Char(36)
+  leaveType          String    @map("leave_type") @db.VarChar(30)
+  startDate          DateTime  @map("start_date") @db.Date
+  endDate            DateTime  @map("end_date") @db.Date
+  workingDays        Int       @map("working_days")
+  reason             String    @db.VarChar(1000)
+  status             String    @default("PENDING") @db.VarChar(20)
+  currentApprovalLevel Int     @default(0) @map("current_approval_level")
+  reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
+  reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
+  rejectionReason    String?   @map("rejection_reason") @db.VarChar(1000)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember  @relation("LeaveRequestMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  reviewer  WorkspaceMember? @relation("LeaveRequestReviewer", fields: [tenantId, reviewedByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, memberId, startDate])
+  @@index([tenantId, status, createdAt])
+  @@map("leave_requests")
+}
+
+model WarningLetter {
+  id                  String    @id @db.Char(36)
+  tenantId            String    @map("tenant_id") @db.Char(36)
+  memberId            String    @map("member_id") @db.Char(36)
+  level               String    @db.VarChar(10)
+  letterNumber        String    @map("letter_number") @db.VarChar(80)
+  issuedAt            DateTime  @map("issued_at") @db.Date
+  validUntil          DateTime  @map("valid_until") @db.Date
+  violationReason     String    @map("violation_reason") @db.VarChar(1000)
+  acknowledgedAt      DateTime? @map("acknowledged_at") @db.DateTime(3)
+  issuedByMemberId    String    @map("issued_by_member_id") @db.Char(36)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember  @relation("WarningLetterMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  issuer    WorkspaceMember  @relation("WarningLetterIssuer", fields: [tenantId, issuedByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, letterNumber])
+  @@index([tenantId, memberId, validUntil])
+  @@index([tenantId, issuedAt])
+  @@map("warning_letters")
+}
+
+model BroadcastMessage {
+  id                String    @id @db.Char(36)
+  tenantId          String    @map("tenant_id") @db.Char(36)
+  title             String    @db.VarChar(160)
+  content           String    @db.VarChar(2000)
+  audienceType      String    @default("ALL") @map("audience_type") @db.VarChar(20)
+  divisionId        String?   @map("division_id") @db.Char(36)
+  locationId        String?   @map("location_id") @db.Char(36)
+  priority          String    @default("NORMAL") @db.VarChar(20)
+  publishedAt       DateTime? @map("published_at") @db.DateTime(3)
+  createdByMemberId String    @map("created_by_member_id") @db.Char(36)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  division  Division?        @relation(fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
+  location  OfficeLocation?  @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+  creator   WorkspaceMember  @relation("BroadcastCreator", fields: [tenantId, createdByMemberId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, publishedAt])
+  @@index([tenantId, audienceType])
+  @@map("broadcast_messages")
 }
 
 model InAppNotification {

@@ -76,6 +76,15 @@ export async function resetDatabase(db: PrismaClient): Promise<void> {
   assertIsolatedTestDatabase(process.env.DATABASE_URL, "DATABASE_URL");
   assertIsolatedTestDatabase(process.env.APP_DATABASE_URL, "APP_DATABASE_URL");
   await db.deviceToken.deleteMany();
+  await db.memberDevice.deleteMany();
+  await db.memberLeaveBalance.deleteMany();
+  await db.leaveRequest.deleteMany();
+  await db.leavePolicy.deleteMany();
+  await db.workPermit.deleteMany();
+  await db.warningLetter.deleteMany();
+  await db.broadcastMessage.deleteMany();
+  await db.approvalStep.deleteMany();
+  await db.approvalWorkflow.deleteMany();
   await db.correctionRequest.deleteMany();
   await db.memberShift.deleteMany();
   await db.overtimeRequest.deleteMany();
@@ -84,7 +93,19 @@ export async function resetDatabase(db: PrismaClient): Promise<void> {
   await db.attendanceLog.deleteMany();
   // FKs baru: member.office_location_id dan attendance.office_location_id
   // membatasi penghapusan kantor. Log sudah dihapus; lepaskan penugasan dulu.
-  await db.workspaceMember.updateMany({ data: { officeLocationId: null } });
+  // Divisi/jabatan juga dibatasi FK dari member, jadi lepaskan sebelum hapus.
+  await db.workspaceMember.updateMany({
+    data: {
+      officeLocationId: null,
+      divisionId: null,
+      positionId: null,
+      photoUrl: null,
+      photoStatus: "NONE",
+      photoReviewedByMemberId: null,
+    },
+  });
+  await db.position.deleteMany();
+  await db.division.deleteMany();
   await db.officeLocation.deleteMany();
   await db.backgroundJobAttempt.deleteMany();
   await db.backgroundJob.deleteMany();

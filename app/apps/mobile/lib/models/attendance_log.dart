@@ -10,6 +10,12 @@ class AttendanceLog {
     this.workDate,
     this.isMockLocation = false,
     this.deviceInfo,
+    this.workMode = 'OFFICE',
+    this.outOfRadius = false,
+    this.outOfTownReason,
+    this.approvalStatus = 'APPROVED',
+    this.currentApprovalLevel = 0,
+    this.rejectionReason,
   });
 
   factory AttendanceLog.fromJson(Map<String, dynamic> json) {
@@ -26,6 +32,13 @@ class AttendanceLog {
       photoUrl: json['photoUrl'] as String? ?? '',
       isMockLocation: json['isMockLocation'] as bool? ?? false,
       deviceInfo: json['deviceInfo'] as String?,
+      workMode: json['workMode'] as String? ?? 'OFFICE',
+      outOfRadius: json['outOfRadius'] as bool? ?? false,
+      outOfTownReason: json['outOfTownReason'] as String?,
+      approvalStatus: json['approvalStatus'] as String? ?? 'APPROVED',
+      currentApprovalLevel:
+          (json['currentApprovalLevel'] as num?)?.toInt() ?? 0,
+      rejectionReason: json['rejectionReason'] as String?,
     );
   }
 
@@ -39,8 +52,17 @@ class AttendanceLog {
   final String photoUrl;
   final bool isMockLocation;
   final String? deviceInfo;
+  final String workMode;
+  final bool outOfRadius;
+  final String? outOfTownReason;
+  final String approvalStatus;
+  final int currentApprovalLevel;
+  final String? rejectionReason;
 
   bool get isCheckIn => type == 'CHECK_IN';
   bool get isCheckOut => type == 'CHECK_OUT';
+  bool get isOutOfTown => workMode == 'OUT_OF_TOWN';
+  bool get isApprovalPending => approvalStatus == 'PENDING';
+  bool get isApprovalRejected => approvalStatus == 'REJECTED';
   String get label => isCheckIn ? 'Check-in' : 'Check-out';
 }

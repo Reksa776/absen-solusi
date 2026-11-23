@@ -1,6 +1,7 @@
 import {
   getClientIp,
   jsonResponse,
+  normalizeDeviceIdentity,
   recordAttendance,
   requirePermission,
 } from "@absensi/auth";
@@ -33,6 +34,21 @@ export async function POST(request: Request): Promise<Response> {
       accuracyMeters: numberField(form, "accuracy_meters"),
       isMockLocation: form.get("is_mock_location") === "true",
       deviceInfo: typeof form.get("device_info") === "string" ? String(form.get("device_info")) : null,
+      deviceIdentity: normalizeDeviceIdentity({
+        deviceId: request.headers.get("x-device-id"),
+        deviceName: request.headers.get("x-device-name"),
+        platform: request.headers.get("x-device-platform"),
+      }),
+      workMode:
+        form.get("work_mode") === "OUT_OF_TOWN"
+          ? "OUT_OF_TOWN"
+          : form.get("work_mode") === "WFH"
+            ? "WFH"
+            : "OFFICE",
+      outOfTownReason:
+        typeof form.get("out_of_town_reason") === "string"
+          ? String(form.get("out_of_town_reason"))
+          : null,
       photo: await photoField(form),
       ip: getClientIp(request),
       userAgent: request.headers.get("user-agent"),

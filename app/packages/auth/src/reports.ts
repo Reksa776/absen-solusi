@@ -117,6 +117,7 @@ export type DashboardMemberStatus =
 export type DashboardMember = {
   memberId: string;
   name: string;
+  divisionName: string | null;
   status: DashboardMemberStatus;
   checkIn: string | null;
   checkOut: string | null;
@@ -145,6 +146,8 @@ export type TodayDashboardInput = {
   workspaceId: string;
   date?: string | undefined;
   memberId?: string | undefined;
+  divisionId?: string | undefined;
+  positionId?: string | undefined;
   status?: string | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
@@ -177,8 +180,15 @@ export async function getTodayDashboard(input: TodayDashboardInput): Promise<Tod
   return withTenant(input.ctx, async (db) => {
     const [members, groupedLogs, holiday, office, correctionsPending, memberShiftRows] = await Promise.all([
       db.workspaceMember.findMany({
-        where: { status: "ACTIVE" },
-        include: { user: { select: { name: true } } },
+        where: {
+          status: "ACTIVE",
+          ...(input.divisionId ? { divisionId: input.divisionId } : {}),
+          ...(input.positionId ? { positionId: input.positionId } : {}),
+        },
+        include: {
+          user: { select: { name: true } },
+          division: { select: { name: true } },
+        },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
       // SQL groupBy: satu baris per (member, type) dengan waktu paling awal.
@@ -248,6 +258,7 @@ export async function getTodayDashboard(input: TodayDashboardInput): Promise<Tod
       return {
         memberId: member.id,
         name: member.user.name,
+        divisionName: member.division?.name ?? null,
         status,
         checkIn: checkIn ? checkIn.toISOString() : null,
         checkOut: checkOut ? checkOut.toISOString() : null,
@@ -298,6 +309,7 @@ export type MonthlyDay = {
 export type MonthlyMemberReport = {
   memberId: string;
   name: string;
+  divisionName: string | null;
   days: MonthlyDay[];
   totalWorkHours: number;
   totalLate: number;
@@ -320,6 +332,8 @@ export type MonthlyReportInput = {
   year: string | number;
   month: string | number;
   memberId?: string | undefined;
+  divisionId?: string | undefined;
+  positionId?: string | undefined;
   from?: string | undefined;
   to?: string | undefined;
   status?: string | undefined;
@@ -457,6 +471,12 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
   if (input.memberId && !isUuid(input.memberId)) {
     throw new HttpError(400, "INVALID_MEMBER", "Parameter memberId tidak valid");
   }
+  if (input.divisionId && !isUuid(input.divisionId)) {
+    throw new HttpError(400, "INVALID_DIVISION", "Parameter divisionId tidak valid");
+  }
+  if (input.positionId && !isUuid(input.positionId)) {
+    throw new HttpError(400, "INVALID_POSITION", "Parameter positionId tidak valid");
+  }
 
   const statusFilter = input.status?.trim().toUpperCase();
   if (statusFilter && !(MONTHLY_STATUSES as readonly string[]).includes(statusFilter)) {
@@ -475,8 +495,16 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
   return withTenant(input.ctx, async (db) => {
     const [members, logs, holidays, office, memberShiftRows] = await Promise.all([
       db.workspaceMember.findMany({
-        where: { status: "ACTIVE", ...(input.memberId ? { id: input.memberId } : {}) },
-        include: { user: { select: { name: true } } },
+        where: {
+          status: "ACTIVE",
+          ...(input.memberId ? { id: input.memberId } : {}),
+          ...(input.divisionId ? { divisionId: input.divisionId } : {}),
+          ...(input.positionId ? { positionId: input.positionId } : {}),
+        },
+        include: {
+          user: { select: { name: true } },
+          division: { select: { name: true } },
+        },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
       db.attendanceLog.findMany({
@@ -542,6 +570,7 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
       return {
         memberId: member.id,
         name: member.user.name,
+        divisionName: member.division?.name ?? null,
         days,
         totalWorkHours: totals.hours,
         totalLate: totals.late,
@@ -596,6 +625,8 @@ export type CsvExportInput = {
   year: string | number;
   month: string | number;
   memberId?: string | undefined;
+  divisionId?: string | undefined;
+  positionId?: string | undefined;
   from?: string | undefined;
   to?: string | undefined;
   status?: string | undefined;
@@ -664,6 +695,12 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
   const month = parseMonth(input.month);
   if (input.memberId && !isUuid(input.memberId)) {
     throw new HttpError(400, "INVALID_MEMBER", "Parameter memberId tidak valid");
+  }
+  if (input.divisionId && !isUuid(input.divisionId)) {
+    throw new HttpError(400, "INVALID_DIVISION", "Parameter divisionId tidak valid");
+  }
+  if (input.positionId && !isUuid(input.positionId)) {
+    throw new HttpError(400, "INVALID_POSITION", "Parameter positionId tidak valid");
   }
   const statusFilter = input.status?.trim().toUpperCase();
   if (statusFilter && !(MONTHLY_STATUSES as readonly string[]).includes(statusFilter)) {
@@ -762,6 +799,8 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
           where: {
             status: "ACTIVE",
             ...(memberId ? { id: memberId } : {}),
+            ...(input.divisionId ? { divisionId: input.divisionId } : {}),
+            ...(input.positionId ? { positionId: input.positionId } : {}),
             ...(cursor ? { id: { gt: cursor } } : {}),
           },
           include: { user: { select: { name: true } } },

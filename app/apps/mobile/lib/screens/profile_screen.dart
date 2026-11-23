@@ -1,15 +1,24 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
 import '../models/office_location.dart';
+import '../models/member_device.dart';
+import '../models/organization.dart';
+import '../models/profile_photo.dart';
 import '../models/schedule.dart';
+import '../models/warning_letter.dart';
 import '../services/app_update_service.dart';
 import '../services/attendance_reminder_service.dart';
 import '../services/auth_service.dart';
 import '../services/offline_attendance_queue.dart';
 import '../theme/app_theme.dart';
 import '../widgets/update_dialog.dart';
+import 'camera_screen.dart';
 import 'schedule_screen.dart';
+import 'warning_letters_screen.dart';
 
 /// Tab Profil: identitas, kantor & shift, jadwal kerja, pengingat absensi,
 /// antrean offline, versi aplikasi, dan tombol keluar.
@@ -40,7 +49,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       widget.reminderService ?? AttendanceReminderService();
 
   OfficeLocation? _office;
+  OrganizationProfile? _organization;
+  MemberDevice? _device;
+  ProfilePhotoStatus? _photo;
+  Uint8List? _photoBytes;
   WorkSchedule? _schedule;
+  List<WarningLetter> _warnings = const [];
+  String? _acknowledgingWarningId;
   ReminderSettings _reminder = const ReminderSettings();
   InstalledAppInfo _installed = InstalledAppInfo.unknown;
   int _pending = 0;
@@ -48,6 +63,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _checking = false;
   bool _syncing = false;
   bool _savingReminder = false;
+  bool _refreshingDevice = false;
   String? _officeError;
 
   @override
@@ -85,11 +101,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     try {
+      final organization = await widget.auth.api.organizationProfile();
+      if (!mounted) return;
+      setState(() => _organization = organization);
+    } catch (_) {
+      // Kartu organisasi menampilkan status kosong bila endpoint gagal.
+    }
+
+    try {
+      final photo = await widget.auth.api.myProfilePhoto();
+      Uint8List? bytes;
+      if (photo.hasPhoto) {
+        try {
+          bytes = await widget.auth.api.profilePhotoBytes(photo.photoUrl!);
+        } catch (_) {
+          bytes = null;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _photo = photo;
+        _photoBytes = bytes;
+      });
+    } catch (_) {
+      // Foto profil bersifat opsional; kartu menampilkan status kosong.
+    }
+
+    try {
       final schedule = await widget.auth.api.workSchedule();
       if (!mounted) return;
       setState(() => _schedule = schedule);
     } catch (_) {
       // Kartu jadwal menampilkan status kosong bila endpoint gagal.
+    }
+
+    try {
+      final device = await widget.auth.api.myDevice();
+      if (mounted) setState(() => _device = device);
+    } catch (_) {
+      // Status perangkat bersifat informatif; server tetap menolak absensi.
+    }
+
+    try {
+      final warnings = await widget.auth.api.myWarningLetters();
+      if (mounted) setState(() => _warnings = warnings);
+    } catch (_) {
+      // Kartu SP tidak boleh menghalangi profil bila endpoint gagal.
     }
 
     final installed = await _updates.installed();
@@ -167,6 +224,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _refreshDevice() async {
+    if (_refreshingDevice) return;
+    setState(() => _refreshingDevice = true);
+    try {
+      final device = await widget.auth.api.myDevice();
+      if (!mounted) return;
+      setState(() => _device = device);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            device == null
+                ? 'Perangkat ini belum terdaftar. Login ulang dari aplikasi mobile.'
+                : device.isApproved
+                ? 'Perangkat sudah disetujui dan siap dipakai absensi.'
+                : device.isRevoked
+                ? 'Perangkat dicabut. Minta Admin HR mengaktifkan perangkat baru.'
+                : 'Perangkat masih menunggu persetujuan Admin HR.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(messageForApiError(error))));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Status perangkat tidak dapat diperiksa.')),
+      );
+    } finally {
+      if (mounted) setState(() => _refreshingDevice = false);
+    }
+  }
+
   Future<void> _checkForUpdate() async {
     if (_checking) return;
     setState(() => _checking = true);
@@ -202,6 +294,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } finally {
       if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _uploadProfilePhoto() async {
+    final bytes = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute<Uint8List>(
+        builder: (_) => const CameraScreen(
+          insideGeofence: true,
+          wfh: true,
+        ),
+      ),
+    );
+    if (bytes == null || !mounted) return;
+    setState(() => _photo = null);
+    try {
+      final status = await widget.auth.api.uploadProfilePhoto(bytes);
+      if (!mounted) return;
+      setState(() {
+        _photo = status;
+        _photoBytes = bytes;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Foto profil terkirim dan menunggu persetujuan admin.'),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(messageForApiError(error))));
+      unawaited(_load());
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto profil gagal diunggah.')),
+      );
+      unawaited(_load());
     }
   }
 
@@ -287,8 +417,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 14),
               _identityCard(),
+              if (_warnings.any((row) => row.isActive)) ...[
+                const SizedBox(height: 12),
+                _warningCard(),
+              ],
+              const SizedBox(height: 12),
+              _photoCard(),
+              if (_device != null && _device!.blocksAttendance) ...[
+                const SizedBox(height: 12),
+                _deviceCard(_device!),
+              ],
               const SizedBox(height: 12),
               _officeCard(),
+              const SizedBox(height: 12),
+              _organizationCard(),
               const SizedBox(height: 12),
               _scheduleCard(),
               const SizedBox(height: 12),
@@ -325,6 +467,177 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _acknowledgeWarning(WarningLetter item) async {
+    setState(() => _acknowledgingWarningId = item.id);
+    try {
+      final updated = await widget.auth.api.acknowledgeWarningLetter(item.id);
+      if (!mounted) return;
+      setState(() {
+        _warnings = [
+          for (final row in _warnings)
+            if (row.id == updated.id) updated else row,
+        ];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Konfirmasi baca surat tersimpan.')),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(messageForApiError(error))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Konfirmasi gagal disimpan.')),
+      );
+    } finally {
+      if (mounted) setState(() => _acknowledgingWarningId = null);
+    }
+  }
+
+  Widget _warningCard() {
+    final active = _warnings
+        .where((row) => row.isActive)
+        .toList(growable: false);
+    return Container(
+      key: const Key('profile-warning-card'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.dangerSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.danger.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.gpp_maybe_outlined,
+                size: 17,
+                color: AppColors.danger,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Surat peringatan aktif',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.danger,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => WarningLettersScreen(
+                        auth: widget.auth,
+                      ),
+                    ),
+                  );
+                  if (mounted) await _load();
+                },
+                child: const Text('Lihat semua'),
+              ),
+            ],
+          ),
+          for (final item in active) ...[
+            const Divider(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: AppColors.danger.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    item.level,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.letterNumber,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                          fontFeatures: tabularFigures,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.violationReason,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.4,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            if (item.isAcknowledged)
+              Text(
+                'Sudah dikonfirmasi dibaca',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.greenDark,
+                ),
+              )
+            else
+              SizedBox(
+                height: 42,
+                child: FilledButton.icon(
+                  key: Key('profile-warning-ack-${item.id}'),
+                  onPressed: _acknowledgingWarningId == item.id
+                      ? null
+                      : () => _acknowledgeWarning(item),
+                  icon: _acknowledgingWarningId == item.id
+                      ? const SizedBox.square(
+                          dimension: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.done_all, size: 16),
+                  label: const Text('Konfirmasi Sudah Dibaca'),
+                ),
+              ),
+          ],
+        ],
       ),
     );
   }
@@ -417,6 +730,198 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _photoCard() {
+    final photo = _photo;
+    final bytes = _photoBytes;
+    final status = photo?.label ?? 'Belum ada foto';
+    final pending = photo?.isPending ?? false;
+    final rejected = photo?.isRejected ?? false;
+    final approved = photo?.isApproved ?? false;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.badge_outlined, size: 15, color: AppColors.muted),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Foto profil',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: approved
+                      ? AppColors.greenSoft
+                      : rejected
+                      ? AppColors.dangerSoft
+                      : AppColors.yellowSoft,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: approved
+                        ? AppColors.greenLine
+                        : rejected
+                        ? AppColors.danger.withValues(alpha: 0.25)
+                        : AppColors.yellowLine,
+                  ),
+                ),
+                child: Text(
+                  status,
+                  key: const Key('profile-photo-status'),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: approved
+                        ? AppColors.greenDark
+                        : rejected
+                        ? AppColors.danger
+                        : AppColors.yellowInk,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.tableHead,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.line),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: bytes == null
+                    ? Center(
+                        child: Text(
+                          _initials,
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.greenDark,
+                          ),
+                        ),
+                      )
+                    : Image.memory(bytes, fit: BoxFit.cover),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pending
+                          ? 'Foto baseline menunggu verifikasi admin.'
+                          : rejected
+                          ? (photo?.rejectionReason ??
+                                'Foto ditolak. Unggah foto baru yang jelas.')
+                          : approved
+                          ? 'Foto baseline sudah diverifikasi.'
+                          : 'Unggah foto wajah untuk baseline verifikasi.',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        height: 1.4,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    OutlinedButton.icon(
+                      key: const Key('profile-upload-photo'),
+                      onPressed: pending ? null : _uploadProfilePhoto,
+                      icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                      label: Text(
+                        pending
+                            ? 'Menunggu persetujuan'
+                            : approved || rejected
+                            ? 'Perbarui foto'
+                            : 'Ambil foto profil',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deviceCard(MemberDevice device) {
+    final revoked = device.isRevoked;
+    return Container(
+      key: const Key('profile-device-banner'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: revoked ? AppColors.dangerSoft : AppColors.yellowSoft,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: revoked
+              ? AppColors.danger.withValues(alpha: 0.3)
+              : AppColors.yellowLine,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                revoked ? Icons.phonelink_erase : Icons.verified_user_outlined,
+                size: 16,
+                color: revoked ? AppColors.danger : AppColors.yellowInk,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  revoked
+                      ? 'Perangkat sudah direset Admin HR'
+                      : 'Perangkat baru menunggu persetujuan Admin HR',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: revoked ? AppColors.danger : AppColors.yellowInk,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '${device.deviceName} · ${device.platform}. Check-in dan check-out '
+            'diblokir sampai perangkat disetujui.',
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.4,
+              color: revoked ? AppColors.danger : AppColors.muted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const Key('profile-device-check-again'),
+            onPressed: _refreshingDevice ? null : _refreshDevice,
+            icon: _refreshingDevice
+                ? const SizedBox.square(
+                    dimension: 13,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, size: 15),
+            label: Text(_refreshingDevice ? 'Memeriksa…' : 'Cek Status Ulang'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _officeCard() {
     final office = _office;
     return _card(
@@ -474,6 +979,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _infoRow(
             label: 'Workspace',
             value: widget.auth.activeWorkspace?.name ?? '—',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _organizationCard() {
+    final organization = _organization;
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.account_tree_outlined,
+                size: 15,
+                color: AppColors.muted,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'Divisi & jabatan',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ),
+              if (organization?.hasAssignment ?? false)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.greenSoft,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppColors.greenLine),
+                  ),
+                  child: const Text(
+                    'Ditempatkan',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.greenDark,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _infoRow(
+            label: 'Divisi',
+            value: organization?.division?.name ?? 'Belum ditempatkan',
+          ),
+          _infoRow(
+            label: 'Jabatan',
+            value: organization?.position?.name ?? 'Belum ditempatkan',
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Perubahan penempatan dilakukan oleh admin workspace.',
+            style: TextStyle(fontSize: 10.5, color: AppColors.muted),
           ),
         ],
       ),

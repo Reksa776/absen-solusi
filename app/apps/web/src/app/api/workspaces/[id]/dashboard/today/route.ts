@@ -23,6 +23,8 @@ export async function GET(
         workspaceId: id,
         date: url.searchParams.get("date") ?? undefined,
         memberId: url.searchParams.get("memberId") ?? undefined,
+        divisionId: url.searchParams.get("divisionId") ?? undefined,
+        positionId: url.searchParams.get("positionId") ?? undefined,
         status: url.searchParams.get("status") ?? undefined,
         limit: numberParam(url.searchParams.get("limit")),
         offset: numberParam(url.searchParams.get("offset")),

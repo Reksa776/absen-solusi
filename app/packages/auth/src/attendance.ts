@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { withTenant, writeAudit, type TenantContext } from "@absensi/database";
 
+import { assertAttendanceDevice, type DeviceIdentity } from "./devices.js";
 import { HttpError } from "./http.js";
 import { isOvernightShift, shiftMinutes } from "./shifts.js";
 
@@ -40,6 +41,9 @@ export type RecordAttendanceInput = {
   accuracyMeters: number;
   isMockLocation: boolean;
   deviceInfo?: string | null;
+  deviceIdentity?: DeviceIdentity | null;
+  workMode?: "OFFICE" | "WFH" | "OUT_OF_TOWN";
+  outOfTownReason?: string | null;
   photo: AttendancePhoto;
   ip?: string | null;
   userAgent?: string | null;
@@ -55,8 +59,11 @@ export type AttendanceResult = {
   accuracyMeters: number;
   isSuspicious: boolean;
   photoUrl: string;
-  workMode?: "OFFICE" | "WFH";
+  workMode?: "OFFICE" | "WFH" | "OUT_OF_TOWN";
   workDate?: string;
+  outOfRadius?: boolean;
+  approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  outOfTownReason?: string | null;
 };
 
 function assertCoordinate(value: number, label: string, min: number, max: number): void {
@@ -99,6 +106,17 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
   if (input.accuracyMeters > ACCURACY_THRESHOLD_METERS) {
     throw new HttpError(400, "ACCURACY_TOO_LOW", "Akurasi GPS terlalu rendah");
   }
+  const isOutOfTown = input.workMode === "OUT_OF_TOWN";
+  const outOfTownReason = (input.outOfTownReason ?? "").trim();
+  if (isOutOfTown && (outOfTownReason.length < 10 || outOfTownReason.length > 500)) {
+    throw new HttpError(400, "INVALID_OUT_OF_TOWN_REASON", "Alasan dinas luar kota 10–500 karakter");
+  }
+  await assertAttendanceDevice({
+    ctx: input.ctx,
+    identity: input.deviceIdentity ?? null,
+    ip: input.ip ?? null,
+    userAgent: input.userAgent ?? null,
+  });
 
   const now = input.now ?? new Date();
   const attendanceId = randomUUID();
@@ -126,8 +144,11 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             accuracyMeters: replay.accuracyMeters,
             isSuspicious: replay.isSuspicious,
             photoUrl: replay.photoUrl,
-            workMode: replay.workMode as "OFFICE" | "WFH",
+            workMode: replay.workMode as "OFFICE" | "WFH" | "OUT_OF_TOWN",
             workDate: replay.workDate.toISOString().slice(0, 10),
+            outOfRadius: replay.outOfRadius,
+            approvalStatus: replay.approvalStatus as "PENDING" | "APPROVED" | "REJECTED",
+            outOfTownReason: replay.outOfTownReason,
           };
         }
       }
@@ -181,8 +202,32 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
       let office: { id: string; latitude: number; longitude: number; radiusMeters: number } | null =
         null;
       let distance = 0;
-      const workMode: "OFFICE" | "WFH" = wfh ? "WFH" : "OFFICE";
-      if (!wfh) {
+      const workMode: "OFFICE" | "WFH" | "OUT_OF_TOWN" = isOutOfTown
+        ? "OUT_OF_TOWN"
+        : wfh
+          ? "WFH"
+          : "OFFICE";
+      if (isOutOfTown) {
+        // Dinas luar kota tetap mencatat kantor terdekat untuk audit jarak,
+        // tetapi tidak memblokir karena berada di luar geofence.
+        const candidates = member?.officeLocationId
+          ? offices.filter((row) => row.id === member.officeLocationId)
+          : offices;
+        let best: { office: (typeof offices)[number]; distance: number } | null = null;
+        for (const candidate of candidates) {
+          const candidateDistance = haversineMeters(
+            input.latitude,
+            input.longitude,
+            candidate.latitude,
+            candidate.longitude,
+          );
+          if (!best || candidateDistance < best.distance) {
+            best = { office: candidate, distance: candidateDistance };
+          }
+        }
+        office = best?.office ?? null;
+        distance = best?.distance ?? 0;
+      } else if (!wfh) {
         if (offices.length === 0) {
           throw new HttpError(409, "OFFICE_NOT_CONFIGURED", "Lokasi kantor belum aktif");
         }
@@ -229,6 +274,10 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           distance = best.distance;
         }
       }
+      const outOfRadius = isOutOfTown
+        ? office === null || distance > office.radiusMeters
+        : false;
+      const approvalStatus = isOutOfTown ? "PENDING" : "APPROVED";
 
       const previous = await db.attendanceLog.findFirst({
         where: { memberId: input.ctx.memberId },
@@ -276,6 +325,9 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             distanceMeters: distance,
             officeLocationId: office?.id ?? null,
             workMode,
+            outOfRadius,
+            outOfTownReason: isOutOfTown ? outOfTownReason : null,
+            approvalStatus,
             isMockLocation: false,
             isSuspicious: suspiciousReasons.length > 0,
             photoUrl: stored.url,
@@ -299,6 +351,9 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
               accuracy_meters: input.accuracyMeters,
               office_id: office?.id ?? null,
               work_mode: workMode,
+              ...(isOutOfTown
+                ? { out_of_radius: outOfRadius, approval_status: approvalStatus }
+                : {}),
               wfh_request_id: wfh?.id ?? null,
               suspicious_reasons: suspiciousReasons,
               offline_synced: Boolean(input.idempotencyKey),
@@ -319,6 +374,9 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           photoUrl: stored.url,
           workMode,
           workDate: workDate.toISOString().slice(0, 10),
+          outOfRadius,
+          approvalStatus: approvalStatus as "PENDING" | "APPROVED",
+          outOfTownReason: isOutOfTown ? outOfTownReason : null,
         };
       } catch (error) {
         if (typeof error === "object" && error !== null && "code" in error) {

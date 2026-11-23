@@ -7,9 +7,12 @@ import 'package:material_ui/material_ui.dart';
 import '../api/api_client.dart';
 import '../core/app_config.dart';
 import '../models/attendance_log.dart';
+import '../models/broadcast.dart';
 import '../models/employee_request.dart';
+import '../models/member_device.dart';
 import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
+import '../models/warning_letter.dart';
 import '../services/app_update_service.dart';
 import '../services/attendance_reminder_service.dart';
 import '../services/auth_service.dart';
@@ -19,8 +22,10 @@ import '../services/push_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/geofence_map.dart' show distanceMeters;
 import '../widgets/update_dialog.dart';
+import 'broadcasts_screen.dart';
 import 'camera_screen.dart';
 import 'notifications_screen.dart';
+import 'warning_letters_screen.dart';
 import 'workspace_picker_screen.dart';
 
 typedef PhotoTaker = Future<Uint8List?> Function(BuildContext context);
@@ -100,7 +105,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _offlineRetry;
   List<OfficeLocation> _offices = const [];
   List<AttendanceLog> _today = const [];
+  MemberDevice? _device;
+  bool _refreshingDevice = false;
   bool _wfhToday = false;
+  List<BroadcastMessage> _broadcasts = const [];
+  List<WarningLetter> _warnings = const [];
+  bool _outOfTown = false;
+  String _outOfTownReason = '';
   GpsReading? _gps;
   bool _loading = true;
   bool _locating = false;
@@ -150,6 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.auth.api.activeOffices(),
         widget.auth.api.attendanceHistory(),
         widget.auth.api.myWfh(),
+        widget.auth.api.myBroadcasts(),
+        widget.auth.api.myWarningLetters(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -160,8 +173,17 @@ class _HomeScreenState extends State<HomeScreen> {
         _wfhToday = (results[2] as List<WfhRequest>).any(
           (row) => row.status == 'APPROVED' && _isSameDay(row.date, DateTime.now()),
         );
+        _broadcasts = results[3] as List<BroadcastMessage>;
+        _warnings = results[4] as List<WarningLetter>;
         _loading = false;
       });
+      try {
+        final device = await widget.auth.api.myDevice();
+        if (mounted) setState(() => _device = device);
+      } catch (_) {
+        // Status perangkat bersifat informatif; server tetap menolak aksi
+        // check-in jika perangkat belum disetujui.
+      }
       unawaited(_syncReminders());
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -175,6 +197,41 @@ class _HomeScreenState extends State<HomeScreen> {
         _error = 'Data absensi tidak dapat dimuat.';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _refreshDevice() async {
+    if (_refreshingDevice) return;
+    setState(() => _refreshingDevice = true);
+    try {
+      final device = await widget.auth.api.myDevice();
+      if (!mounted) return;
+      setState(() => _device = device);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            device == null
+                ? 'Perangkat ini belum terdaftar. Login ulang dari aplikasi mobile.'
+                : device.isApproved
+                ? 'Perangkat sudah disetujui dan siap dipakai absensi.'
+                : device.isRevoked
+                ? 'Perangkat dicabut. Minta Admin HR mengaktifkan perangkat baru.'
+                : 'Perangkat masih menunggu persetujuan Admin HR.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(messageForApiError(error))));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Status perangkat tidak dapat diperiksa.')),
+      );
+    } finally {
+      if (mounted) setState(() => _refreshingDevice = false);
     }
   }
 
@@ -257,19 +314,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool get _insideRadius {
+    if (_outOfTown) return true;
     final office = _office;
     final distance = _distance;
     if (office == null || distance == null) return false;
     return distance <= office.radiusMeters;
   }
 
+  bool get _deviceBlocked {
+    final device = _device;
+    return device != null && !device.isApproved;
+  }
+
   String get _locationLabel {
+    if (_outOfTown) return 'Dinas luar kota';
     if (_wfhToday) return 'Di luar radius / WFH';
     if (_gps == null) return 'Lokasi dicek saat absen';
     return _insideRadius ? 'Dalam radius kantor' : 'Di luar radius kantor';
   }
 
-  bool get _locationPositive => _wfhToday || (_gps != null && _insideRadius);
+  bool get _locationPositive =>
+      _outOfTown || _wfhToday || (_gps != null && _insideRadius);
 
   String get _todayStatus {
     final hasCheckIn = _today.any((row) => row.isCheckIn);
@@ -325,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
           insideGeofence: inside,
           officeName: office?.name,
           distanceMeters: distance,
-          wfh: _wfhToday,
+          wfh: _wfhToday || _outOfTown,
         ),
       ),
     );
@@ -396,6 +461,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final deviceInfo = '${Theme.of(context).platform.name}-mobile';
     try {
       final api = widget.auth.api;
+      final workMode = _outOfTown ? 'OUT_OF_TOWN' : 'OFFICE';
+      final reason = _outOfTown ? _outOfTownReason.trim() : null;
       if (action == 'CHECK_IN') {
         await api.checkIn(
           latitude: gps.latitude,
@@ -404,6 +471,8 @@ class _HomeScreenState extends State<HomeScreen> {
           isMockLocation: gps.isMocked,
           photoBytes: photo,
           deviceInfo: deviceInfo,
+          workMode: workMode,
+          outOfTownReason: reason,
         );
       } else {
         await api.checkOut(
@@ -413,6 +482,8 @@ class _HomeScreenState extends State<HomeScreen> {
           isMockLocation: gps.isMocked,
           photoBytes: photo,
           deviceInfo: deviceInfo,
+          workMode: workMode,
+          outOfTownReason: reason,
         );
       }
       unawaited(
@@ -472,6 +543,8 @@ class _HomeScreenState extends State<HomeScreen> {
           clientCapturedAt: DateTime.now().toUtc(),
           photoPath: path,
           idempotencyKey: key,
+          workMode: _outOfTown ? 'OUT_OF_TOWN' : 'OFFICE',
+          outOfTownReason: _outOfTown ? _outOfTownReason.trim() : null,
         ),
       );
       await _refreshOffline();
@@ -625,6 +698,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (_deviceBlocked) ...[
+                            _deviceBanner(_device!),
+                            const SizedBox(height: 12),
+                          ],
                           if (_pendingOffline > 0) ...[
                             Card(
                               key: const Key('offline-queue-banner'),
@@ -657,9 +734,19 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 12),
                           ],
+                          if (_broadcasts.isNotEmpty) ...[
+                            _buildBroadcastBanner(_broadcasts.first),
+                            const SizedBox(height: 12),
+                          ],
+                          if (_activeWarnings.isNotEmpty) ...[
+                            _buildWarningBanner(_activeWarnings.first),
+                            const SizedBox(height: 12),
+                          ],
                           _buildGreeting(),
                           const SizedBox(height: 16),
                           _buildClockCard(),
+                          const SizedBox(height: 12),
+                          _buildModeSelector(),
                           const SizedBox(height: 16),
                           ..._buildWarnings(),
                           _buildSubmitButton(),
@@ -682,6 +769,158 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  List<WarningLetter> get _activeWarnings =>
+      _warnings.where((row) => row.isActive).toList(growable: false);
+
+  Future<void> _openBroadcasts() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BroadcastsScreen(auth: widget.auth),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _openWarnings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WarningLettersScreen(auth: widget.auth),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Widget _buildBroadcastBanner(BroadcastMessage item) {
+    final important = item.isImportant;
+    return Material(
+      key: const Key('home-broadcast-banner'),
+      color: important ? AppColors.yellowSoft : AppColors.greenSoft,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _openBroadcasts,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: important ? AppColors.yellowLine : AppColors.greenLine,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                important ? Icons.priority_high : Icons.campaign_outlined,
+                size: 18,
+                color: important ? AppColors.yellowInk : AppColors.greenDark,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      important ? 'Pengumuman penting' : 'Pengumuman terbaru',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: important
+                            ? AppColors.yellowInk
+                            : AppColors.greenDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarningBanner(WarningLetter item) {
+    return Material(
+      key: const Key('home-warning-banner'),
+      color: AppColors.dangerSoft,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _openWarnings,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.danger.withValues(alpha: 0.28),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.gpp_maybe_outlined,
+                size: 18,
+                color: AppColors.danger,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${item.level} aktif · ${item.letterNumber}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.danger,
+                        fontFeatures: tabularFigures,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.isAcknowledged
+                          ? 'Surat peringatan sudah dikonfirmasi dibaca.'
+                          : 'Buka profil untuk membaca dan mengonfirmasi surat.',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        height: 1.35,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -791,6 +1030,189 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _deviceBanner(MemberDevice device) {
+    final revoked = device.isRevoked;
+    return Container(
+      key: const Key('device-pending-banner'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: revoked ? AppColors.dangerSoft : AppColors.yellowSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: revoked
+              ? AppColors.danger.withValues(alpha: 0.3)
+              : AppColors.yellowLine,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            revoked ? Icons.phonelink_erase : Icons.verified_user_outlined,
+            size: 18,
+            color: revoked ? AppColors.danger : AppColors.yellowInk,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  revoked
+                      ? 'Perangkat sudah direset Admin HR'
+                      : 'Perangkat baru menunggu persetujuan Admin HR',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: revoked ? AppColors.danger : AppColors.yellowInk,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${device.deviceName} · ${device.platform}. Check-in dan check-out '
+                  'diblokir sampai perangkat disetujui.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1.4,
+                    color: revoked ? AppColors.danger : AppColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  key: const Key('device-check-again'),
+                  onPressed: _refreshingDevice ? null : _refreshDevice,
+                  icon: _refreshingDevice
+                      ? const SizedBox.square(
+                          dimension: 13,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 15),
+                  label: Text(
+                    _refreshingDevice ? 'Memeriksa…' : 'Cek Status Ulang',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeButton({
+    required Key key,
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: selected ? AppColors.greenSoft : AppColors.surface,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          key: key,
+          borderRadius: BorderRadius.circular(9),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(
+                color: selected ? AppColors.greenLine : AppColors.line,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 15,
+                  color: selected ? AppColors.greenDark : AppColors.muted,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? AppColors.greenDark : AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Mode presensi',
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _modeButton(
+                key: const Key('home-mode-office'),
+                label: 'Kantor',
+                icon: Icons.business_outlined,
+                selected: !_outOfTown,
+                onTap: () => setState(() {
+                  _outOfTown = false;
+                  _outOfTownReason = '';
+                }),
+              ),
+              const SizedBox(width: 8),
+              _modeButton(
+                key: const Key('home-mode-out-of-town'),
+                label: 'Luar kota',
+                icon: Icons.flight_takeoff,
+                selected: _outOfTown,
+                onTap: () => setState(() => _outOfTown = true),
+              ),
+            ],
+          ),
+          if (_outOfTown) ...[
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('home-out-of-town-reason'),
+              maxLength: 500,
+              minLines: 2,
+              maxLines: 3,
+              onChanged: (value) => _outOfTownReason = value,
+              decoration: const InputDecoration(
+                hintText: 'Tujuan dan keperluan dinas luar kota (min. 10 karakter)',
+                counterText: '',
+                isDense: true,
+              ),
+            ),
+            const Text(
+              'Presensi luar kota tetap dicatat dan menunggu persetujuan approver.',
+              style: TextStyle(fontSize: 10.5, height: 1.4, color: AppColors.muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSubmitButton() {
     final busy = _locating || _submitting;
     return SizedBox(
@@ -810,7 +1232,9 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        onPressed: _nextAction == null || busy ? null : _startAttendance,
+        onPressed: _nextAction == null || busy || _deviceBlocked
+            ? null
+            : _startAttendance,
         icon: busy
             ? SizedBox.square(
                 dimension: 18,
@@ -826,7 +1250,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 size: 20,
               ),
         label: Text(
-          _nextAction == null
+          _deviceBlocked
+              ? 'Menunggu persetujuan perangkat'
+              : _nextAction == null
               ? 'Absensi hari ini selesai'
               : _locating
               ? 'Mengambil lokasi…'
@@ -961,6 +1387,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
     if (!_wfhToday &&
+        !_outOfTown &&
         distance != null &&
         office != null &&
         distance > office.radiusMeters) {

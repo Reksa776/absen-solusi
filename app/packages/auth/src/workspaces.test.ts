@@ -334,9 +334,13 @@ test("L5: respons member tidak memuat hash/token dan field dibatasi", async () =
   }
 
   assert.deepEqual(Object.keys(result.members[0] ?? {}).sort(), [
+    "divisionId",
+    "divisionName",
     "id",
     "joinedAt",
     "officeLocationId",
+    "positionId",
+    "positionName",
     "roleKeys",
     "status",
     "user",

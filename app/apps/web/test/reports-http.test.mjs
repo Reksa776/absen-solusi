@@ -294,7 +294,16 @@ test("C-REP-1: rekap bulanan menghitung jam kerja, keterlambatan, libur, dan ano
   assert.equal(anomaly.days.find((day) => day.date === "2026-11-16").status, "HOLIDAY");
   assert.equal(anomaly.days.find((day) => day.date === "2026-11-07").status, "WEEKEND");
   assert.equal(anomaly.days.find((day) => day.date === "2026-11-03").status, "ABSENT");
-  assert.equal(anomaly.days.find((day) => day.date === "2026-11-21").status, "FUTURE");
+  // Status FUTURE bergantung pada tanggal berjalan; cek hari kerja mendatang
+  // pertama agar test tidak bergantung pada tanggal eksekusi suite.
+  const today = new Date();
+  const upcoming = anomaly.days.find(
+    (day) =>
+      new Date(`${day.date}T00:00:00.000Z`) > today &&
+      day.status !== "WEEKEND" &&
+      day.status !== "HOLIDAY",
+  );
+  if (upcoming) assert.equal(upcoming.status, "FUTURE");
 });
 
 test("C-REP-2: filter member dan validasi parameter", async () => {

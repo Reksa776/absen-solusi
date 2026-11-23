@@ -8,6 +8,8 @@ class OfflineAttendanceEntry {
     required this.clientCapturedAt,
     required this.photoPath,
     required this.idempotencyKey,
+    this.workMode = 'OFFICE',
+    this.outOfTownReason,
   });
 
   final String type;
@@ -18,6 +20,8 @@ class OfflineAttendanceEntry {
   final DateTime clientCapturedAt;
   final String photoPath;
   final String idempotencyKey;
+  final String workMode;
+  final String? outOfTownReason;
 
   Map<String, dynamic> toJson() => {
     'type': type,
@@ -28,6 +32,8 @@ class OfflineAttendanceEntry {
     'clientCapturedAt': clientCapturedAt.toUtc().toIso8601String(),
     'photoPath': photoPath,
     'idempotencyKey': idempotencyKey,
+    'workMode': workMode,
+    'outOfTownReason': outOfTownReason,
   };
 
   factory OfflineAttendanceEntry.fromJson(Map<String, dynamic> json) {
@@ -42,6 +48,8 @@ class OfflineAttendanceEntry {
           DateTime.now().toUtc(),
       photoPath: json['photoPath'] as String? ?? '',
       idempotencyKey: json['idempotencyKey'] as String? ?? '',
+      workMode: json['workMode'] as String? ?? 'OFFICE',
+      outOfTownReason: json['outOfTownReason'] as String?,
     );
   }
 }

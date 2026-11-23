@@ -622,6 +622,10 @@ export type WorkspaceMemberSummary = {
   status: string;
   joinedAt: string | null;
   officeLocationId: string | null;
+  divisionId: string | null;
+  positionId: string | null;
+  divisionName: string | null;
+  positionName: string | null;
   user: { id: string; name: string; email: string };
   roleKeys: string[];
 };
@@ -653,6 +657,8 @@ export async function listWorkspaceMembers(
     const rows = await db.workspaceMember.findMany({
       include: {
         user: { select: { id: true, name: true, email: true } },
+        division: { select: { name: true } },
+        position: { select: { name: true } },
         roles: { include: { role: { select: { key: true } } } },
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -666,6 +672,10 @@ export async function listWorkspaceMembers(
         status: row.status,
         joinedAt: row.joinedAt ? row.joinedAt.toISOString() : null,
         officeLocationId: row.officeLocationId,
+        divisionId: row.divisionId,
+        positionId: row.positionId,
+        divisionName: row.division?.name ?? null,
+        positionName: row.position?.name ?? null,
         user: { id: row.user.id, name: row.user.name, email: row.user.email },
         roleKeys: row.roles.map((assignment) => assignment.role.key).sort(),
       })),

@@ -153,6 +153,7 @@ export async function enforceUserRateLimit(input: {
     | "workspace.role"
     | "workspace.switch"
     | "workspace.office"
+    | "workspace.organization"
     | "correction.bulk";
   limiter?: RateLimiter | undefined;
   now?: Date | undefined;

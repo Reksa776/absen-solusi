@@ -6,13 +6,21 @@ import 'package:http_parser/http_parser.dart';
 
 import '../core/app_config.dart';
 import '../models/attendance_log.dart';
+import '../models/broadcast.dart';
 import '../models/correction.dart';
+import '../models/leave.dart';
 import '../models/employee_request.dart';
 import '../models/in_app_notification.dart';
+import '../models/member_device.dart';
 import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
+import '../models/organization.dart';
+import '../models/profile_photo.dart';
 import '../models/schedule.dart';
 import '../models/session.dart';
+import '../models/warning_letter.dart';
+import '../models/work_permit.dart';
+import '../services/device_identity_service.dart';
 import '../services/token_store.dart';
 
 class ApiException implements Exception {
@@ -31,12 +39,16 @@ class ApiClient {
     http.Client? client,
     TokenStore? tokenStore,
     String? baseUrl,
+    DeviceIdentityService? deviceIdentityService,
   }) : _client = client ?? http.Client(),
        _tokenStore = tokenStore ?? SecureTokenStore(),
+       _deviceIdentityService =
+           deviceIdentityService ?? DeviceIdentityService(),
        baseUrl = baseUrl ?? AppConfig.apiBaseUrl;
 
   final http.Client _client;
   final TokenStore _tokenStore;
+  final DeviceIdentityService _deviceIdentityService;
   final String baseUrl;
 
   Future<String?> readToken() => _tokenStore.read();
@@ -44,11 +56,13 @@ class ApiClient {
   Future<void> clearToken() => _tokenStore.clear();
 
   Future<AuthResult> login(String email, String password) async {
+    final identity = await _deviceIdentityService.resolve();
     final response = await _client.post(
       Uri.parse('$baseUrl/api/auth/login'),
-      headers: const {
+      headers: {
         'content-type': 'application/json',
         'x-auth-mode': 'bearer',
+        ...identity.headers,
       },
       body: jsonEncode({'email': email, 'password': password}),
     );
@@ -120,6 +134,8 @@ class ApiClient {
     required bool isMockLocation,
     required Uint8List photoBytes,
     required String deviceInfo,
+    String workMode = 'OFFICE',
+    String? outOfTownReason,
   }) {
     return _record(
       'check-in',
@@ -129,6 +145,8 @@ class ApiClient {
       isMockLocation: isMockLocation,
       photoBytes: photoBytes,
       deviceInfo: deviceInfo,
+      workMode: workMode,
+      outOfTownReason: outOfTownReason,
     );
   }
 
@@ -139,6 +157,8 @@ class ApiClient {
     required bool isMockLocation,
     required Uint8List photoBytes,
     required String deviceInfo,
+    String workMode = 'OFFICE',
+    String? outOfTownReason,
   }) {
     return _record(
       'check-out',
@@ -148,6 +168,8 @@ class ApiClient {
       isMockLocation: isMockLocation,
       photoBytes: photoBytes,
       deviceInfo: deviceInfo,
+      workMode: workMode,
+      outOfTownReason: outOfTownReason,
     );
   }
 
@@ -159,6 +181,8 @@ class ApiClient {
     required bool isMockLocation,
     required Uint8List photoBytes,
     required String deviceInfo,
+    String workMode = 'OFFICE',
+    String? outOfTownReason,
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -171,6 +195,9 @@ class ApiClient {
       'accuracy_meters': '$accuracyMeters',
       'is_mock_location': '$isMockLocation',
       'device_info': deviceInfo,
+      'work_mode': workMode,
+      if (workMode == 'OUT_OF_TOWN' && outOfTownReason != null)
+        'out_of_town_reason': outOfTownReason,
     });
     request.files.add(
       http.MultipartFile.fromBytes(
@@ -202,6 +229,9 @@ class ApiClient {
       'is_mock_location': '${entry.isMockLocation}',
       'client_captured_at': entry.clientCapturedAt.toUtc().toIso8601String(),
       'device_info': 'offline-queue',
+      'work_mode': entry.workMode,
+      if (entry.workMode == 'OUT_OF_TOWN' && entry.outOfTownReason != null)
+        'out_of_town_reason': entry.outOfTownReason!,
     });
     request.files.add(
       await http.MultipartFile.fromPath(
@@ -356,6 +386,189 @@ class ApiClient {
         .toList(growable: false);
   }
 
+  Future<WorkPermitRequest> submitWorkPermit({
+    required String permitType,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+    Uint8List? proofBytes,
+    String proofFilename = 'bukti-izin.jpg',
+    String proofContentType = 'image/jpeg',
+  }) async {
+    final fields = <String, String>{
+      'permitType': permitType,
+      'startDate': _dateOnly(startDate),
+      'endDate': _dateOnly(endDate),
+      'reason': reason,
+    };
+    if (proofBytes == null) {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/api/permits'),
+        headers: await _authHeaders(json: true),
+        body: jsonEncode(fields),
+      );
+      return WorkPermitRequest.fromJson(_decodeObject(response));
+    }
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/permits'),
+    );
+    request.headers.addAll(await _authHeaders());
+    request.fields.addAll(fields);
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'proof',
+        proofBytes,
+        filename: proofFilename,
+        contentType: MediaType.parse(proofContentType),
+      ),
+    );
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    return WorkPermitRequest.fromJson(_decodeObject(response));
+  }
+
+  Future<List<WorkPermitRequest>> myWorkPermits({String? status}) async {
+    final uri = Uri.parse('$baseUrl/api/permits/me').replace(
+      queryParameters: status == null ? null : {'status': status},
+    );
+    final response = await _client.get(uri, headers: await _authHeaders());
+    final json = _decodeObject(response);
+    return (json['permits'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(WorkPermitRequest.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<LeaveRequest> submitLeave({
+    required String leaveType,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String reason,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/leave'),
+      headers: await _authHeaders(json: true),
+      body: jsonEncode({
+        'leaveType': leaveType,
+        'startDate': _dateOnly(startDate),
+        'endDate': _dateOnly(endDate),
+        'reason': reason,
+      }),
+    );
+    return LeaveRequest.fromJson(_decodeObject(response));
+  }
+
+  Future<List<LeaveRequest>> myLeave({String? status}) async {
+    final uri = Uri.parse('$baseUrl/api/leave/me').replace(
+      queryParameters: status == null ? null : {'status': status},
+    );
+    final response = await _client.get(uri, headers: await _authHeaders());
+    final json = _decodeObject(response);
+    return (json['leave'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(LeaveRequest.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<LeaveBalance> myLeaveBalance({int? year}) async {
+    final uri = Uri.parse('$baseUrl/api/leave/balance').replace(
+      queryParameters: year == null ? null : {'year': '$year'},
+    );
+    final response = await _client.get(uri, headers: await _authHeaders());
+    return LeaveBalance.fromJson(_decodeObject(response));
+  }
+
+  Future<List<WarningLetter>> myWarningLetters() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/warning-letters/me'),
+      headers: await _authHeaders(),
+    );
+    final json = _decodeObject(response);
+    return (json['letters'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(WarningLetter.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<WarningLetter> acknowledgeWarningLetter(String id) async {
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/warning-letters/$id/acknowledge'),
+      headers: await _authHeaders(json: true),
+    );
+    return WarningLetter.fromJson(_decodeObject(response));
+  }
+
+  Future<List<BroadcastMessage>> myBroadcasts() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/broadcasts/me'),
+      headers: await _authHeaders(),
+    );
+    final json = _decodeObject(response);
+    return (json['broadcasts'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(BroadcastMessage.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<MemberDevice?> myDevice() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/device'),
+      headers: await _authHeaders(),
+    );
+    final device = _decodeObject(response)['device'];
+    return device is Map<String, dynamic>
+        ? MemberDevice.fromJson(device)
+        : null;
+  }
+
+  Future<ProfilePhotoStatus> myProfilePhoto() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/profile/photo'),
+      headers: await _authHeaders(),
+    );
+    return ProfilePhotoStatus.fromJson(_decodeObject(response));
+  }
+
+  Future<Uint8List?> profilePhotoBytes(String path) async {
+    final response = await _client.get(
+      Uri.parse(photoUrl(path)),
+      headers: await _authHeaders(),
+    );
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _decodeObject(response);
+    }
+    return response.bodyBytes;
+  }
+
+  Future<ProfilePhotoStatus> uploadProfilePhoto(Uint8List bytes) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/mobile/profile/photo'),
+    );
+    request.headers.addAll(await _authHeaders());
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'photo',
+        bytes,
+        filename: 'profile.jpg',
+        contentType: MediaType('image', 'jpeg'),
+      ),
+    );
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    return ProfilePhotoStatus.fromJson(_decodeObject(response));
+  }
+
+  Future<OrganizationProfile> organizationProfile() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/profile'),
+      headers: await _authHeaders(),
+    );
+    return OrganizationProfile.fromJson(_decodeObject(response));
+  }
+
   Future<WorkSchedule> workSchedule() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/mobile/schedule'),
@@ -406,9 +619,11 @@ class ApiClient {
     if (token == null || token.isEmpty) {
       throw const ApiException(401, 'UNAUTHENTICATED', 'Sesi tidak tersedia');
     }
+    final identity = await _deviceIdentityService.resolve();
     return {
       'authorization': 'Bearer $token',
       if (json) 'content-type': 'application/json',
+      ...identity.headers,
     };
   }
 

@@ -27,12 +27,18 @@ type Member = {
   status: string;
   joinedAt: string | null;
   officeLocationId: string | null;
+  divisionId: string | null;
+  positionId: string | null;
+  divisionName: string | null;
+  positionName: string | null;
   user: { id: string; name: string; email: string };
   roleKeys: string[];
 };
 
 type OfficeOption = { id: string; name: string };
 type ShiftOption = { id: string; name: string };
+type DivisionOption = { id: string; name: string };
+type PositionOption = { id: string; name: string; divisionName: string | null };
 
 export function MemberAdmin({
   workspaceId,
@@ -40,9 +46,12 @@ export function MemberAdmin({
   members,
   offices,
   shifts,
+  divisions,
+  positions,
   canInvite,
   canManageRoles,
   canAssignOffice,
+  canManageOrganization,
   canResetPassword,
 }: {
   workspaceId: string;
@@ -50,9 +59,12 @@ export function MemberAdmin({
   members: Member[];
   offices: OfficeOption[];
   shifts: ShiftOption[];
+  divisions: DivisionOption[];
+  positions: PositionOption[];
   canInvite: boolean;
   canManageRoles: boolean;
   canAssignOffice: boolean;
+  canManageOrganization: boolean;
   canResetPassword: boolean;
 }) {
   const router = useRouter();
@@ -65,6 +77,20 @@ export function MemberAdmin({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState("");
+  const [positionFilter, setPositionFilter] = useState("");
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleMembers = members.filter((member) => {
+    if (divisionFilter && member.divisionId !== divisionFilter) return false;
+    if (positionFilter && member.positionId !== positionFilter) return false;
+    if (!normalizedQuery) return true;
+    return (
+      member.user.name.toLowerCase().includes(normalizedQuery) ||
+      member.user.email.toLowerCase().includes(normalizedQuery)
+    );
+  });
 
   async function requestJson(url: string, method: "POST" | "PATCH", payload: unknown) {
     setBusy(true);
@@ -138,6 +164,22 @@ export function MemberAdmin({
     );
     if (ok) {
       setNotice("Penugasan kantor diperbarui.");
+      router.refresh();
+    }
+  }
+
+  async function assignOrganization(
+    memberId: string,
+    divisionId: string,
+    positionId: string,
+  ) {
+    const ok = await requestJson(
+      `/api/workspaces/${workspaceId}/members/${memberId}/organization`,
+      "PATCH",
+      { divisionId: divisionId || null, positionId: positionId || null },
+    );
+    if (ok) {
+      setNotice("Divisi & jabatan diperbarui.");
       router.refresh();
     }
   }
@@ -260,11 +302,57 @@ export function MemberAdmin({
         </p>
       ) : null}
 
+      <div className="toolbar" aria-label="Filter karyawan">
+        <label className="field" style={{ minWidth: "12rem" }}>
+          Cari karyawan
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Nama atau email"
+          />
+        </label>
+        {canManageOrganization ? (
+          <label className="field">
+            Filter divisi
+            <select
+              value={divisionFilter}
+              onChange={(event) => setDivisionFilter(event.target.value)}
+            >
+              <option value="">Semua divisi</option>
+              {divisions.map((division) => (
+                <option key={division.id} value={division.id}>
+                  {division.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {canManageOrganization ? (
+          <label className="field">
+            Filter jabatan
+            <select
+              value={positionFilter}
+              onChange={(event) => setPositionFilter(event.target.value)}
+            >
+              <option value="">Semua jabatan</option>
+              {positions.map((position) => (
+                <option key={position.id} value={position.id}>
+                  {position.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
       <div className="table-wrap">
         <div className="table-head">
           <div>
             <h2 className="section-title">Daftar karyawan</h2>
-            <p className="section-note">{members.length} akun pada halaman ini</p>
+            <p className="section-note">
+              <span className="num">{visibleMembers.length}</span> dari{" "}
+              <span className="num">{members.length}</span> akun pada halaman ini
+            </p>
           </div>
         </div>
         <div className="table-scroll">
@@ -274,20 +362,22 @@ export function MemberAdmin({
                 <th>Nama</th>
                 <th>Email</th>
                 <th>Status</th>
+                {canManageOrganization ? <th>Divisi</th> : null}
+                {canManageOrganization ? <th>Jabatan</th> : null}
                 <th>Role</th>
                 {canAssignOffice ? <th>Kantor</th> : null}
                 {canResetPassword ? <th>Aksi</th> : null}
               </tr>
             </thead>
             <tbody>
-              {members.length === 0 ? (
+              {visibleMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="empty">
-                    Belum ada karyawan pada workspace ini.
+                  <td colSpan={8} className="empty">
+                    Tidak ada karyawan yang cocok dengan filter.
                   </td>
                 </tr>
               ) : null}
-              {members.map((member) => (
+              {visibleMembers.map((member) => (
                 <tr key={member.id}>
                   <td>
                     <span className="cell-title">{member.user.name}</span>
@@ -302,6 +392,52 @@ export function MemberAdmin({
                       {member.status === "ACTIVE" ? "Aktif" : member.status}
                     </span>
                   </td>
+                  {canManageOrganization ? (
+                    <td>
+                      <select
+                        value={member.divisionId ?? ""}
+                        onChange={(event) =>
+                          assignOrganization(member.id, event.target.value, "")
+                        }
+                        disabled={busy || member.status !== "ACTIVE"}
+                        className="select-inline"
+                        aria-label={`Divisi ${member.user.name}`}
+                      >
+                        <option value="">Tanpa divisi</option>
+                        {divisions.map((division) => (
+                          <option key={division.id} value={division.id}>
+                            {division.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  ) : null}
+                  {canManageOrganization ? (
+                    <td>
+                      <select
+                        value={member.positionId ?? ""}
+                        onChange={(event) =>
+                          assignOrganization(
+                            member.id,
+                            member.divisionId ?? "",
+                            event.target.value,
+                          )
+                        }
+                        disabled={busy || member.status !== "ACTIVE"}
+                        className="select-inline"
+                        aria-label={`Jabatan ${member.user.name}`}
+                      >
+                        <option value="">Tanpa jabatan</option>
+                        {positions.map((position) => (
+                          <option key={position.id} value={position.id}>
+                            {position.divisionName
+                              ? `${position.name} · ${position.divisionName}`
+                              : position.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  ) : null}
                   <td>
                     {canManageRoles && member.id !== currentMemberId && member.status === "ACTIVE" ? (
                       <select

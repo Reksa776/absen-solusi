@@ -46,6 +46,12 @@ void main() {
     final result = await client.login('a@example.com', 'rahasia');
     expect(captured.url.path, '/api/auth/login');
     expect(captured.headers['x-auth-mode'], 'bearer');
+    expect(
+      captured.headers['x-device-platform'],
+      isIn(['ANDROID', 'IOS', 'UNKNOWN']),
+    );
+    expect(captured.headers['x-device-id']?.length, greaterThanOrEqualTo(8));
+    expect(captured.headers['x-device-name'], isNotEmpty);
     expect(result.user.email, 'a@example.com');
     expect(result.workspaces.single.name, 'Tenant A');
     expect(await store.read(), 'token-abc');

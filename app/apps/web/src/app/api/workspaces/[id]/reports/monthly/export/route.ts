@@ -22,6 +22,8 @@ export async function GET(
       year: url.searchParams.get("year") ?? "",
       month: url.searchParams.get("month") ?? "",
       memberId: url.searchParams.get("memberId") ?? undefined,
+      divisionId: url.searchParams.get("divisionId") ?? undefined,
+      positionId: url.searchParams.get("positionId") ?? undefined,
       from: url.searchParams.get("from") ?? undefined,
       to: url.searchParams.get("to") ?? undefined,
       ip: getClientIp(request),

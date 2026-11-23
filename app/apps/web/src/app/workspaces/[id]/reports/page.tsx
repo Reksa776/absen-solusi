@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { getMonthlyReport } from "@absensi/auth";
+import { getMonthlyReport, listDivisions } from "@absensi/auth";
 
 import { requirePagePermission } from "@/lib/page-auth";
 
@@ -42,7 +42,12 @@ export default async function ReportsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ year?: string; month?: string; memberId?: string }>;
+  searchParams: Promise<{
+    year?: string;
+    month?: string;
+    memberId?: string;
+    divisionId?: string;
+  }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -52,15 +57,30 @@ export default async function ReportsPage({
   const now = new Date();
   const year = Number(query.year ?? now.getUTCFullYear());
   const month = Number(query.month ?? now.getUTCMonth() + 1);
+  const divisionId = query.divisionId?.trim() || undefined;
   const report = await getMonthlyReport({
     ctx,
     workspaceId: id,
     year,
     month,
     memberId: query.memberId?.trim() || undefined,
+    divisionId,
   });
+  const divisions = ctx.permissions.includes("member.read")
+    ? (await listDivisions({ ctx, workspaceId: id })).filter(
+        (division) => division.isActive,
+      )
+    : [];
+  const selectedDivision = divisions.find((division) => division.id === divisionId);
   const monthLabel = `${report.year}-${String(report.month).padStart(2, "0")}`;
   const timezone = report.timezone ?? "UTC";
+  const exportQuery = new URLSearchParams({
+    year: String(report.year),
+    month: String(report.month),
+    format: "csv",
+  });
+  if (divisionId) exportQuery.set("divisionId", divisionId);
+  if (query.memberId) exportQuery.set("memberId", query.memberId);
 
   return (
     <main className="page">
@@ -69,13 +89,15 @@ export default async function ReportsPage({
           <p className="eyebrow">Rekap bulanan</p>
           <h1 className="page-title">Rekap bulanan</h1>
           <p className="page-subtitle">
-            Periode {monthLabel} · {report.pagination.total} member · Zona waktu {timezone}
+            Periode <span className="mono">{monthLabel}</span> ·{" "}
+            <span className="num">{report.pagination.total}</span> member · Zona waktu {timezone}
+            {selectedDivision ? ` · ${selectedDivision.name}` : ""}
           </p>
         </div>
         <div className="btn-row">
           <a
             className="btn btn--secondary"
-            href={`/api/workspaces/${id}/reports/monthly/export?year=${report.year}&month=${report.month}&format=csv`}
+            href={`/api/workspaces/${id}/reports/monthly/export?${exportQuery.toString()}`}
           >
             Unduh CSV
           </a>
@@ -97,6 +119,19 @@ export default async function ReportsPage({
           Bulan
           <input type="number" name="month" defaultValue={report.month} min={1} max={12} />
         </label>
+        {divisions.length > 0 ? (
+          <label className="field" style={{ maxWidth: "13rem" }}>
+            Divisi
+            <select name="divisionId" defaultValue={divisionId ?? ""}>
+              <option value="">Semua divisi</option>
+              {divisions.map((division) => (
+                <option key={division.id} value={division.id}>
+                  {division.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <button type="submit" className="btn btn--primary">
           Tampilkan
         </button>
@@ -107,6 +142,9 @@ export default async function ReportsPage({
           <details key={member.memberId} className="report-card">
             <summary>
               <strong>{member.name}</strong>
+              {member.divisionName ? (
+                <span className="badge badge--neutral">{member.divisionName}</span>
+              ) : null}
               <span className="mono">{member.totalWorkHours} jam</span>
               <span className="mono">{member.totalLate} menit terlambat</span>
               <span className="mono">{member.totalAbsent} alpha</span>

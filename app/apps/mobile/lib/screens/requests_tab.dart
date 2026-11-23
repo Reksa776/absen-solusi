@@ -3,10 +3,14 @@ import 'package:material_ui/material_ui.dart';
 import '../api/api_client.dart';
 import '../models/correction.dart';
 import '../models/employee_request.dart';
+import '../models/leave.dart';
+import '../models/work_permit.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import 'correction_form_screen.dart';
 import 'employee_requests_screen.dart';
+import 'leave_form_screen.dart';
+import 'work_permit_form_screen.dart';
 
 /// Tab Pengajuan: satu tempat untuk revisi absensi, lembur, dan WFH.
 class RequestsTab extends StatefulWidget {
@@ -20,9 +24,11 @@ class RequestsTab extends StatefulWidget {
 
 class _RequestsTabState extends State<RequestsTab> {
   static const _segments = [
-    ('CORRECTION', 'Revisi Absen'),
+    ('CORRECTION', 'Revisi'),
     ('OVERTIME', 'Lembur'),
     ('WFH', 'WFH'),
+    ('IZIN', 'Izin'),
+    ('CUTI', 'Cuti'),
   ];
   static const _monthNames = [
     'Jan',
@@ -43,6 +49,9 @@ class _RequestsTabState extends State<RequestsTab> {
   List<CorrectionRequest> _corrections = const [];
   List<OvertimeRequest> _overtime = const [];
   List<WfhRequest> _wfh = const [];
+  List<WorkPermitRequest> _permits = const [];
+  List<LeaveRequest> _leave = const [];
+  LeaveBalance? _balance;
   bool _loading = true;
   String? _error;
 
@@ -62,12 +71,18 @@ class _RequestsTabState extends State<RequestsTab> {
         widget.auth.api.myCorrections(),
         widget.auth.api.myOvertime(),
         widget.auth.api.myWfh(),
+        widget.auth.api.myWorkPermits(),
+        widget.auth.api.myLeave(),
+        widget.auth.api.myLeaveBalance(),
       ]);
       if (!mounted) return;
       setState(() {
         _corrections = results[0] as List<CorrectionRequest>;
         _overtime = results[1] as List<OvertimeRequest>;
         _wfh = results[2] as List<WfhRequest>;
+        _permits = results[3] as List<WorkPermitRequest>;
+        _leave = results[4] as List<LeaveRequest>;
+        _balance = results[5] as LeaveBalance;
         _loading = false;
       });
     } on ApiException catch (error) {
@@ -94,7 +109,8 @@ class _RequestsTabState extends State<RequestsTab> {
       ),
       builder: (sheetContext) => SafeArea(
         top: false,
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 10),
@@ -144,8 +160,25 @@ class _RequestsTabState extends State<RequestsTab> {
               subtitle: 'Minta izin bekerja dari rumah untuk tanggal tertentu.',
               value: 'WFH',
             ),
+            _sheetOption(
+              sheetContext,
+              key: 'create-IZIN',
+              icon: Icons.badge_outlined,
+              title: 'Izin Kerja',
+              subtitle: 'Sakit, izin pribadi, pulang cepat, atau terlambat.',
+              value: 'IZIN',
+            ),
+            _sheetOption(
+              sheetContext,
+              key: 'create-CUTI',
+              icon: Icons.beach_access_outlined,
+              title: 'Cuti',
+              subtitle: 'Ajukan cuti tahunan atau cuti khusus beserta alasannya.',
+              value: 'CUTI',
+            ),
             const SizedBox(height: 10),
           ],
+          ),
         ),
       ),
     );
@@ -155,6 +188,18 @@ class _RequestsTabState extends State<RequestsTab> {
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => CorrectionFormScreen(auth: widget.auth),
+        ),
+      );
+    } else if (choice == 'IZIN') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => WorkPermitFormScreen(auth: widget.auth),
+        ),
+      );
+    } else if (choice == 'CUTI') {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => LeaveFormScreen(auth: widget.auth),
         ),
       );
     } else {
@@ -229,7 +274,7 @@ class _RequestsTabState extends State<RequestsTab> {
                 ),
                 const SizedBox(height: 2),
                 const Text(
-                  'Revisi absensi, lembur, dan WFH dalam satu tempat.',
+                  'Revisi absensi, lembur, WFH, izin kerja, dan cuti.',
                   style: TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
                 const SizedBox(height: 12),
@@ -375,6 +420,8 @@ class _RequestsTabState extends State<RequestsTab> {
   String get _emptyText => switch (_segment) {
     'OVERTIME' => 'Belum ada pengajuan lembur.',
     'WFH' => 'Belum ada pengajuan WFH.',
+    'IZIN' => 'Belum ada pengajuan izin kerja.',
+    'CUTI' => 'Belum ada pengajuan cuti.',
     _ => 'Belum ada pengajuan revisi.',
   };
 
@@ -400,6 +447,81 @@ class _RequestsTabState extends State<RequestsTab> {
             icon: Icons.home_work_outlined,
             title: 'WFH • ${_date(row.date)}',
             subtitle: row.reason,
+            status: row.status,
+            statusLabel: row.statusLabel,
+          ),
+      ];
+    }
+    if (_segment == 'IZIN') {
+      return [
+        for (final row in _permits)
+          _requestCard(
+            icon: row.permitType == 'SAKIT'
+                ? Icons.medical_services_outlined
+                : Icons.badge_outlined,
+            title:
+                '${row.typeLabel} • ${_date(row.startDate)}'
+                '${row.endDate == row.startDate ? '' : ' – ${_date(row.endDate)}'}',
+            subtitle:
+                '${row.reason}'
+                '${row.hasProof ? '\nBukti terlampir' : ''}'
+                '${row.rejectionReason == null ? '' : '\nDitolak: ${row.rejectionReason}'}',
+            status: row.status,
+            statusLabel: row.statusLabel,
+          ),
+      ];
+    }
+    if (_segment == 'CUTI') {
+      final balance = _balance;
+      return [
+        if (balance != null)
+          Container(
+            key: const Key('leave-balance-card'),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.greenSoft,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.greenLine),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.beach_access_outlined,
+                  size: 18,
+                  color: AppColors.greenDark,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Sisa cuti tahunan',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.greenDark,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${balance.remainingDays} / ${balance.entitledDays} hari',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.greenDark,
+                    fontFeatures: tabularFigures,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        for (final row in _leave)
+          _requestCard(
+            icon: Icons.event_busy_outlined,
+            title:
+                '${row.typeLabel} • ${_date(row.startDate)}'
+                '${row.endDate == row.startDate ? '' : ' – ${_date(row.endDate)}'}',
+            subtitle:
+                '${row.workingDays} hari kerja\n${row.reason}'
+                '${row.rejectionReason == null ? '' : '\nDitolak: ${row.rejectionReason}'}',
             status: row.status,
             statusLabel: row.statusLabel,
           ),
@@ -482,6 +604,10 @@ class _RequestsTabState extends State<RequestsTab> {
   }
 
   Widget _statusPill(String status, String label) {
+    return _pill(status, label);
+  }
+
+  Widget _pill(String status, String label) {
     final (background, border, foreground) = switch (status) {
       'APPROVED' => (
         AppColors.greenSoft,

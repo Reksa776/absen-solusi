@@ -3,20 +3,53 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV_ITEMS = [
-  { slug: "dashboard", label: "Dashboard", permission: "attendance.read" },
-  { slug: "members", label: "Members", permission: "member.read" },
-  { slug: "corrections", label: "Corrections", permission: "correction.read" },
-  { slug: "overtime", label: "Lembur", permission: "correction.review" },
-  { slug: "wfh", label: "WFH", permission: "correction.review" },
-  { slug: "reports", label: "Reports", permission: "attendance.read" },
-  { slug: "reports/payroll", label: "Payroll", permission: "attendance.read" },
-  { slug: "notifications", label: "Notifikasi", permission: "workspace.read" },
-  { slug: "audit", label: "Audit", permission: "audit.read" },
-  { slug: "settings/office", label: "Kantor", permission: "office.manage" },
-  { slug: "settings/shifts", label: "Shift kerja", permission: "office.manage" },
-  { slug: "settings/holidays", label: "Hari libur", permission: "workspace.manage" },
-  { slug: "settings/app-release", label: "Rilis aplikasi", permission: "workspace.manage" },
+const NAV_GROUPS = [
+  {
+    label: "Ringkasan",
+    items: [
+      { slug: "dashboard", label: "Dashboard", permission: "attendance.read" },
+      { slug: "broadcasts", label: "Broadcast", permission: "member.read" },
+      { slug: "notifications", label: "Notifikasi", permission: "workspace.read" },
+    ],
+  },
+  {
+    label: "Kelola karyawan",
+    items: [
+      { slug: "members", label: "Karyawan", permission: "member.read" },
+      { slug: "warning-letters", label: "Kirim surat peringatan", permission: "member.read" },
+      { slug: "settings/organization", label: "Divisi & jabatan", permission: "member.read" },
+    ],
+  },
+  {
+    label: "Kehadiran",
+    items: [
+      { slug: "corrections", label: "Koreksi presensi", permission: "correction.read" },
+      { slug: "overtime", label: "Lembur", permission: "correction.review" },
+      { slug: "wfh", label: "WFH", permission: "correction.review" },
+      { slug: "permits", label: "Izin kerja", permission: "correction.review" },
+      { slug: "permits/review", label: "Review izin kerja", permission: "correction.review" },
+      { slug: "leave", label: "Permohonan cuti", permission: "correction.review" },
+      { slug: "leave/report", label: "Laporan cuti", permission: "correction.review" },
+      { slug: "attendance-review", label: "Review luar kota", permission: "correction.review" },
+      { slug: "devices", label: "Persetujuan perangkat", permission: "member.read" },
+      { slug: "profile-photos", label: "Persetujuan foto profil", permission: "correction.review" },
+      { slug: "reports", label: "Laporan", permission: "attendance.read" },
+      { slug: "reports/payroll", label: "Payroll", permission: "attendance.read" },
+    ],
+  },
+  {
+    label: "Pengaturan",
+    items: [
+      { slug: "settings/approvals", label: "Alur persetujuan", permission: "member.read" },
+      { slug: "leave/settings", label: "Pengaturan cuti", permission: "correction.review" },
+      { slug: "settings/mobile", label: "Pengaturan mobile", permission: "member.read" },
+      { slug: "settings/office", label: "Kantor", permission: "office.manage" },
+      { slug: "settings/shifts", label: "Shift kerja", permission: "office.manage" },
+      { slug: "settings/holidays", label: "Hari libur", permission: "workspace.manage" },
+      { slug: "settings/app-release", label: "Rilis aplikasi", permission: "workspace.manage" },
+      { slug: "audit", label: "Audit", permission: "audit.read" },
+    ],
+  },
 ] as const;
 
 const BREADCRUMBS: Record<string, string> = {
@@ -26,16 +59,27 @@ const BREADCRUMBS: Record<string, string> = {
   bulk: "Koreksi massal",
   overtime: "Lembur",
   wfh: "WFH",
+  permits: "Izin kerja",
+  review: "Review izin kerja",
+  leave: "Permohonan cuti",
+  "warning-letters": "Kirim surat peringatan",
+  broadcasts: "Broadcast",
   reports: "Reports",
   payroll: "Payroll",
   notifications: "Notifikasi",
   late: "Statistik keterlambatan",
   audit: "Audit",
   settings: "Settings",
+  organization: "Divisi & jabatan",
   office: "Kantor",
   shifts: "Shift kerja",
   holidays: "Hari libur",
   "app-release": "Rilis aplikasi",
+  devices: "Persetujuan perangkat",
+  "profile-photos": "Persetujuan foto profil",
+  "attendance-review": "Review luar kota",
+  approvals: "Alur persetujuan",
+  mobile: "Pengaturan mobile",
 };
 
 function labelsFor(pathname: string): Array<{ label: string; href: string }> {
@@ -93,7 +137,10 @@ export function WorkspaceSidebar({
 }) {
   const pathname = usePathname();
   const base = `/workspaces/${workspaceId}`;
-  const allowed = NAV_ITEMS.filter((item) => permissions.includes(item.permission));
+  const groups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => permissions.includes(item.permission)),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <aside className="sidebar">
@@ -110,25 +157,29 @@ export function WorkspaceSidebar({
       </div>
 
       <nav aria-label="Navigasi workspace">
-        <div className="nav-group-label">Menu</div>
-        <ul className="nav-list">
-          {allowed.map((item) => {
-            const href = `${base}/${item.slug}`;
-            const active = pathname === href || pathname.startsWith(`${href}/`);
-            return (
-              <li key={item.slug}>
-                <Link
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  className="nav-link"
-                >
-                  <span>{item.label}</span>
-                  {active ? <span className="nav-dot" aria-hidden="true" /> : null}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="nav-group-label">{group.label}</div>
+            <ul className="nav-list">
+              {group.items.map((item) => {
+                const href = `${base}/${item.slug}`;
+                const active = pathname === href || pathname.startsWith(`${href}/`);
+                return (
+                  <li key={item.slug}>
+                    <Link
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      className="nav-link"
+                    >
+                      <span>{item.label}</span>
+                      {active ? <span className="nav-dot" aria-hidden="true" /> : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       <div className="sidebar-footer">

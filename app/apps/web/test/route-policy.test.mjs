@@ -61,5 +61,7 @@ test("route publik dibatasi health/ready/login/register/csrf", () => {
     "/api/health",
     "/api/health/ready",
     "/api/invitations/accept",
+    "/api/mobile/apk/latest",
+    "/api/mobile/version",
   ]);
 });

@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 
-import { listOffices, listShifts, listWorkspaceMembers } from "@absensi/auth";
+import {
+  listDivisions,
+  listOffices,
+  listPositions,
+  listShifts,
+  listWorkspaceMembers,
+} from "@absensi/auth";
 
 import { requirePagePermission } from "@/lib/page-auth";
 import { MemberAdmin } from "./member-admin";
@@ -17,6 +23,7 @@ export default async function MembersPage({
   if (!ctx || ctx.tenantId !== id) redirect("/workspaces?error=forbidden");
   const result = await listWorkspaceMembers({ ctx, workspaceId: id });
   const canAssignOffice = ctx.permissions.includes("office.manage");
+  const canManageOrganization = ctx.permissions.includes("member.manage");
   const offices = canAssignOffice
     ? (await listOffices({ ctx, workspaceId: id })).map((office) => ({
         id: office.id,
@@ -29,6 +36,20 @@ export default async function MembersPage({
         .map((shift) => ({
           id: shift.id,
           name: `${shift.name} (${shift.startTime}–${shift.endTime})`,
+        }))
+    : [];
+  const divisions = canManageOrganization
+    ? (await listDivisions({ ctx, workspaceId: id }))
+        .filter((division) => division.isActive)
+        .map((division) => ({ id: division.id, name: division.name }))
+    : [];
+  const positions = canManageOrganization
+    ? (await listPositions({ ctx, workspaceId: id }))
+        .filter((position) => position.isActive)
+        .map((position) => ({
+          id: position.id,
+          name: position.name,
+          divisionName: position.divisionName,
         }))
     : [];
 
@@ -50,9 +71,12 @@ export default async function MembersPage({
         members={result.members}
         offices={offices}
         shifts={shifts}
+        divisions={divisions}
+        positions={positions}
         canInvite={ctx.permissions.includes("member.invite")}
         canManageRoles={ctx.permissions.includes("role.manage")}
         canAssignOffice={canAssignOffice}
+        canManageOrganization={canManageOrganization}
         canResetPassword={ctx.permissions.includes("member.manage")}
       />
     </main>

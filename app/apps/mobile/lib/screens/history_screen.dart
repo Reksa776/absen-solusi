@@ -538,23 +538,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           fontFeatures: tabularFigures,
                         ),
                       ),
+                      if (row.isOutOfTown) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Dinas luar kota'
+                          '${row.outOfTownReason == null ? '' : ' • ${row.outOfTownReason}'}',
+                          key: Key('history-out-of-town-${row.id}'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            height: 1.35,
+                            color: AppColors.yellowInk,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                row.isSuspicious
-                    ? _pill(
-                        'Suspicious',
-                        AppColors.dangerSoft,
-                        AppColors.danger.withValues(alpha: 0.25),
-                        AppColors.danger,
-                      )
-                    : _pill(
-                        'Dalam radius',
-                        AppColors.greenSoft,
-                        AppColors.greenLine,
-                        AppColors.greenDark,
-                      ),
+                _attendancePill(row),
               ],
             ),
           ),
@@ -592,6 +595,46 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ],
       ),
     );
+  }
+
+  Widget _attendancePill(AttendanceLog row) {
+    if (row.isOutOfTown) {
+      if (row.isApprovalRejected) {
+        return _pill(
+          'Ditolak',
+          AppColors.dangerSoft,
+          AppColors.danger.withValues(alpha: 0.25),
+          AppColors.danger,
+        );
+      }
+      if (row.isApprovalPending) {
+        return _pill(
+          'Menunggu approval',
+          AppColors.yellowSoft,
+          AppColors.yellowLine,
+          AppColors.yellowInk,
+        );
+      }
+      return _pill(
+        'Luar kota disetujui',
+        AppColors.greenSoft,
+        AppColors.greenLine,
+        AppColors.greenDark,
+      );
+    }
+    return row.isSuspicious
+        ? _pill(
+            'Suspicious',
+            AppColors.dangerSoft,
+            AppColors.danger.withValues(alpha: 0.25),
+            AppColors.danger,
+          )
+        : _pill(
+            'Dalam radius',
+            AppColors.greenSoft,
+            AppColors.greenLine,
+            AppColors.greenDark,
+          );
   }
 
   Widget _correctionPill(CorrectionRequest correction) {

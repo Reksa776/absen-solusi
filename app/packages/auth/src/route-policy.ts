@@ -190,6 +190,67 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "correction.review",
   },
+  "/api/permits": { kind: "permission", permission: "workspace.read" },
+  "/api/permits/me": { kind: "permission", permission: "workspace.read" },
+  "/api/permits/:id": { kind: "permission", permission: "correction.review" },
+  "/api/permits/:id/proof": { kind: "permission", permission: "workspace.read" },
+  "/api/workspaces/:id/permits": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/leave": { kind: "permission", permission: "workspace.read" },
+  "/api/leave/me": { kind: "permission", permission: "workspace.read" },
+  "/api/leave/balance": { kind: "permission", permission: "workspace.read" },
+  "/api/leave/:id": { kind: "permission", permission: "correction.review" },
+  "/api/workspaces/:id/leave": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/leave/report": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/leave/settings": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "correction.review" },
+      PATCH: { kind: "permission", permission: "correction.review" },
+    },
+  },
+  "/api/workspaces/:id/leave/balances/initialize": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/warning-letters": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/warning-letters/me": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/warning-letters/:id/acknowledge": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/workspaces/:id/broadcasts": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/broadcasts/:broadcastId/publish": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/broadcasts/me": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
   "/api/workspaces/:id/shifts": {
     kind: "permission",
     permission: "office.manage",
@@ -209,6 +270,102 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/workspaces/:id/holidays/:holidayId": {
     kind: "permission",
     permission: "workspace.manage",
+  },
+  "/api/workspaces/:id/divisions": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/divisions/:divisionId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/positions": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/positions/:positionId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/members/:memberId/organization": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/mobile/profile": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/device": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/profile/photo": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/workspaces/:id/devices": {
+    kind: "permission",
+    permission: "member.read",
+  },
+  "/api/workspaces/:id/devices/:deviceId": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/devices/:deviceId/approve": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/devices/:deviceId/reject": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/members/:memberId/devices/reset": {
+    kind: "permission",
+    permission: "member.manage",
+  },
+  "/api/workspaces/:id/settings/mobile": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      PATCH: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/profile-photos": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/profile-photos/:memberId": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/members/:memberId/photo": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/workspaces/:id/attendance-review": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/attendance/:attendanceId/review": {
+    kind: "permission",
+    permission: "correction.review",
+  },
+  "/api/workspaces/:id/approval-workflows": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "member.read" },
+      POST: { kind: "permission", permission: "member.manage" },
+    },
+  },
+  "/api/workspaces/:id/approval-workflows/:requestType": {
+    kind: "permission",
+    permission: "member.manage",
   },
   "/api/workspaces/:id/app-release": {
     kind: "methods",
