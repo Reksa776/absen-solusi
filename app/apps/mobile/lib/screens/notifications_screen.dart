@@ -156,7 +156,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   onPressed: _busy
                                       ? null
                                       : () => _markRead(item),
-                                  icon: const Icon(Icons.mark_email_read_outlined),
+                                  icon: const Icon(
+                                    Icons.mark_email_read_outlined,
+                                  ),
                                 ),
                         ),
                       ),

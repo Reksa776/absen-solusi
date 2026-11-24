@@ -272,9 +272,10 @@ model OfficeLocation {
   tenantId     String   @map("tenant_id") @db.Char(36)
   name         String   @db.VarChar(120)
   address      String?  @db.VarChar(255)
-  latitude     Float    @db.Double
-  longitude    Float    @db.Double
-  radiusMeters Int      @map("radius_meters")
+  latitude      Float    @db.Double
+  longitude     Float    @db.Double
+  googleMapsUrl String?  @map("google_maps_url") @db.VarChar(1024)
+  radiusMeters  Int      @map("radius_meters")
   timezone     String   @default("UTC") @db.VarChar(64)
   workStart    String   @map("work_start") @db.VarChar(5)
   workEnd      String   @map("work_end") @db.VarChar(5)

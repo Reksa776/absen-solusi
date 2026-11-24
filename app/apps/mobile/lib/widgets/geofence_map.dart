@@ -98,7 +98,10 @@ class _GeofencePainter extends CustomPainter {
       office.latitude,
       office.longitude,
     );
-    final scale = math.min(distance / math.max(office.radiusMeters, 1) * radius, radius * 1.5);
+    final scale = math.min(
+      distance / math.max(office.radiusMeters, 1) * radius,
+      radius * 1.5,
+    );
     final angle = math.atan2(
       reading.latitude - office.latitude,
       reading.longitude - office.longitude,

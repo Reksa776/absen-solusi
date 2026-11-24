@@ -21,9 +21,7 @@ class BroadcastMessage {
       divisionName: json['divisionName'] as String?,
       locationName: json['locationName'] as String?,
       priority: json['priority'] as String? ?? 'NORMAL',
-      publishedAt: DateTime.tryParse(
-        json['publishedAt'] as String? ?? '',
-      ),
+      publishedAt: DateTime.tryParse(json['publishedAt'] as String? ?? ''),
       createdByName: json['createdByName'] as String? ?? '',
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??

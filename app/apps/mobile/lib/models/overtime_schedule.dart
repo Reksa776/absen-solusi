@@ -12,7 +12,8 @@ class OvertimeSchedule {
   factory OvertimeSchedule.fromJson(Map<String, dynamic> json) {
     return OvertimeSchedule(
       id: json['id'] as String? ?? '',
-      date: DateTime.tryParse(json['date'] as String? ?? '') ??
+      date:
+          DateTime.tryParse(json['date'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       startTime: json['startTime'] as String? ?? '',
       endTime: json['endTime'] as String? ?? '',

@@ -3,8 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from "@absensi/permissions";
-
 const CSRF_COOKIE = "aos_csrf";
 const PASSWORD_MIN_LENGTH = 12;
 
@@ -39,6 +37,22 @@ type OfficeOption = { id: string; name: string };
 type DivisionOption = { id: string; name: string };
 type PositionOption = { id: string; name: string; divisionName: string | null };
 
+type EmployeeForm = {
+  name: string;
+  status: "ACTIVE" | "INACTIVE";
+  divisionId: string;
+  positionId: string;
+  officeLocationId: string;
+};
+
+const EMPTY_FORM: EmployeeForm = {
+  name: "",
+  status: "ACTIVE",
+  divisionId: "",
+  positionId: "",
+  officeLocationId: "",
+};
+
 export function MemberAdmin({
   workspaceId,
   currentMemberId,
@@ -47,7 +61,6 @@ export function MemberAdmin({
   divisions,
   positions,
   canInvite,
-  canManageRoles,
   canAssignOffice,
   canManageOrganization,
   canResetPassword,
@@ -59,7 +72,6 @@ export function MemberAdmin({
   divisions: DivisionOption[];
   positions: PositionOption[];
   canInvite: boolean;
-  canManageRoles: boolean;
   canAssignOffice: boolean;
   canManageOrganization: boolean;
   canResetPassword: boolean;
@@ -68,8 +80,12 @@ export function MemberAdmin({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<RoleKey>("EMPLOYEE");
+  const [status, setStatus] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
   const [officeId, setOfficeId] = useState("");
+  const [divisionId, setDivisionId] = useState("");
+  const [positionId, setPositionId] = useState("");
+  const [editing, setEditing] = useState<Member | null>(null);
+  const [editForm, setEditForm] = useState<EmployeeForm>(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -116,64 +132,64 @@ export function MemberAdmin({
 
   async function addEmployee(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const ok = await requestJson(
-      `/api/workspaces/${workspaceId}/members/direct`,
-      "POST",
-      {
-        name,
-        email,
-        password,
-        role,
-        officeId: officeId || null,
-      },
-    );
+    const ok = await requestJson(`/api/workspaces/${workspaceId}/members/direct`, "POST", {
+      name,
+      email,
+      password,
+      status,
+      officeId: officeId || null,
+      divisionId: divisionId || null,
+      positionId: positionId || null,
+    });
     if (ok) {
       setName("");
       setEmail("");
       setPassword("");
-      setRole("EMPLOYEE");
+      setStatus("ACTIVE");
       setOfficeId("");
-      setNotice("Karyawan berhasil ditambahkan dan dapat langsung login di aplikasi mobile.");
+      setDivisionId("");
+      setPositionId("");
+      setNotice(
+        "Karyawan berhasil ditambahkan dengan role karyawan standar dan dapat langsung login.",
+      );
       router.refresh();
     }
   }
 
-  async function changeRole(memberId: string, nextRole: string) {
-    const ok = await requestJson(
-      `/api/workspaces/${workspaceId}/members/${memberId}/role`,
-      "PATCH",
-      { role: nextRole },
-    );
-    if (ok) {
-      setNotice("Role diperbarui.");
-      router.refresh();
-    }
+  function startEdit(member: Member) {
+    setEditing(member);
+    setEditForm({
+      name: member.user.name,
+      status: member.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+      divisionId: member.divisionId ?? "",
+      positionId: member.positionId ?? "",
+      officeLocationId: member.officeLocationId ?? "",
+    });
+    setError(null);
+    setNotice(null);
   }
 
-  async function assignOffice(memberId: string, officeLocationId: string) {
+  async function saveEmployee(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
     const ok = await requestJson(
-      `/api/workspaces/${workspaceId}/members/${memberId}/office`,
+      `/api/workspaces/${workspaceId}/members/${editing.id}/employee`,
       "PATCH",
-      { officeLocationId: officeLocationId || null },
+      {
+        name: editForm.name,
+        status: editForm.status,
+        ...(canManageOrganization
+          ? {
+              divisionId: editForm.divisionId || null,
+              positionId: editForm.positionId || null,
+            }
+          : {}),
+        ...(canAssignOffice ? { officeLocationId: editForm.officeLocationId || null } : {}),
+      },
     );
     if (ok) {
-      setNotice("Penugasan kantor diperbarui.");
-      router.refresh();
-    }
-  }
-
-  async function assignOrganization(
-    memberId: string,
-    divisionId: string,
-    positionId: string,
-  ) {
-    const ok = await requestJson(
-      `/api/workspaces/${workspaceId}/members/${memberId}/organization`,
-      "PATCH",
-      { divisionId: divisionId || null, positionId: positionId || null },
-    );
-    if (ok) {
-      setNotice("Divisi & jabatan diperbarui.");
+      setNotice(`Data ${editForm.name} diperbarui.`);
+      setEditing(null);
       router.refresh();
     }
   }
@@ -197,8 +213,6 @@ export function MemberAdmin({
     }
   }
 
-  const assignableRoles = ROLE_KEYS.filter((key) => key !== "WORKSPACE_OWNER");
-
   return (
     <section>
       {canInvite ? (
@@ -207,18 +221,14 @@ export function MemberAdmin({
             <div>
               <h2 className="section-title">Tambah Karyawan Langsung</h2>
               <p className="section-note">
-                Akun langsung aktif tanpa undangan email.
+                Akun aktif tanpa undangan email. Role otomatis karyawan standar.
               </p>
             </div>
           </div>
           <div className="form-grid">
             <label className="field">
               Nama
-              <input
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
+              <input required value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <label className="field">
               Email
@@ -241,18 +251,46 @@ export function MemberAdmin({
               />
             </label>
             <label className="field">
-              Role
-              <select value={role} onChange={(event) => setRole(event.target.value as RoleKey)}>
-                {assignableRoles.map((key) => (
-                  <option key={key} value={key}>
-                    {ROLE_LABELS[key]}
-                  </option>
-                ))}
+              Status
+              <select
+                value={status}
+                onChange={(event) => setStatus(event.target.value as "ACTIVE" | "INACTIVE")}
+              >
+                <option value="ACTIVE">Aktif</option>
+                <option value="INACTIVE">Nonaktif</option>
               </select>
             </label>
+            {canManageOrganization ? (
+              <label className="field">
+                Divisi
+                <select value={divisionId} onChange={(event) => setDivisionId(event.target.value)}>
+                  <option value="">Tanpa divisi</option>
+                  {divisions.map((division) => (
+                    <option key={division.id} value={division.id}>
+                      {division.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {canManageOrganization ? (
+              <label className="field">
+                Jabatan
+                <select value={positionId} onChange={(event) => setPositionId(event.target.value)}>
+                  <option value="">Tanpa jabatan</option>
+                  {positions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.divisionName
+                        ? `${position.name} · ${position.divisionName}`
+                        : position.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {canAssignOffice ? (
               <label className="field">
-                Kantor
+                Lokasi kehadiran
                 <select value={officeId} onChange={(event) => setOfficeId(event.target.value)}>
                   <option value="">Semua kantor aktif</option>
                   {offices.map((office) => (
@@ -266,6 +304,120 @@ export function MemberAdmin({
             <div>
               <button type="submit" className="btn btn--primary" disabled={busy}>
                 {busy ? "Memproses…" : "Tambah Karyawan"}
+              </button>
+            </div>
+          </div>
+        </form>
+      ) : null}
+
+      {editing ? (
+        <form onSubmit={saveEmployee} className="form-card" aria-label="Edit Data Karyawan">
+          <div className="card-head" style={{ padding: "0 0 0.85rem", borderBottom: "none" }}>
+            <div>
+              <h2 className="section-title">Edit Data Karyawan</h2>
+              <p className="section-note">{editing.user.email}</p>
+            </div>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              Nama
+              <input
+                required
+                value={editForm.name}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field">
+              Status
+              <select
+                value={editForm.status}
+                onChange={(event) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    status: event.target.value as "ACTIVE" | "INACTIVE",
+                  }))
+                }
+              >
+                <option value="ACTIVE">Aktif</option>
+                <option value="INACTIVE">Nonaktif</option>
+              </select>
+            </label>
+            {canManageOrganization ? (
+              <label className="field">
+                Divisi
+                <select
+                  value={editForm.divisionId}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      divisionId: event.target.value,
+                      positionId: "",
+                    }))
+                  }
+                >
+                  <option value="">Tanpa divisi</option>
+                  {divisions.map((division) => (
+                    <option key={division.id} value={division.id}>
+                      {division.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {canManageOrganization ? (
+              <label className="field">
+                Jabatan
+                <select
+                  value={editForm.positionId}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, positionId: event.target.value }))
+                  }
+                >
+                  <option value="">Tanpa jabatan</option>
+                  {positions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.divisionName
+                        ? `${position.name} · ${position.divisionName}`
+                        : position.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {canAssignOffice ? (
+              <label className="field">
+                Lokasi kehadiran
+                <select
+                  value={editForm.officeLocationId}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      officeLocationId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Semua kantor aktif</option>
+                  {offices.map((office) => (
+                    <option key={office.id} value={office.id}>
+                      {office.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="btn-row">
+              <button type="submit" className="btn btn--primary" disabled={busy}>
+                {busy ? "Menyimpan…" : "Simpan data"}
+              </button>
+              <button
+                type="button"
+                className="btn btn--secondary"
+                onClick={() => setEditing(null)}
+                disabled={busy}
+              >
+                Batal
               </button>
             </div>
           </div>
@@ -345,15 +497,16 @@ export function MemberAdmin({
                 <th>Status</th>
                 {canManageOrganization ? <th>Divisi</th> : null}
                 {canManageOrganization ? <th>Jabatan</th> : null}
-                <th>Role</th>
-                {canAssignOffice ? <th>Kantor</th> : null}
-                {canResetPassword ? <th>Aksi</th> : null}
+                {canAssignOffice ? <th>Lokasi</th> : null}
+                {canResetPassword || canManageOrganization || canAssignOffice ? (
+                  <th>Aksi</th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
               {visibleMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="empty">
+                  <td colSpan={7} className="empty">
                     Tidak ada karyawan yang cocok dengan filter.
                   </td>
                 </tr>
@@ -370,104 +523,44 @@ export function MemberAdmin({
                         member.status === "ACTIVE" ? "badge badge--green" : "badge badge--neutral"
                       }
                     >
-                      {member.status === "ACTIVE" ? "Aktif" : member.status}
+                      {member.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
                     </span>
                   </td>
-                  {canManageOrganization ? (
-                    <td>
-                      <select
-                        value={member.divisionId ?? ""}
-                        onChange={(event) =>
-                          assignOrganization(member.id, event.target.value, "")
-                        }
-                        disabled={busy || member.status !== "ACTIVE"}
-                        className="select-inline"
-                        aria-label={`Divisi ${member.user.name}`}
-                      >
-                        <option value="">Tanpa divisi</option>
-                        {divisions.map((division) => (
-                          <option key={division.id} value={division.id}>
-                            {division.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  ) : null}
-                  {canManageOrganization ? (
-                    <td>
-                      <select
-                        value={member.positionId ?? ""}
-                        onChange={(event) =>
-                          assignOrganization(
-                            member.id,
-                            member.divisionId ?? "",
-                            event.target.value,
-                          )
-                        }
-                        disabled={busy || member.status !== "ACTIVE"}
-                        className="select-inline"
-                        aria-label={`Jabatan ${member.user.name}`}
-                      >
-                        <option value="">Tanpa jabatan</option>
-                        {positions.map((position) => (
-                          <option key={position.id} value={position.id}>
-                            {position.divisionName
-                              ? `${position.name} · ${position.divisionName}`
-                              : position.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  ) : null}
-                  <td>
-                    {canManageRoles && member.id !== currentMemberId && member.status === "ACTIVE" ? (
-                      <select
-                        defaultValue={member.roleKeys[0] ?? "EMPLOYEE"}
-                        onChange={(event) => changeRole(member.id, event.target.value)}
-                        disabled={busy}
-                        className="select-inline"
-                      >
-                        {assignableRoles.map((key) => (
-                          <option key={key} value={key}>
-                            {ROLE_LABELS[key]}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      member.roleKeys.join(", ") || "—"
-                    )}
-                  </td>
+                  {canManageOrganization ? <td>{member.divisionName ?? "—"}</td> : null}
+                  {canManageOrganization ? <td>{member.positionName ?? "—"}</td> : null}
                   {canAssignOffice ? (
                     <td>
-                      <select
-                        value={member.officeLocationId ?? ""}
-                        onChange={(event) => assignOffice(member.id, event.target.value)}
-                        disabled={busy || member.status !== "ACTIVE"}
-                        className="select-inline"
-                      >
-                        <option value="">Semua kantor aktif</option>
-                        {offices.map((office) => (
-                          <option key={office.id} value={office.id}>
-                            {office.name}
-                          </option>
-                        ))}
-                      </select>
+                      {offices.find((office) => office.id === member.officeLocationId)?.name ??
+                        "Semua kantor"}
                     </td>
                   ) : null}
-                  {canResetPassword ? (
+                  {canResetPassword || canManageOrganization || canAssignOffice ? (
                     <td>
-                      {member.status === "ACTIVE" && member.id !== currentMemberId ? (
-                        <button
-                          type="button"
-                          className="btn btn--secondary btn--sm"
-                          onClick={() => resetPassword(member)}
-                          disabled={busy}
-                        >
-                          Reset Password
-                        </button>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
+                      <div className="btn-row">
+                        {member.id !== currentMemberId &&
+                        (canManageOrganization || canAssignOffice) ? (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            onClick={() => startEdit(member)}
+                            disabled={busy}
+                          >
+                            Edit
+                          </button>
+                        ) : null}
+                        {canResetPassword &&
+                        member.status === "ACTIVE" &&
+                        member.id !== currentMemberId ? (
+                          <button
+                            type="button"
+                            className="btn btn--secondary btn--sm"
+                            onClick={() => resetPassword(member)}
+                            disabled={busy}
+                          >
+                            Reset Password
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   ) : null}
                 </tr>

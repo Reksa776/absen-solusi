@@ -128,9 +128,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       );
       if (!mounted) return;
       _wfhReason.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pengajuan WFH terkirim.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pengajuan WFH terkirim.')));
       await _load();
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -201,9 +201,14 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                     Text(
                       _error!,
                       key: const Key('request-error'),
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
-                  Text('Pengajuan lembur', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Pengajuan lembur',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   ListTile(
                     key: const Key('overtime-date'),
@@ -219,7 +224,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                           key: const Key('overtime-start'),
                           controller: _overtimeStart,
                           enabled: !_busy,
-                          decoration: const InputDecoration(labelText: 'Mulai (HH:MM)'),
+                          decoration: const InputDecoration(
+                            labelText: 'Mulai (HH:MM)',
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -228,7 +235,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                           key: const Key('overtime-end'),
                           controller: _overtimeEnd,
                           enabled: !_busy,
-                          decoration: const InputDecoration(labelText: 'Selesai (HH:MM)'),
+                          decoration: const InputDecoration(
+                            labelText: 'Selesai (HH:MM)',
+                          ),
                         ),
                       ),
                     ],
@@ -254,13 +263,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   for (final row in _overtime)
                     Card(
                       child: ListTile(
-                        title: Text('${_date(row.date)} • ${row.startTime}–${row.endTime}'),
+                        title: Text(
+                          '${_date(row.date)} • ${row.startTime}–${row.endTime}',
+                        ),
                         subtitle: Text(row.reason, maxLines: 2),
                         trailing: _statusChip(row.status),
                       ),
                     ),
                   const Divider(height: 32),
-                  Text('Pengajuan WFH', style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Pengajuan WFH',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   ListTile(
                     key: const Key('wfh-date'),

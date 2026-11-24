@@ -20,7 +20,8 @@ test("B7 UI: halaman member merender tabel dan form endpoint yang benar", () => 
   assert.match(page, /requirePagePermission\("member\.read"\)/);
   assert.match(page, /listWorkspaceMembers/);
   assert.match(form, /\/api\/workspaces\/\$\{workspaceId\}\/members\/direct/);
-  assert.match(form, /\/members\/\$\{memberId\}\/role/);
+  assert.match(form, /\/members\/\$\{editing\.id\}\/employee/);
+  assert.doesNotMatch(form, /name=["']role["']/);
   assert.match(form, /"PATCH"/);
   assert.match(form, /Reset Password/);
   assert.match(form, /Tambah Karyawan Langsung/);

@@ -64,7 +64,6 @@ export default async function MembersPage({
         divisions={divisions}
         positions={positions}
         canInvite={ctx.permissions.includes("member.invite")}
-        canManageRoles={ctx.permissions.includes("role.manage")}
         canAssignOffice={canAssignOffice}
         canManageOrganization={canManageOrganization}
         canResetPassword={ctx.permissions.includes("member.manage")}

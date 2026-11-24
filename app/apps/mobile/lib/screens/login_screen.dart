@@ -4,11 +4,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({
-    super.key,
-    required this.auth,
-    required this.onLoggedIn,
-  });
+  const LoginScreen({super.key, required this.auth, required this.onLoggedIn});
 
   final AuthService auth;
   final VoidCallback onLoggedIn;
@@ -62,7 +58,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               return Form(
                                 key: _formKey,
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     Text(
                                       'Masuk ke akun Anda',
@@ -74,7 +71,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     const SizedBox(height: 6),
                                     Text(
                                       'Catat kehadiran dengan GPS dan selfie kamera depan.',
-                                      style: Theme.of(context).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
                                     ),
                                     const SizedBox(height: 24),
                                     TextFormField(
@@ -82,10 +81,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                       controller: _email,
                                       keyboardType: TextInputType.emailAddress,
                                       textInputAction: TextInputAction.next,
-                                      autofillHints: const [AutofillHints.email],
+                                      autofillHints: const [
+                                        AutofillHints.email,
+                                      ],
                                       decoration: const InputDecoration(
                                         labelText: 'Email',
-                                        prefixIcon: Icon(Icons.mail_outline, size: 20),
+                                        prefixIcon: Icon(
+                                          Icons.mail_outline,
+                                          size: 20,
+                                        ),
                                       ),
                                       validator: (value) {
                                         final email = value?.trim() ?? '';
@@ -102,11 +106,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                       controller: _password,
                                       obscureText: _obscure,
                                       textInputAction: TextInputAction.done,
-                                      autofillHints: const [AutofillHints.password],
+                                      autofillHints: const [
+                                        AutofillHints.password,
+                                      ],
                                       onFieldSubmitted: (_) => _submit(),
                                       decoration: InputDecoration(
                                         labelText: 'Password',
-                                        prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                                        prefixIcon: const Icon(
+                                          Icons.lock_outline,
+                                          size: 20,
+                                        ),
                                         suffixIcon: IconButton(
                                           tooltip: _obscure
                                               ? 'Tampilkan password'
@@ -136,7 +145,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: AppColors.dangerSoft,
-                                          borderRadius: BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                           border: Border.all(
                                             color: AppColors.danger.withValues(
                                               alpha: 0.25,
@@ -157,7 +168,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     const SizedBox(height: 22),
                                     FilledButton.icon(
                                       key: const Key('login-submit'),
-                                      onPressed: widget.auth.isBusy ? null : _submit,
+                                      onPressed: widget.auth.isBusy
+                                          ? null
+                                          : _submit,
                                       icon: widget.auth.isBusy
                                           ? const SizedBox.square(
                                               dimension: 18,
@@ -166,7 +179,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                                 color: Colors.white,
                                               ),
                                             )
-                                          : const Icon(Icons.arrow_forward, size: 20),
+                                          : const Icon(
+                                              Icons.arrow_forward,
+                                              size: 20,
+                                            ),
                                       label: const Text('Masuk'),
                                     ),
                                     const SizedBox(height: 20),
@@ -223,7 +239,9 @@ class _LoginHeader extends StatelessWidget {
             child: Container(
               decoration: const BoxDecoration(
                 color: AppColors.green,
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(22)),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(22),
+                ),
               ),
             ),
           ),

@@ -133,8 +133,9 @@ class _ProofCameraScreenState extends State<ProofCameraScreen> {
                     height: 50,
                     child: FilledButton.icon(
                       key: const Key('proof-camera-capture'),
-                      onPressed:
-                          controller == null || _taking ? null : _capture,
+                      onPressed: controller == null || _taking
+                          ? null
+                          : _capture,
                       icon: _taking
                           ? const SizedBox.square(
                               dimension: 16,

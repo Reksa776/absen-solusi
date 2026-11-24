@@ -62,10 +62,20 @@ void main() {
 
   test('SessionProfile mem-parse user dan workspace', () {
     final profile = SessionProfile.fromJson({
-      'user': {'id': 'u1', 'email': 'a@example.com', 'name': 'A', 'status': 'ACTIVE'},
+      'user': {
+        'id': 'u1',
+        'email': 'a@example.com',
+        'name': 'A',
+        'status': 'ACTIVE',
+      },
       'activeTenantId': 't1',
       'workspaces': [
-        {'id': 't1', 'name': 'Tenant A', 'slug': 'tenant-a', 'roleKeys': ['VIEWER']},
+        {
+          'id': 't1',
+          'name': 'Tenant A',
+          'slug': 'tenant-a',
+          'roleKeys': ['VIEWER'],
+        },
       ],
     });
     expect(profile.user.name, 'A');

@@ -210,7 +210,10 @@ class _ScheduleTabState extends State<ScheduleTab> {
         children: [
           _weekPicker(),
           const SizedBox(height: 12),
-          if (_segment == 0) ..._workContent(schedule) else ..._overtimeContent(),
+          if (_segment == 0)
+            ..._workContent(schedule)
+          else
+            ..._overtimeContent(),
         ],
       ),
     );
@@ -265,8 +268,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
     final today = _today;
     final todayDay = schedule.dayFor(today);
     final todayHoliday = schedule.isHoliday(today);
-    final todayWorkday =
-        !todayHoliday && (todayDay?.isWorkday ?? false);
+    final todayWorkday = !todayHoliday && (todayDay?.isWorkday ?? false);
     final upcoming = <Widget>[];
     for (var index = 0; index < 7; index++) {
       final date = _weekStart.add(Duration(days: index));
@@ -529,7 +531,9 @@ class _ScheduleTabState extends State<ScheduleTab> {
             child: _summaryColumn(
               label: 'Zona Waktu',
               value: _zoneLabel(schedule.timezone),
-              note: schedule.officeName.isEmpty ? 'Kantor' : schedule.officeName,
+              note: schedule.officeName.isEmpty
+                  ? 'Kantor'
+                  : schedule.officeName,
             ),
           ),
         ],
@@ -673,14 +677,15 @@ class _ScheduleTabState extends State<ScheduleTab> {
   }
 
   List<Widget> _overtimeContent() {
-    final rows = _overtime
-        .where(
-          (row) =>
-              !row.date.isBefore(_weekStart) &&
-              row.date.isBefore(_weekEnd.add(const Duration(days: 1))),
-        )
-        .toList(growable: false)
-      ..sort((a, b) => a.date.compareTo(b.date));
+    final rows =
+        _overtime
+            .where(
+              (row) =>
+                  !row.date.isBefore(_weekStart) &&
+                  row.date.isBefore(_weekEnd.add(const Duration(days: 1))),
+            )
+            .toList(growable: false)
+          ..sort((a, b) => a.date.compareTo(b.date));
     return [
       if (rows.isEmpty)
         _emptyState(

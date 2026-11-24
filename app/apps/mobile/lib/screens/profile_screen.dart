@@ -229,6 +229,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _testAlarm() async {
+    final ok = await _reminders.showTestAlarm();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Alarm uji dikirim. Periksa bunyi dan getar perangkat.'
+              : 'Alarm uji tidak dapat dijalankan. Periksa izin notifikasi.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _refreshDevice() async {
     if (_refreshingDevice) return;
     setState(() => _refreshingDevice = true);
@@ -967,8 +981,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           const SizedBox(height: 5),
           Text(
-            '${device.deviceName} · ${device.platform}. Check-in dan check-out '
-            'diblokir sampai perangkat disetujui.',
+            '${device.deviceName} · ${device.platform}\n'
+            'ID: ${device.deviceId}\n'
+            'Check-in dan check-out diblokir sampai perangkat disetujui.',
             style: TextStyle(
               fontSize: 11,
               height: 1.4,
@@ -985,7 +1000,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh, size: 15),
-            label: Text(_refreshingDevice ? 'Memeriksa…' : 'Cek Status Ulang'),
+            label: Text(
+              _refreshingDevice ? 'Memeriksa…' : 'Cek Status Persetujuan',
+            ),
           ),
         ],
       ),
@@ -1320,7 +1337,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: AppColors.ink,
                     fontFeatures: tabularFigures,
                   ),
-                  items: const [5, 10, 15, 30, 45, 60]
+                  items: const [10, 15]
                       .map(
                         (minutes) => DropdownMenuItem<int>(
                           value: minutes,
@@ -1331,6 +1348,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onChanged: _savingReminder ? null : _setReminderMinutes,
                 ),
               ],
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const Key('profile-reminder-test'),
+                onPressed: _testAlarm,
+                icon: const Icon(Icons.volume_up_outlined, size: 15),
+                label: const Text('Uji bunyi alarm'),
+              ),
             ),
           ],
         ],

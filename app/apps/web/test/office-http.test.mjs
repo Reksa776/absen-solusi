@@ -160,7 +160,11 @@ test("C-OFF-2: admin dapat mengaktifkan beberapa kantor sekaligus", async () => 
     where: { action: "workspace.office_create", resourceId: created.body.id },
   });
   assert.equal(audit.tenantId, tenantA.tenantId);
-  assert.deepEqual(audit.metadata, { name: OFFICE_A.name, isActive: true });
+  assert.deepEqual(audit.metadata, {
+    name: OFFICE_A.name,
+    isActive: true,
+    hasGoogleMapsUrl: false,
+  });
 
   const second = await send(
     `/api/workspaces/${tenantA.tenantId}/office`,

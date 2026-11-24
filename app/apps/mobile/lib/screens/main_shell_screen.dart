@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../services/app_update_service.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/submission_notification_service.dart';
 import '../theme/app_theme.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
@@ -18,32 +21,51 @@ class MainShellScreen extends StatefulWidget {
     this.updateService,
     this.locationService,
     this.photoTaker,
+    this.notificationService,
   });
 
   final AuthService auth;
   final AppUpdateService? updateService;
   final LocationService? locationService;
   final PhotoTaker? photoTaker;
+  final SubmissionNotificationService? notificationService;
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends State<MainShellScreen> {
+class _MainShellScreenState extends State<MainShellScreen>
+    with WidgetsBindingObserver {
   final List<Widget?> _tabs = List<Widget?>.filled(4, null);
+  late final SubmissionNotificationService _submissionNotifications =
+      widget.notificationService ?? SubmissionNotificationService();
   int _index = 0;
   int _unread = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabs[0] = _buildTab(0);
     _loadUnread();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_loadUnread());
+  }
+
   Future<void> _loadUnread() async {
     try {
-      final page = await widget.auth.api.myNotifications(limit: 1);
+      final page =
+          await _submissionNotifications.sync(widget.auth.api) ??
+          await widget.auth.api.myNotifications(limit: 1);
       if (!mounted) return;
       setState(() => _unread = page.unreadCount);
     } catch (_) {

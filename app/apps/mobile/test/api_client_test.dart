@@ -99,7 +99,10 @@ void main() {
       client: MockClient(
         (_) async => http.Response(
           jsonEncode({
-            'error': {'code': 'GEOFENCE_VIOLATION', 'message': 'Di luar radius'},
+            'error': {
+              'code': 'GEOFENCE_VIOLATION',
+              'message': 'Di luar radius',
+            },
           }),
           403,
         ),
@@ -189,7 +192,10 @@ void main() {
       from: DateTime(2026, 11, 1),
       to: DateTime(2026, 11, 19),
     );
-    expect(captured.url.queryParameters, {'from': '2026-11-01', 'to': '2026-11-19'});
+    expect(captured.url.queryParameters, {
+      'from': '2026-11-01',
+      'to': '2026-11-19',
+    });
     expect(rows.single.isSuspicious, isTrue);
   });
 }

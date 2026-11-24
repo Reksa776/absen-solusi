@@ -79,15 +79,19 @@ export async function notifyCorrectionReviewed(
   }
 
   // Push tidak memuat alasan penolakan agar isi sensitif tidak tampil di lockscreen.
+  const revisionDate = record.requestedTimestamp.toISOString().slice(0, 10);
   const pushed = await sendPushToMember({
     ctx: input.ctx,
     memberId: record.memberId,
     message: {
-      title: record.status === "APPROVED" ? "Revisi disetujui" : "Revisi ditolak",
+      title:
+        record.status === "APPROVED"
+          ? `Revisi ${revisionDate} disetujui`
+          : `Revisi ${revisionDate} ditolak`,
       body:
         record.status === "APPROVED"
           ? "Data kehadiran Anda sudah diperbarui."
-          : "Buka aplikasi untuk melihat detail penolakan.",
+          : "Buka aplikasi Pesan untuk melihat catatan admin.",
       data: { type: "correction_result", correctionId: record.id },
     },
     ...(input.pushTransport ? { transport: input.pushTransport } : {}),

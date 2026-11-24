@@ -32,23 +32,26 @@ void main() {
     expect(await reopened.count(), 2);
   });
 
-  test('sinkronisasi menghapus yang sukses dan berhenti pada kegagalan', () async {
-    final queue = OfflineAttendanceQueue(
-      storage: MemoryOfflineQueueStorage(),
-    );
-    await queue.add(entry('key-1'));
-    await queue.add(entry('key-2'));
-    final attempted = <String>[];
+  test(
+    'sinkronisasi menghapus yang sukses dan berhenti pada kegagalan',
+    () async {
+      final queue = OfflineAttendanceQueue(
+        storage: MemoryOfflineQueueStorage(),
+      );
+      await queue.add(entry('key-1'));
+      await queue.add(entry('key-2'));
+      final attempted = <String>[];
 
-    final synced = await queue.sync((item) async {
-      attempted.add(item.idempotencyKey);
-      if (item.idempotencyKey == 'key-2') throw Exception('offline');
-    });
+      final synced = await queue.sync((item) async {
+        attempted.add(item.idempotencyKey);
+        if (item.idempotencyKey == 'key-2') throw Exception('offline');
+      });
 
-    expect(synced, 1);
-    expect(attempted, ['key-1', 'key-2']);
-    expect((await queue.pending()).single.idempotencyKey, 'key-2');
-  });
+      expect(synced, 1);
+      expect(attempted, ['key-1', 'key-2']);
+      expect((await queue.pending()).single.idempotencyKey, 'key-2');
+    },
+  );
 
   test('idempotency key adalah UUID v4 unik dan aman dipakai retry', () {
     final pattern = RegExp(

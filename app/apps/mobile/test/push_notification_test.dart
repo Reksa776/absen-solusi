@@ -55,7 +55,10 @@ void main() {
       tokenStore: store,
       client: MockClient((request) async {
         requests.add(request);
-        return http.Response(jsonEncode({'id': 'd1', 'platform': 'ANDROID'}), 201);
+        return http.Response(
+          jsonEncode({'id': 'd1', 'platform': 'ANDROID'}),
+          201,
+        );
       }),
     );
 
@@ -71,18 +74,21 @@ void main() {
     expect(body['platform'], 'ANDROID');
   });
 
-  test('registrar tidak memanggil API saat token perangkat tidak tersedia', () async {
-    final requests = <http.Request>[];
-    final api = ApiClient(
-      baseUrl: 'https://absensi.test',
-      tokenStore: MemoryTokenStore(),
-      client: MockClient((request) async {
-        requests.add(request);
-        return http.Response('{}', 201);
-      }),
-    );
+  test(
+    'registrar tidak memanggil API saat token perangkat tidak tersedia',
+    () async {
+      final requests = <http.Request>[];
+      final api = ApiClient(
+        baseUrl: 'https://absensi.test',
+        tokenStore: MemoryTokenStore(),
+        client: MockClient((request) async {
+          requests.add(request);
+          return http.Response('{}', 201);
+        }),
+      );
 
-    await PushRegistrar.register(api, const NoopPushService());
-    expect(requests, isEmpty);
-  });
+      await PushRegistrar.register(api, const NoopPushService());
+      expect(requests, isEmpty);
+    },
+  );
 }

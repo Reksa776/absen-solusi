@@ -160,6 +160,11 @@ export {
   type OfficeSummary,
 } from "./office.js";
 export {
+  parseGoogleMapsCoordinates,
+  resolveGoogleMapsUrl,
+  type MapsCoordinates,
+} from "./google-maps.js";
+export {
   ATTENDANCE_PHOTO_FILE_PATTERN,
   attendancePhotoDirectory,
   readAttendancePhoto,
@@ -491,10 +496,13 @@ export {
 export {
   directAddMember,
   resetMemberPassword,
+  updateMemberEmployee,
   type DirectAddMemberInput,
   type DirectAddMemberResult,
   type ResetMemberPasswordInput,
   type ResetMemberPasswordResult,
+  type UpdateMemberEmployeeInput,
+  type UpdateMemberEmployeeResult,
 } from "./member-direct.js";
 export {
   assertWorkspaceClaim,
@@ -726,6 +734,16 @@ export {
   reviewAttendanceRecord,
   type AttendanceRecordSummary,
 } from "./attendance-records.js";
+export {
+  ATTENDANCE_PERIOD_CSV_HEADER,
+  attendancePeriodToCsv,
+  exportAttendancePeriodCsv,
+  getAttendancePeriodSummary,
+  type AttendancePeriodInput,
+  type AttendancePeriodMember,
+  type AttendancePeriodSummary,
+  type AttendancePeriodTotals,
+} from "./attendance-period.js";
 export {
   getOvertimeSetting,
   updateOvertimeSetting,

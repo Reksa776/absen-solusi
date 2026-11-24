@@ -86,8 +86,7 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
     );
     if (result.type == ResultType.done || !mounted) return;
     setState(() {
-      _error =
-          'Installer tidak dapat dibuka. Aktifkan izin “Pasang aplikasi tak dikenal” untuk Absensi, lalu coba lagi.';
+      _error = 'Installer tidak dapat dibuka. Aktifkan izin “Pasang aplikasi tak dikenal” untuk Absensi, lalu coba lagi.';
     });
   }
 
@@ -294,7 +293,9 @@ class _UpdateAvailableDialogState extends State<UpdateAvailableDialog> {
           if (!forced)
             TextButton(
               key: const Key('update-later'),
-              onPressed: _downloading ? null : () => Navigator.of(context).pop(),
+              onPressed: _downloading
+                  ? null
+                  : () => Navigator.of(context).pop(),
               child: const Text('Nanti'),
             ),
           FilledButton(

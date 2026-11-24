@@ -96,7 +96,11 @@ class _PayslipsScreenState extends State<PayslipsScreen> {
           Text(
             'Belum ada slip gaji yang difinalkan.\nSlip muncul setelah payroll FINALIZED atau PAID.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5, height: 1.5, color: AppColors.muted),
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.5,
+              color: AppColors.muted,
+            ),
           ),
         ],
       );

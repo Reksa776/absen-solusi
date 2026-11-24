@@ -228,12 +228,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(
-                child: _metric(
-                  'Jam masuk',
-                  schedule.workStart,
-                ),
-              ),
+              Expanded(child: _metric('Jam masuk', schedule.workStart)),
               Container(width: 1, height: 32, color: AppColors.line),
               Expanded(child: _metric('Jam pulang', schedule.workEnd)),
               Container(width: 1, height: 32, color: AppColors.line),
@@ -323,7 +318,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           _badge(
             day.isWorkday ? 'Hari kerja' : 'Libur rutin',
             day.isWorkday
-                ? (AppColors.yellowSoft, AppColors.yellowLine, AppColors.yellowInk)
+                ? (
+                    AppColors.yellowSoft,
+                    AppColors.yellowLine,
+                    AppColors.yellowInk,
+                  )
                 : (AppColors.tableHead, AppColors.line, AppColors.muted),
           ),
         ],
@@ -399,7 +398,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           _badge(
             holiday.typeLabel,
             holiday.isNational
-                ? (AppColors.greenSoft, AppColors.greenLine, AppColors.greenDark)
+                ? (
+                    AppColors.greenSoft,
+                    AppColors.greenLine,
+                    AppColors.greenDark,
+                  )
                 : (AppColors.tableHead, AppColors.line, AppColors.muted),
           ),
         ],

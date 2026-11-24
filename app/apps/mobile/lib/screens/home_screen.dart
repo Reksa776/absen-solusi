@@ -1933,8 +1933,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${device.deviceName} · ${device.platform}. Presensi diblokir '
-                  'sampai perangkat disetujui.',
+                  '${device.deviceName} · ${device.platform}\n'
+                  'ID: ${device.deviceId}\n'
+                  'Presensi diblokir sampai perangkat disetujui.',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1962,7 +1963,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         )
                       : const Icon(Icons.refresh, size: 15),
                   label: Text(
-                    _refreshingDevice ? 'Memeriksa…' : 'Cek Status Ulang',
+                    _refreshingDevice ? 'Memeriksa…' : 'Cek Status Persetujuan',
                   ),
                 ),
               ],

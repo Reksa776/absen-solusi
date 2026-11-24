@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 const CSRF_COOKIE = "aos_csrf";
+const COORDINATE = "(-?\\d{1,3}(?:\\.\\d+)?)";
 
 type Office = {
   id: string;
@@ -11,6 +12,7 @@ type Office = {
   address: string | null;
   latitude: number;
   longitude: number;
+  googleMapsUrl: string | null;
   radiusMeters: number;
   timezone: string;
   workStart: string;
@@ -21,6 +23,7 @@ type Office = {
 type FormState = {
   name: string;
   address: string;
+  googleMapsUrl: string;
   latitude: string;
   longitude: string;
   radiusMeters: string;
@@ -33,6 +36,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   name: "",
   address: "",
+  googleMapsUrl: "",
   latitude: "-6.2",
   longitude: "106.816666",
   radiusMeters: "100",
@@ -56,10 +60,60 @@ async function csrfToken(): Promise<string> {
   return body.csrfToken;
 }
 
+function extractCoordinates(value: string): { latitude: number; longitude: number } | null {
+  const patterns = [
+    new RegExp(`[?&](?:q|query|ll)=${COORDINATE},${COORDINATE}`, "i"),
+    new RegExp(`@${COORDINATE},${COORDINATE}`, "i"),
+    new RegExp(`!3d${COORDINATE}!4d${COORDINATE}`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (!match) continue;
+    const latitude = Number(match[1]);
+    const longitude = Number(match[2]);
+    if (
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180
+    ) {
+      return { latitude, longitude };
+    }
+  }
+  return null;
+}
+
+function validCoordinates(latitude: string, longitude: string): boolean {
+  const lat = Number(latitude);
+  const lng = Number(longitude);
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
+function mapEmbed(latitude: string, longitude: string): string {
+  return `https://www.google.com/maps?q=${encodeURIComponent(latitude)},${encodeURIComponent(longitude)}&z=17&output=embed`;
+}
+
+function mapLink(office: Office): string {
+  return (
+    office.googleMapsUrl ??
+    `https://www.google.com/maps?q=${office.latitude},${office.longitude}`
+  );
+}
+
 function toForm(office: Office): FormState {
   return {
     name: office.name,
     address: office.address ?? "",
+    googleMapsUrl: office.googleMapsUrl ?? "",
     latitude: String(office.latitude),
     longitude: String(office.longitude),
     radiusMeters: String(office.radiusMeters),
@@ -86,6 +140,20 @@ export function OfficeManager({
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateMapsUrl(value: string) {
+    const coordinates = extractCoordinates(value);
+    setForm((current) => ({
+      ...current,
+      googleMapsUrl: value,
+      ...(coordinates
+        ? {
+            latitude: String(coordinates.latitude),
+            longitude: String(coordinates.longitude),
+          }
+        : {}),
+    }));
   }
 
   function reset() {
@@ -118,6 +186,7 @@ export function OfficeManager({
           headers: { "content-type": "application/json", "x-csrf-token": token },
           body: JSON.stringify({
             ...form,
+            googleMapsUrl: form.googleMapsUrl.trim() || null,
             latitude: Number(form.latitude),
             longitude: Number(form.longitude),
             radiusMeters: Number(form.radiusMeters),
@@ -147,15 +216,12 @@ export function OfficeManager({
     setNotice(null);
     try {
       const token = await csrfToken();
-      const response = await fetch(
-        `/api/workspaces/${workspaceId}/office/${office.id}`,
-        {
-          method: "PATCH",
-          credentials: "same-origin",
-          headers: { "content-type": "application/json", "x-csrf-token": token },
-          body: JSON.stringify({ isActive }),
-        },
-      );
+      const response = await fetch(`/api/workspaces/${workspaceId}/office/${office.id}`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", "x-csrf-token": token },
+        body: JSON.stringify({ isActive }),
+      });
       const body = (await response.json().catch(() => ({}))) as {
         error?: { message?: string };
       };
@@ -171,6 +237,9 @@ export function OfficeManager({
       setBusy(false);
     }
   }
+
+  const canPreview = validCoordinates(form.latitude, form.longitude);
+  const previewUrl = canPreview ? mapEmbed(form.latitude, form.longitude) : null;
 
   return (
     <section>
@@ -188,11 +257,9 @@ export function OfficeManager({
       <form onSubmit={submit} className="form-card">
         <div className="table-head" style={{ padding: "0 0 0.85rem", borderBottom: "none" }}>
           <div>
-            <h2 className="section-title">
-              {editingId ? "Edit kantor" : "Tambah kantor"}
-            </h2>
+            <h2 className="section-title">{editingId ? "Edit kantor" : "Tambah kantor"}</h2>
             <p className="section-note">
-              Radius menentukan geofence absensi di aplikasi mobile.
+              Tempel shareloc WhatsApp; koordinat diisi otomatis dari tautan Google Maps.
             </p>
           </div>
         </div>
@@ -212,6 +279,16 @@ export function OfficeManager({
               maxLength={255}
               value={form.address}
               onChange={(event) => update("address", event.target.value)}
+            />
+          </label>
+          <label className="field field--wide">
+            Tempel URL Google Maps (Shareloc WA)
+            <input
+              type="url"
+              maxLength={1024}
+              placeholder="https://www.google.com/maps?q=-6.7320,108.5523"
+              value={form.googleMapsUrl}
+              onChange={(event) => updateMapsUrl(event.target.value)}
             />
           </label>
           <label className="field">
@@ -302,6 +379,34 @@ export function OfficeManager({
         </div>
       </form>
 
+      {previewUrl ? (
+        <div className="map-card">
+          <div className="card-head" style={{ padding: "0 0 0.7rem", borderBottom: "none" }}>
+            <div>
+              <h2 className="section-title">Preview titik lokasi</h2>
+              <p className="section-note mono">
+                {Number(form.latitude).toFixed(6)}, {Number(form.longitude).toFixed(6)}
+              </p>
+            </div>
+            <a
+              href={`https://www.google.com/maps?q=${form.latitude},${form.longitude}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn--secondary btn--sm"
+            >
+              Buka di Google Maps
+            </a>
+          </div>
+          <iframe
+            title="Preview lokasi kantor"
+            src={previewUrl}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            className="map-frame"
+          />
+        </div>
+      ) : null}
+
       <div className="table-wrap">
         <div className="table-head">
           <div>
@@ -349,6 +454,14 @@ export function OfficeManager({
                   </td>
                   <td className="nowrap">
                     <div className="btn-row">
+                      <a
+                        href={mapLink(office)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn--secondary btn--sm"
+                      >
+                        Peta
+                      </a>
                       <button
                         type="button"
                         className="btn btn--secondary btn--sm"

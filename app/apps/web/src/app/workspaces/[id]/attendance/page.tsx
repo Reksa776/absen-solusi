@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { listAttendanceRecords, listWorkspaceMembers } from "@absensi/auth";
 
 import { requirePagePermission } from "@/lib/page-auth";
+import { AttendanceDetail, type AttendanceDetailGroup } from "./attendance-detail";
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +34,32 @@ export default async function DailyAttendancePage({
       workspaceId: id,
       date,
       memberId: query.memberId || undefined,
-      limit: 300,
+      limit: 500,
     }),
     ctx.permissions.includes("member.read")
       ? listWorkspaceMembers({ ctx, workspaceId: id, limit: 100 })
       : Promise.resolve({ members: [] }),
   ]);
-  const checkedIn = new Set(records.filter((row) => row.type === "CHECK_IN").map((row) => row.memberId));
-  const checkedOut = new Set(records.filter((row) => row.type === "CHECK_OUT").map((row) => row.memberId));
+
+  const groups = new Map<string, AttendanceDetailGroup>();
+  for (const row of records) {
+    const group =
+      groups.get(row.memberId) ??
+      ({
+        memberId: row.memberId,
+        memberName: row.memberName,
+        memberEmail: row.memberEmail,
+        divisionName: row.divisionName,
+        checkIn: null,
+        checkOut: null,
+      } satisfies AttendanceDetailGroup);
+    if (row.type === "CHECK_IN" && !group.checkIn) group.checkIn = row;
+    if (row.type === "CHECK_OUT" && !group.checkOut) group.checkOut = row;
+    groups.set(row.memberId, group);
+  }
+  const rows = [...groups.values()];
+  const checkedIn = rows.filter((row) => row.checkIn !== null).length;
+  const checkedOut = rows.filter((row) => row.checkOut !== null).length;
 
   return (
     <main className="page">
@@ -49,8 +68,8 @@ export default async function DailyAttendancePage({
           <p className="eyebrow">Kehadiran</p>
           <h1 className="page-title">Kehadiran harian</h1>
           <p className="page-subtitle">
-            <span className="num">{checkedIn.size}</span> karyawan masuk ·{" "}
-            <span className="num">{checkedOut.size}</span> sudah pulang pada {date}.
+            <span className="num">{checkedIn}</span> karyawan masuk ·{" "}
+            <span className="num">{checkedOut}</span> sudah pulang pada {date}.
           </p>
         </div>
         <div className="btn-row">
@@ -58,7 +77,7 @@ export default async function DailyAttendancePage({
             Rekap catatan
           </Link>
           <Link href={`/workspaces/${id}/attendance/summary`} className="btn btn--primary">
-            Ringkasan bulanan
+            Ringkasan periode
           </Link>
         </div>
       </div>
@@ -87,68 +106,85 @@ export default async function DailyAttendancePage({
       </form>
 
       <div className="table-wrap">
+        <div className="table-head">
+          <div>
+            <h2 className="section-title">Presensi karyawan</h2>
+            <p className="section-note">
+              Klik Lihat Detail untuk selfie masuk/pulang, GPS, peta, dan perangkat.
+            </p>
+          </div>
+        </div>
         <div className="table-scroll">
           <table className="data">
             <thead>
               <tr>
-                {["Karyawan", "Tipe", "Jam server", "Lokasi", "Mode", "Status", "Foto"].map((label) => (
-                  <th key={label}>{label}</th>
-                ))}
+                {["Karyawan", "Masuk", "Pulang", "Lokasi masuk", "Mode", "Status", "Aksi"].map(
+                  (label) => (
+                    <th key={label}>{label}</th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody>
-              {records.length === 0 ? (
+              {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="empty">
                     Belum ada presensi pada tanggal ini.
                   </td>
                 </tr>
               ) : null}
-              {records.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <span className="cell-title">{row.memberName}</span>
-                    <span className="cell-sub">{row.divisionName ?? row.memberEmail}</span>
-                  </td>
-                  <td>{row.type === "CHECK_IN" ? "Masuk" : "Pulang"}</td>
-                  <td className="mono nowrap">{time(row.timestampServer)}</td>
-                  <td>
-                    <span className="cell-title">{row.officeName ?? "Tanpa kantor"}</span>
-                    <span className="cell-sub mono">{Math.round(row.distanceMeters)} m</span>
-                  </td>
-                  <td>
-                    <span className="badge badge--neutral">
-                      {row.workMode === "OUT_OF_TOWN"
-                        ? "Luar kota"
-                        : row.workMode === "WFH"
-                          ? "WFH"
-                          : "Kantor"}
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        row.approvalStatus === "APPROVED"
-                          ? "badge badge--green"
-                          : row.approvalStatus === "REJECTED"
-                            ? "badge badge--red"
-                            : "badge badge--yellow"
-                      }
-                    >
-                      {row.approvalStatus === "APPROVED"
-                        ? "Disetujui"
-                        : row.approvalStatus === "REJECTED"
-                          ? "Ditolak"
-                          : "Menunggu"}
-                    </span>
-                  </td>
-                  <td>
-                    <a href={row.photoUrl} target="_blank" rel="noreferrer">
-                      Lihat
-                    </a>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const primary = row.checkIn ?? row.checkOut;
+                return (
+                  <tr key={row.memberId}>
+                    <td>
+                      <span className="cell-title">{row.memberName}</span>
+                      <span className="cell-sub">{row.divisionName ?? row.memberEmail}</span>
+                    </td>
+                    <td className="mono nowrap">{row.checkIn ? time(row.checkIn.timestampServer) : "—"}</td>
+                    <td className="mono nowrap">{row.checkOut ? time(row.checkOut.timestampServer) : "—"}</td>
+                    <td>
+                      <span className="cell-title">{primary?.officeName ?? "Tanpa kantor"}</span>
+                      <span className="cell-sub mono">
+                        {primary ? `${Math.round(primary.distanceMeters)} m` : "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="badge badge--neutral">
+                        {primary
+                          ? primary.workMode === "OUT_OF_TOWN"
+                            ? "Luar kota"
+                            : primary.workMode === "WFH"
+                              ? "WFH"
+                              : "Kantor"
+                          : "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          primary?.approvalStatus === "APPROVED"
+                            ? "badge badge--green"
+                            : primary?.approvalStatus === "REJECTED"
+                              ? "badge badge--red"
+                              : "badge badge--yellow"
+                        }
+                      >
+                        {primary
+                          ? primary.approvalStatus === "APPROVED"
+                            ? "Disetujui"
+                            : primary.approvalStatus === "REJECTED"
+                              ? "Ditolak"
+                              : "Menunggu"
+                          : "—"}
+                      </span>
+                    </td>
+                    <td>
+                      <AttendanceDetail group={row} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

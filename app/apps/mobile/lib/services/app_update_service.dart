@@ -24,9 +24,7 @@ class AppVersionInfo {
       latestVersion: version is String && version.trim().isNotEmpty
           ? version.trim()
           : '1.0.0',
-      buildNumber: build is int
-          ? build
-          : int.tryParse('${build ?? ''}') ?? 0,
+      buildNumber: build is int ? build : int.tryParse('${build ?? ''}') ?? 0,
       forceUpdate: json['forceUpdate'] == true,
       changelog: json['changelog'] is String
           ? (json['changelog'] as String).trim()
@@ -144,7 +142,9 @@ class AppUpdateService {
     if (response.statusCode != 200) {
       throw AppUpdateException('Unduhan APK gagal (${response.statusCode}).');
     }
-    final directory = Directory('${(await _cacheDirectory()).path}/apk_release');
+    final directory = Directory(
+      '${(await _cacheDirectory()).path}/apk_release',
+    );
     await directory.create(recursive: true);
     final file = File('${directory.path}/${_fileName(info)}');
     final sink = file.openWrite();

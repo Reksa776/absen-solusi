@@ -10,9 +10,7 @@ class SessionProfile {
 
   factory SessionProfile.fromJson(Map<String, dynamic> json) {
     return SessionProfile(
-      user: User.fromJson(
-        (json['user'] as Map<String, dynamic>? ?? const {}),
-      ),
+      user: User.fromJson((json['user'] as Map<String, dynamic>? ?? const {})),
       activeTenantId: json['activeTenantId'] as String?,
       workspaces: (json['workspaces'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()

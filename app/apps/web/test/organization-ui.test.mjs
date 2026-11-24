@@ -99,8 +99,9 @@ test("organisasi: penugasan karyawan dan filter laporan memakai divisi", () => {
   const memberPage = read("workspaces/[id]/members/page.tsx");
   const reports = read("workspaces/[id]/reports/page.tsx");
 
-  assert.match(memberAdmin, /members\/\$\{memberId\}\/organization/);
-  assert.match(memberAdmin, /divisi & jabatan|Divisi & jabatan/i);
+  assert.match(memberAdmin, /members\/\$\{editing\.id\}\/employee/);
+  assert.match(memberAdmin, /Divisi/);
+  assert.match(memberAdmin, /Jabatan/);
   assert.match(memberAdmin, /canManageOrganization/);
   assert.match(memberPage, /listDivisions/);
   assert.match(memberPage, /listPositions/);

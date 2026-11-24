@@ -30,6 +30,8 @@
 	<string>Kamera dipakai untuk mengambil foto selfie absensi secara real-time.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Lokasi dipakai untuk memvalidasi radius kantor saat absensi.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Lokasi dipakai hanya saat presensi untuk memverifikasi titik kantor atau lapangan.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -163,18 +163,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   int get _presentDays => _days.where((day) => day.checkIn != null).length;
 
-  int get _lateDays => _days.where((day) => day.checkIn?.isLate ?? false).length;
+  int get _lateDays =>
+      _days.where((day) => day.checkIn?.isLate ?? false).length;
 
-  int get _lateMinutes => _days.fold(
-    0,
-    (total, day) => total + (day.checkIn?.lateMinutes ?? 0),
-  );
+  int get _lateMinutes =>
+      _days.fold(0, (total, day) => total + (day.checkIn?.lateMinutes ?? 0));
 
   int get _completeDays =>
       _days.where((day) => day.checkIn != null && day.checkOut != null).length;
 
-  int get _suspiciousCount =>
-      _rows.where((row) => row.isSuspicious).length;
+  int get _suspiciousCount => _rows.where((row) => row.isSuspicious).length;
 
   String _dayKey(DateTime value) {
     final local = value.toLocal();
@@ -688,11 +686,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(child: _timeCell('Masuk', day.checkIn)),
-                        Container(
-                          width: 1,
-                          height: 31,
-                          color: AppColors.line,
-                        ),
+                        Container(width: 1, height: 31, color: AppColors.line),
                         Expanded(child: _timeCell('Keluar', day.checkOut)),
                         const SizedBox(width: 6),
                         _statusPill(day),
@@ -713,11 +707,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           lead.attendanceStatus != null,
                         ),
                         const SizedBox(width: 6),
-                        _indicator(
-                          Icons.fingerprint,
-                          'Waktu tercatat',
-                          true,
-                        ),
+                        _indicator(Icons.fingerprint, 'Waktu tercatat', true),
                         const Spacer(),
                         TextButton.icon(
                           key: Key('history-revise-${lead.id}'),
@@ -836,13 +826,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _statusPill(_DayLog day) {
-    final outOfTown = day.checkIn?.isOutOfTown == true ||
-        day.checkOut?.isOutOfTown == true;
-    final pending = (day.checkIn?.isApprovalPending ?? false) ||
+    final outOfTown =
+        day.checkIn?.isOutOfTown == true || day.checkOut?.isOutOfTown == true;
+    final pending =
+        (day.checkIn?.isApprovalPending ?? false) ||
         (day.checkOut?.isApprovalPending ?? false);
-    final rejected = (day.checkIn?.isApprovalRejected ?? false) ||
+    final rejected =
+        (day.checkIn?.isApprovalRejected ?? false) ||
         (day.checkOut?.isApprovalRejected ?? false);
-    final suspicious = (day.checkIn?.isSuspicious ?? false) ||
+    final suspicious =
+        (day.checkIn?.isSuspicious ?? false) ||
         (day.checkOut?.isSuspicious ?? false);
     final late = day.checkIn?.isLate ?? false;
     final String label;
@@ -871,7 +864,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
       );
     } else if (late) {
       label = 'Terlambat';
-      colors = (AppColors.yellowSoft, AppColors.yellowLine, AppColors.yellowInk);
+      colors = (
+        AppColors.yellowSoft,
+        AppColors.yellowLine,
+        AppColors.yellowInk,
+      );
     } else {
       label = 'Tepat Waktu';
       colors = (AppColors.greenSoft, AppColors.greenLine, AppColors.greenDark);
@@ -911,24 +908,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _correctionPill(CorrectionRequest correction) {
-    final (Color background, Color border, Color foreground) =
-        switch (correction.status) {
-          'APPROVED' => (
-            AppColors.greenSoft,
-            AppColors.greenLine,
-            AppColors.greenDark,
-          ),
-          'REJECTED' => (
-            AppColors.dangerSoft,
-            AppColors.danger.withValues(alpha: 0.25),
-            AppColors.danger,
-          ),
-          _ => (
-            AppColors.yellowSoft,
-            AppColors.yellowLine,
-            AppColors.yellowInk,
-          ),
-        };
+    final (
+      Color background,
+      Color border,
+      Color foreground,
+    ) = switch (correction.status) {
+      'APPROVED' => (
+        AppColors.greenSoft,
+        AppColors.greenLine,
+        AppColors.greenDark,
+      ),
+      'REJECTED' => (
+        AppColors.dangerSoft,
+        AppColors.danger.withValues(alpha: 0.25),
+        AppColors.danger,
+      ),
+      _ => (AppColors.yellowSoft, AppColors.yellowLine, AppColors.yellowInk),
+    };
     return Container(
       key: Key('history-correction-${correction.id}'),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -1106,12 +1102,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                   child: Column(
                     children: [
-                      _detailRow('Masuk', day.checkIn == null
-                          ? '—'
-                          : _time(day.checkIn!.timestampServer)),
-                      _detailRow('Keluar', day.checkOut == null
-                          ? '—'
-                          : _time(day.checkOut!.timestampServer)),
+                      _detailRow(
+                        'Masuk',
+                        day.checkIn == null
+                            ? '—'
+                            : _time(day.checkIn!.timestampServer),
+                      ),
+                      _detailRow(
+                        'Keluar',
+                        day.checkOut == null
+                            ? '—'
+                            : _time(day.checkOut!.timestampServer),
+                      ),
                       _detailRow(
                         'Jarak radius',
                         '${lead.distanceMeters.toStringAsFixed(0)} m',
@@ -1125,7 +1127,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         lead.isOutOfTown ? 'Dinas luar kota' : 'Kantor',
                       ),
                       if (lead.isLate)
-                        _detailRow('Keterlambatan', '${lead.lateMinutes} menit'),
+                        _detailRow(
+                          'Keterlambatan',
+                          '${lead.lateMinutes} menit',
+                        ),
                       if (lead.isEarlyLeave)
                         _detailRow(
                           'Pulang awal',

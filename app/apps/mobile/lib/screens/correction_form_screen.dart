@@ -8,7 +8,9 @@ import '../theme/app_theme.dart';
 import 'camera_screen.dart';
 import 'correction_history_screen.dart';
 
-typedef CorrectionPhotoTaker = Future<Uint8List?> Function(BuildContext context);
+typedef CorrectionPhotoTaker = Future<Uint8List?> Function(
+  BuildContext context,
+);
 
 const List<(String, String)> _correctionKinds = [
   ('LUPA_CHECK_IN', 'Lupa Check-in'),
@@ -72,7 +74,8 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
     );
     _kind = widget.initialKind ?? 'LUPA_CHECK_IN';
     _logType =
-        widget.logType ?? (_kind == 'LUPA_CHECK_OUT' ? 'CHECK_OUT' : 'CHECK_IN');
+        widget.logType ??
+        (_kind == 'LUPA_CHECK_OUT' ? 'CHECK_OUT' : 'CHECK_IN');
     _checkIn = TimeOfDay.fromDateTime(
       widget.initialCheckInTime ?? DateTime(2000, 1, 1, 9),
     );
@@ -206,7 +209,9 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
       setState(() => _error = messageForApiError(error));
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'Pengajuan revisi gagal dikirim. Periksa koneksi Anda.');
+      setState(
+        () => _error = 'Pengajuan revisi gagal dikirim. Periksa koneksi Anda.',
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -214,8 +219,8 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final recorded = widget.initialCheckInTime != null ||
-        widget.initialCheckOutTime != null;
+    final recorded =
+        widget.initialCheckInTime != null || widget.initialCheckOutTime != null;
     return Scaffold(
       backgroundColor: AppColors.canvas,
       appBar: AppBar(
@@ -238,196 +243,205 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-          const Text(
-            'Ajukan koreksi absensi yang terlewat atau salah waktu.',
-            style: TextStyle(fontSize: 12.5, color: AppColors.muted),
-          ),
-          if (recorded) ...[
-            const SizedBox(height: 10),
-            Container(
-              key: const Key('correction-recorded'),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: AppColors.tableHead,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Text(
-                'Tercatat: masuk '
-                '${widget.initialCheckInTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckInTime!))}'
-                ' • pulang '
-                '${widget.initialCheckOutTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckOutTime!))}',
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.muted,
-                  fontFeatures: tabularFigures,
-                ),
-              ),
+            const Text(
+              'Ajukan koreksi absensi yang terlewat atau salah waktu.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.muted),
             ),
-          ],
-          const SizedBox(height: 14),
-          _card(
-            child: Material(
-              color: Colors.transparent,
-              child: ListTile(
-                key: const Key('correction-date'),
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.event, size: 20),
-              title: const Text(
-                'Tanggal revisi',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-              ),
-                subtitle: Text(
-                  _formatDate(_date),
+            if (recorded) ...[
+              const SizedBox(height: 10),
+              Container(
+                key: const Key('correction-recorded'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.tableHead,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.line),
+                ),
+                child: Text(
+                  'Tercatat: masuk '
+                  '${widget.initialCheckInTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckInTime!))}'
+                  ' • pulang '
+                  '${widget.initialCheckOutTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckOutTime!))}',
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
                     color: AppColors.muted,
                     fontFeatures: tabularFigures,
                   ),
                 ),
-                trailing: const Icon(Icons.edit_calendar, size: 19),
-                onTap: _pickDate,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _timeTile(
-                  key: 'correction-check-in',
-                  label: 'Jam Check-In',
-                  value: _timeLabel(_checkIn),
-                  onTap: () => _pickTime(checkIn: true),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _timeTile(
-                  key: 'correction-check-out',
-                  label: 'Jam Check-Out',
-                  value: _timeLabel(_checkOut),
-                  onTap: () => _pickTime(checkIn: false),
-                ),
               ),
             ],
-          ),
-          if (_kind == 'LUPA_FULL') ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Jam check-out ikut disertakan pada alasan pengajuan.',
-              style: TextStyle(fontSize: 11, color: AppColors.muted),
-            ),
-          ],
-          const SizedBox(height: 16),
-          const Text(
-            'Jenis koreksi',
-            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            key: const Key('correction-type'),
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final (value, label) in _correctionKinds)
-                ChoiceChip(
-                  key: Key('correction-kind-$value'),
-                  label: Text(label),
-                  selected: _kind == value,
-                  onSelected: _submitting
-                      ? null
-                      : (selected) {
-                          if (!selected) return;
-                          setState(() => _kind = value);
-                        },
+            const SizedBox(height: 14),
+            _card(
+              child: Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  key: const Key('correction-date'),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event, size: 20),
+                  title: const Text(
+                    'Tanggal revisi',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    _formatDate(_date),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.muted,
+                      fontFeatures: tabularFigures,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.edit_calendar, size: 19),
+                  onTap: _pickDate,
                 ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            key: const Key('correction-reason'),
-            controller: _reason,
-            enabled: !_submitting,
-            maxLines: 4,
-            maxLength: 1000,
-            decoration: const InputDecoration(
-              labelText: 'Alasan revisi',
-              hintText: 'Contoh: lupa check-in karena jaringan kantor terputus',
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
-            ),
-            onChanged: (_) {
-              if (_validationError != null) {
-                setState(() => _validationError = null);
-              }
-            },
-          ),
-          if (_validationError != null)
-            Text(
-              _validationError!,
-              key: const Key('correction-validation'),
-              style: const TextStyle(color: AppColors.danger),
-            ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                key: const Key('correction-proof'),
-                onPressed: _submitting ? null : _attachProof,
-                icon: const Icon(Icons.attach_file, size: 17),
-                label: Text(_proof == null ? 'Lampirkan bukti' : 'Ganti bukti'),
               ),
-              const SizedBox(width: 8),
-              if (_proof != null) ...[
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
                 Expanded(
-                  child: Text(
-                    'Bukti terpasang (${_proof!.length} byte)',
-                    key: const Key('correction-proof-attached'),
-                    style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
+                  child: _timeTile(
+                    key: 'correction-check-in',
+                    label: 'Jam Check-In',
+                    value: _timeLabel(_checkIn),
+                    onTap: () => _pickTime(checkIn: true),
                   ),
                 ),
-                IconButton(
-                  key: const Key('correction-proof-remove'),
-                  tooltip: 'Hapus bukti',
-                  onPressed: _submitting
-                      ? null
-                      : () => setState(() => _proof = null),
-                  icon: const Icon(Icons.close),
-                ),
-              ] else
-                const Expanded(
-                  child: Text(
-                    'Opsional, maksimal 5 MB.',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _timeTile(
+                    key: 'correction-check-out',
+                    label: 'Jam Check-Out',
+                    value: _timeLabel(_checkOut),
+                    onTap: () => _pickTime(checkIn: false),
                   ),
                 ),
+              ],
+            ),
+            if (_kind == 'LUPA_FULL') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Jam check-out ikut disertakan pada alasan pengajuan.',
+                style: TextStyle(fontSize: 11, color: AppColors.muted),
+              ),
             ],
-          ),
-          if (_error != null) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Jenis koreksi',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text(
-              _error!,
-              key: const Key('correction-error'),
-              style: const TextStyle(color: AppColors.danger, fontSize: 12.5),
+            Wrap(
+              key: const Key('correction-type'),
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (value, label) in _correctionKinds)
+                  ChoiceChip(
+                    key: Key('correction-kind-$value'),
+                    label: Text(label),
+                    selected: _kind == value,
+                    onSelected: _submitting
+                        ? null
+                        : (selected) {
+                            if (!selected) return;
+                            setState(() => _kind = value);
+                          },
+                  ),
+              ],
             ),
-          ],
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 52,
-            child: FilledButton.icon(
-              key: const Key('correction-submit'),
-              onPressed: _submitting ? null : _submit,
-              icon: _submitting
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: const Text('Kirim pengajuan'),
+            const SizedBox(height: 16),
+            TextField(
+              key: const Key('correction-reason'),
+              controller: _reason,
+              enabled: !_submitting,
+              maxLines: 4,
+              maxLength: 1000,
+              decoration: const InputDecoration(
+                labelText: 'Alasan revisi',
+                hintText:
+                    'Contoh: lupa check-in karena jaringan kantor terputus',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              onChanged: (_) {
+                if (_validationError != null) {
+                  setState(() => _validationError = null);
+                }
+              },
             ),
-          ),
+            if (_validationError != null)
+              Text(
+                _validationError!,
+                key: const Key('correction-validation'),
+                style: const TextStyle(color: AppColors.danger),
+              ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  key: const Key('correction-proof'),
+                  onPressed: _submitting ? null : _attachProof,
+                  icon: const Icon(Icons.attach_file, size: 17),
+                  label: Text(
+                    _proof == null ? 'Lampirkan bukti' : 'Ganti bukti',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_proof != null) ...[
+                  Expanded(
+                    child: Text(
+                      'Bukti terpasang (${_proof!.length} byte)',
+                      key: const Key('correction-proof-attached'),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('correction-proof-remove'),
+                    tooltip: 'Hapus bukti',
+                    onPressed: _submitting
+                        ? null
+                        : () => setState(() => _proof = null),
+                    icon: const Icon(Icons.close),
+                  ),
+                ] else
+                  const Expanded(
+                    child: Text(
+                      'Opsional, maksimal 5 MB.',
+                      style: TextStyle(fontSize: 11.5, color: AppColors.muted),
+                    ),
+                  ),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                key: const Key('correction-error'),
+                style: const TextStyle(color: AppColors.danger, fontSize: 12.5),
+              ),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                key: const Key('correction-submit'),
+                onPressed: _submitting ? null : _submit,
+                icon: _submitting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+                label: const Text('Kirim pengajuan'),
+              ),
+            ),
           ],
         ),
       ),

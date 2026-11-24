@@ -12,7 +12,9 @@ void main() {
         tokenStore: MemoryTokenStore(),
       ),
     );
-    await tester.pumpWidget(AbsensiApp(auth: auth));
+    await tester.pumpWidget(
+      AbsensiApp(auth: auth, checkPermissions: false, checkForUpdates: false),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Masuk'), findsOneWidget);
   });

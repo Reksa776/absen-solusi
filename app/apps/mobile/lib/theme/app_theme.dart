@@ -180,8 +180,14 @@ ThemeData buildAppTheme() {
       filled: true,
       fillColor: AppColors.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      labelStyle: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w500),
-      hintStyle: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w400),
+      labelStyle: const TextStyle(
+        color: AppColors.muted,
+        fontWeight: FontWeight.w500,
+      ),
+      hintStyle: const TextStyle(
+        color: AppColors.muted,
+        fontWeight: FontWeight.w400,
+      ),
       prefixIconColor: AppColors.muted,
       suffixIconColor: AppColors.muted,
       border: border(AppColors.line, 1.2),
@@ -201,7 +207,9 @@ ThemeData buildAppTheme() {
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.green),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: AppColors.green,
+    ),
     checkboxTheme: CheckboxThemeData(
       fillColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)

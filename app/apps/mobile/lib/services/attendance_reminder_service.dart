@@ -91,6 +91,11 @@ class AttendanceReminderService {
     try {
       const settings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        ),
       );
       await _plugin.initialize(settings: settings);
       final android = _plugin
@@ -106,6 +111,24 @@ class AttendanceReminderService {
   }
 
   Future<ReminderSettings> loadSettings() => _store.read();
+
+  /// Tombol uji di Profil memakai channel dan audio yang sama dengan alarm asli.
+  Future<bool> showTestAlarm() async {
+    await init();
+    if (!_ready) return false;
+    try {
+      await _plugin.show(
+        id: 799999,
+        title: 'Uji alarm presensi',
+        body: 'Alarm presensi aktif. Bunyi ini juga dipakai saat jam masuk/pulang.',
+        notificationDetails: _alarmDetails(),
+      );
+      return true;
+    } catch (error) {
+      debugPrint('Uji alarm gagal: $error');
+      return false;
+    }
+  }
 
   Future<void> saveSettings(ReminderSettings settings) async {
     await _store.write(settings);
@@ -193,7 +216,10 @@ class AttendanceReminderService {
   }
 
   /// Batalkan pengingat check-in/check-out hari ini setelah absen tercatat.
-  Future<void> cancelToday({bool checkIn = false, bool checkOut = false}) async {
+  Future<void> cancelToday({
+    bool checkIn = false,
+    bool checkOut = false,
+  }) async {
     await init();
     if (!_ready) return;
     try {
@@ -233,13 +259,30 @@ class AttendanceReminderService {
     final parts = clock.split(':');
     final hour = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 9;
     final minute = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0;
-    return tz.TZDateTime(
-      location,
-      day.year,
-      day.month,
-      day.day,
-      hour,
-      minute,
+    return tz.TZDateTime(location, day.year, day.month, day.day, hour, minute);
+  }
+
+  NotificationDetails _alarmDetails() {
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        'Pengingat absensi',
+        channelDescription: 'Alarm check-in dan check-out sesuai shift.',
+        importance: Importance.max,
+        priority: Priority.high,
+        category: AndroidNotificationCategory.alarm,
+        fullScreenIntent: true,
+        playSound: true,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 700, 350, 700, 350, 1200]),
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      ),
     );
   }
 
@@ -249,15 +292,7 @@ class AttendanceReminderService {
     String body,
     tz.TZDateTime when,
   ) async {
-    const details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        _channelId,
-        'Pengingat absensi',
-        channelDescription: 'Pengingat check-in dan check-out sesuai shift.',
-        importance: Importance.high,
-        priority: Priority.high,
-      ),
-    );
+    final details = _alarmDetails();
     try {
       await _plugin.zonedSchedule(
         id: id,

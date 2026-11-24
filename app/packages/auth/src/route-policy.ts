@@ -364,6 +364,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "member.manage",
   },
+  "/api/workspaces/:id/members/:memberId/employee": {
+    kind: "permission",
+    permission: "member.manage",
+  },
   "/api/mobile/profile": {
     kind: "permission",
     permission: "workspace.read",
@@ -422,6 +426,14 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/workspaces/:id/attendance-review": {
     kind: "permission",
     permission: "correction.review",
+  },
+  "/api/workspaces/:id/attendance/summary": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/workspaces/:id/attendance/summary/export": {
+    kind: "permission",
+    permission: "attendance.read",
   },
   "/api/workspaces/:id/attendance/:attendanceId/review": {
     kind: "permission",

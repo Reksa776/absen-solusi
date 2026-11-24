@@ -192,7 +192,9 @@ class _BroadcastsScreenState extends State<BroadcastsScreen> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: AppColors.yellowSoft,
-                                        borderRadius: BorderRadius.circular(999),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
                                         border: Border.all(
                                           color: AppColors.yellowLine,
                                         ),

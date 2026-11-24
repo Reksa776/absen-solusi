@@ -46,7 +46,9 @@ class SelfieCircleFrame extends StatelessWidget {
 
     return Semantics(
       button: onTap != null,
-      label: photo == null ? 'Ambil selfie kamera depan' : 'Foto selfie siap dikirim',
+      label: photo == null
+          ? 'Ambil selfie kamera depan'
+          : 'Foto selfie siap dikirim',
       child: GestureDetector(
         onTap: onTap,
         child: SizedBox(
@@ -102,7 +104,11 @@ class SelfieCircleFrame extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.camera_front_rounded, size: 34, color: AppColors.green),
+          const Icon(
+            Icons.camera_front_rounded,
+            size: 34,
+            color: AppColors.green,
+          ),
           const SizedBox(height: 6),
           Text(
             'Ambil selfie',

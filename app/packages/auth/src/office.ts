@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { withTenant, writeAudit, type TenantContext } from "@absensi/database";
 
+import { resolveGoogleMapsUrl } from "./google-maps.js";
 import { HttpError } from "./http.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
@@ -17,6 +18,7 @@ export type OfficeSummary = {
   address: string | null;
   latitude: number;
   longitude: number;
+  googleMapsUrl: string | null;
   radiusMeters: number;
   timezone: string;
   workStart: string;
@@ -34,6 +36,7 @@ type OfficeRow = {
   address: string | null;
   latitude: number;
   longitude: number;
+  googleMapsUrl: string | null;
   radiusMeters: number;
   timezone: string;
   workStart: string;
@@ -50,6 +53,7 @@ function toSummary(row: OfficeRow): OfficeSummary {
     address: row.address,
     latitude: row.latitude,
     longitude: row.longitude,
+    googleMapsUrl: row.googleMapsUrl,
     radiusMeters: row.radiusMeters,
     timezone: row.timezone,
     workStart: row.workStart,
@@ -179,12 +183,39 @@ type NormalizedOffice = {
   address: string | null;
   latitude: number;
   longitude: number;
+  googleMapsUrl: string | null;
   radiusMeters: number;
   timezone: string;
   workStart: string;
   workEnd: string;
   isActive: boolean;
 };
+
+function mapsUrlValue(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") {
+    throw new HttpError(400, "INVALID_GOOGLE_MAPS_URL", "URL Google Maps tidak valid");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 1024) {
+    throw new HttpError(400, "INVALID_GOOGLE_MAPS_URL", "URL Google Maps terlalu panjang");
+  }
+  return trimmed;
+}
+
+async function applyMapsUrl(input: OfficeInput): Promise<OfficeInput> {
+  if (input.googleMapsUrl === undefined) return input;
+  const raw = mapsUrlValue(input.googleMapsUrl);
+  if (!raw) return { ...input, googleMapsUrl: null };
+  const resolved = await resolveGoogleMapsUrl(raw);
+  return {
+    ...input,
+    googleMapsUrl: resolved.googleMapsUrl,
+    latitude: resolved.latitude,
+    longitude: resolved.longitude,
+  };
+}
 
 function normalizeCreate(input: OfficeInput): NormalizedOffice {
   const workStart = parseTime(input.workStart, "workStart");
@@ -195,6 +226,7 @@ function normalizeCreate(input: OfficeInput): NormalizedOffice {
     address: optionalString(input.address, OFFICE_ADDRESS_MAX_LENGTH),
     latitude: parseLatitude(input.latitude),
     longitude: parseLongitude(input.longitude),
+    googleMapsUrl: mapsUrlValue(input.googleMapsUrl),
     radiusMeters: parseRadius(input.radiusMeters),
     timezone: parseTimezone(input.timezone),
     workStart,
@@ -221,6 +253,10 @@ function normalizeUpdate(input: OfficeInput, existing: NormalizedOffice): Normal
     latitude: input.latitude === undefined ? existing.latitude : parseLatitude(input.latitude),
     longitude:
       input.longitude === undefined ? existing.longitude : parseLongitude(input.longitude),
+    googleMapsUrl:
+      input.googleMapsUrl === undefined
+        ? existing.googleMapsUrl
+        : mapsUrlValue(input.googleMapsUrl),
     radiusMeters:
       input.radiusMeters === undefined ? existing.radiusMeters : parseRadius(input.radiusMeters),
     timezone: input.timezone === undefined ? existing.timezone : parseTimezone(input.timezone),
@@ -253,7 +289,7 @@ export async function createOffice(input: {
 }): Promise<OfficeSummary> {
   assertManage(input.ctx);
   assertWorkspaceReadClaim(input.ctx, input.workspaceId);
-  const values = normalizeCreate(input.office);
+  const values = normalizeCreate(await applyMapsUrl(input.office));
   const id = randomUUID();
 
   const created = await withTenant(input.ctx, (db) =>
@@ -271,7 +307,11 @@ export async function createOffice(input: {
           action: "workspace.office_create",
           resourceType: "office_location",
           resourceId: id,
-          metadata: { name: values.name, isActive: values.isActive },
+          metadata: {
+            name: values.name,
+            isActive: values.isActive,
+            hasGoogleMapsUrl: values.googleMapsUrl !== null,
+          },
           ip: input.ip ?? null,
           userAgent: input.userAgent ?? null,
         },
@@ -301,11 +341,12 @@ export async function updateOffice(input: {
     throw new HttpError(404, "OFFICE_NOT_FOUND", "Kantor tidak ditemukan");
   }
 
-  const values = normalizeUpdate(input.office, {
+  const values = normalizeUpdate(await applyMapsUrl(input.office), {
     name: existing.name,
     address: existing.address,
     latitude: existing.latitude,
     longitude: existing.longitude,
+    googleMapsUrl: existing.googleMapsUrl,
     radiusMeters: existing.radiusMeters,
     timezone: existing.timezone,
     workStart: existing.workStart,
@@ -328,7 +369,11 @@ export async function updateOffice(input: {
           action: "workspace.office_update",
           resourceType: "office_location",
           resourceId: existing.id,
-          metadata: { name: values.name, isActive: values.isActive },
+          metadata: {
+            name: values.name,
+            isActive: values.isActive,
+            hasGoogleMapsUrl: values.googleMapsUrl !== null,
+          },
           ip: input.ip ?? null,
           userAgent: input.userAgent ?? null,
         },

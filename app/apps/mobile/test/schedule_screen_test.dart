@@ -98,9 +98,7 @@ Future<AuthService> buildAuth() async {
 void main() {
   testWidgets('jadwal menampilkan tujuh hari dan hari libur', (tester) async {
     final auth = await buildAuth();
-    await tester.pumpWidget(
-      MaterialApp(home: ScheduleScreen(auth: auth)),
-    );
+    await tester.pumpWidget(MaterialApp(home: ScheduleScreen(auth: auth)));
     await tester.pumpAndSettle();
 
     expect(find.text('Jam Kerja Mingguan'), findsOneWidget);

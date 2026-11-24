@@ -16,7 +16,8 @@ class PushNotificationListener extends StatefulWidget {
   final Widget child;
 
   @override
-  State<PushNotificationListener> createState() => _PushNotificationListenerState();
+  State<PushNotificationListener> createState() =>
+      _PushNotificationListenerState();
 }
 
 class _PushNotificationListenerState extends State<PushNotificationListener> {
@@ -47,7 +48,9 @@ class _PushNotificationListenerState extends State<PushNotificationListener> {
           MaterialBanner(
             key: const Key('push-banner'),
             content: Text(
-              latest.title.isEmpty ? latest.body : '${latest.title}: ${latest.body}',
+              latest.title.isEmpty
+                  ? latest.body
+                  : '${latest.title}: ${latest.body}',
             ),
             leading: const Icon(Icons.notifications_active_outlined),
             actions: [

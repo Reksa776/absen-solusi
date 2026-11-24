@@ -64,9 +64,7 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
       final reading = await _location.current();
       if (!mounted) return;
       final photo = await Navigator.of(context).push<Uint8List>(
-        MaterialPageRoute<Uint8List>(
-          builder: (_) => const ProofCameraScreen(),
-        ),
+        MaterialPageRoute<Uint8List>(builder: (_) => const ProofCameraScreen()),
       );
       if (photo == null) return;
       final notes = await _askNotes(type);
@@ -106,9 +104,8 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
       );
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(messageForApiError(error))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -124,7 +121,9 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(type == 'CHECK_IN' ? 'Catatan check-in' : 'Catatan check-out'),
+        title: Text(
+          type == 'CHECK_IN' ? 'Catatan check-in' : 'Catatan check-out',
+        ),
         content: TextField(
           controller: controller,
           minLines: 2,
@@ -299,11 +298,7 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
           const SizedBox(height: 9),
           Row(
             children: [
-              const Icon(
-                Icons.schedule,
-                size: 14,
-                color: AppColors.muted,
-              ),
+              const Icon(Icons.schedule, size: 14, color: AppColors.muted),
               const SizedBox(width: 5),
               Text(
                 '${schedule.plannedStartTime}–${schedule.plannedEndTime}',
@@ -386,9 +381,7 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
                         ),
                       )
                     : Icon(
-                        schedule.canCheckIn
-                            ? Icons.login
-                            : Icons.logout,
+                        schedule.canCheckIn ? Icons.login : Icons.logout,
                         size: 17,
                       ),
                 label: Text(
@@ -465,11 +458,8 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
         AppColors.yellowLine,
         AppColors.yellowInk,
       ),
-      'CANCELLED' || 'MISSED' => (
-        AppColors.dangerSoft,
-        AppColors.danger,
-        AppColors.danger,
-      ),
+      'CANCELLED' ||
+      'MISSED' => (AppColors.dangerSoft, AppColors.danger, AppColors.danger),
       _ => (AppColors.tableHead, AppColors.line, AppColors.muted),
     };
     return Container(

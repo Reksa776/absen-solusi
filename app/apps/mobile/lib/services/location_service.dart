@@ -14,7 +14,11 @@ class GpsReading {
   final bool isMocked;
 }
 
-enum LocationProblem { serviceDisabled, permissionDenied, permissionDeniedForever }
+enum LocationProblem {
+  serviceDisabled,
+  permissionDenied,
+  permissionDeniedForever,
+}
 
 class LocationUnavailableException implements Exception {
   const LocationUnavailableException(

@@ -61,18 +61,19 @@ void main() {
   });
 
   test('downloadUrl relatif diselesaikan terhadap base URL', () {
-    final uri = buildService(
-      MockClient((_) async => http.Response('{}', 200)),
-      directory,
-    ).downloadUri(
-      const AppVersionInfo(
-        latestVersion: '1.2.0',
-        buildNumber: 5,
-        forceUpdate: false,
-        changelog: '',
-        downloadUrl: '/api/mobile/apk/latest',
-      ),
-    );
+    final uri =
+        buildService(
+          MockClient((_) async => http.Response('{}', 200)),
+          directory,
+        ).downloadUri(
+          const AppVersionInfo(
+            latestVersion: '1.2.0',
+            buildNumber: 5,
+            forceUpdate: false,
+            changelog: '',
+            downloadUrl: '/api/mobile/apk/latest',
+          ),
+        );
     expect(uri.toString(), 'https://absensi.test/api/mobile/apk/latest');
   });
 
@@ -88,10 +89,10 @@ void main() {
     });
 
     final progress = <double>[];
-    final file = await buildService(client, directory).download(
-      release,
-      onProgress: progress.add,
-    );
+    final file = await buildService(
+      client,
+      directory,
+    ).download(release, onProgress: progress.add);
 
     expect(await file.readAsBytes(), payload);
     expect(file.path, contains('absensi-mobile-1.2.0.apk'));

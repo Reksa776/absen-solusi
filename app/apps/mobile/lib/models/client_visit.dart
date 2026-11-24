@@ -97,8 +97,7 @@ class ClientVisitSchedule {
       clientAddress: json['clientAddress'] as String?,
       clientLatitude: (json['clientLatitude'] as num?)?.toDouble() ?? 0,
       clientLongitude: (json['clientLongitude'] as num?)?.toDouble() ?? 0,
-      clientRadiusMeters:
-          (json['clientRadiusMeters'] as num?)?.toDouble() ?? 0,
+      clientRadiusMeters: (json['clientRadiusMeters'] as num?)?.toDouble() ?? 0,
       scheduledDate:
           DateTime.tryParse(json['scheduledDate'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
@@ -106,14 +105,12 @@ class ClientVisitSchedule {
       plannedEndTime: json['plannedEndTime'] as String? ?? '',
       purpose: json['purpose'] as String? ?? '',
       visitStatus: json['visitStatus'] as String? ?? 'SCHEDULED',
-      checkIn:
-          json['checkIn'] is Map<String, dynamic>
-              ? ClientVisitLog.fromJson(json['checkIn'] as Map<String, dynamic>)
-              : find('CHECK_IN'),
-      checkOut:
-          json['checkOut'] is Map<String, dynamic>
-              ? ClientVisitLog.fromJson(json['checkOut'] as Map<String, dynamic>)
-              : find('CHECK_OUT'),
+      checkIn: json['checkIn'] is Map<String, dynamic>
+          ? ClientVisitLog.fromJson(json['checkIn'] as Map<String, dynamic>)
+          : find('CHECK_IN'),
+      checkOut: json['checkOut'] is Map<String, dynamic>
+          ? ClientVisitLog.fromJson(json['checkOut'] as Map<String, dynamic>)
+          : find('CHECK_OUT'),
       logs: logs,
     );
   }

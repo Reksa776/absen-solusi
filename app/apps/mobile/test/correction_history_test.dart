@@ -88,7 +88,9 @@ class HistoryMock {
 Widget shell(Widget child) => MaterialApp(home: child);
 
 void main() {
-  testWidgets('riwayat revisi merender status dan alasan penolakan', (tester) async {
+  testWidgets('riwayat revisi merender status dan alasan penolakan', (
+    tester,
+  ) async {
     final mock = HistoryMock();
     await mock.init([
       correctionJson(id: 'c1', status: 'PENDING'),
@@ -122,7 +124,9 @@ void main() {
     expect(find.byKey(const Key('correction-empty')), findsOneWidget);
   });
 
-  testWidgets('riwayat revisi gagal menampilkan error dan retry', (tester) async {
+  testWidgets('riwayat revisi gagal menampilkan error dan retry', (
+    tester,
+  ) async {
     final mock = HistoryMock(statusCode: 500);
     await mock.init(const []);
     await tester.pumpWidget(shell(CorrectionHistoryScreen(auth: mock.auth)));
@@ -131,7 +135,9 @@ void main() {
     expect(find.text('Coba lagi'), findsOneWidget);
   });
 
-  testWidgets('filter status mengirim query dan menyaring list', (tester) async {
+  testWidgets('filter status mengirim query dan menyaring list', (
+    tester,
+  ) async {
     final mock = HistoryMock();
     await mock.init([
       correctionJson(id: 'c1', status: 'PENDING'),

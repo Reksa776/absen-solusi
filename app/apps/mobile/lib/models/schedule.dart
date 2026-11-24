@@ -92,13 +92,9 @@ class WorkSchedule {
           pattern?['name'] as String? ??
           (firstWorkday == null ? 'Jam kantor' : 'Pola kerja aktif'),
       workStart:
-          firstWorkday?.startTime ??
-          office?['workStart'] as String? ??
-          '09:00',
+          firstWorkday?.startTime ?? office?['workStart'] as String? ?? '09:00',
       workEnd:
-          firstWorkday?.endTime ??
-          office?['workEnd'] as String? ??
-          '17:00',
+          firstWorkday?.endTime ?? office?['workEnd'] as String? ?? '17:00',
       lateToleranceMinutes: firstWorkday?.lateToleranceMinutes ?? 0,
       weekly: weekly,
       holidays: (json['holidays'] as List<dynamic>? ?? const [])

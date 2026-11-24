@@ -109,7 +109,9 @@ class _WorkProjectionsScreenState extends State<WorkProjectionsScreen> {
                           if (picked != null) {
                             setDialogState(() {
                               startDate = picked;
-                              if (endDate.isBefore(startDate)) endDate = startDate;
+                              if (endDate.isBefore(startDate)) {
+                                endDate = startDate;
+                              }
                             });
                           }
                         },
@@ -169,9 +171,8 @@ class _WorkProjectionsScreenState extends State<WorkProjectionsScreen> {
         await _load();
       } on ApiException catch (error) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(messageForApiError(error))),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
         }
       } catch (_) {
         if (mounted) {
@@ -268,8 +269,14 @@ class _WorkProjectionsScreenState extends State<WorkProjectionsScreen> {
                 initialValue: status,
                 decoration: const InputDecoration(labelText: 'Status'),
                 items: const [
-                  DropdownMenuItem(value: 'PLANNED', child: Text('Direncanakan')),
-                  DropdownMenuItem(value: 'IN_PROGRESS', child: Text('Berjalan')),
+                  DropdownMenuItem(
+                    value: 'PLANNED',
+                    child: Text('Direncanakan'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'IN_PROGRESS',
+                    child: Text('Berjalan'),
+                  ),
                   DropdownMenuItem(value: 'BLOCKED', child: Text('Kendala')),
                   DropdownMenuItem(value: 'COMPLETED', child: Text('Selesai')),
                 ],
@@ -320,9 +327,8 @@ class _WorkProjectionsScreenState extends State<WorkProjectionsScreen> {
         await _load();
       } on ApiException catch (error) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(messageForApiError(error))),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
         }
       } catch (_) {
         if (mounted) {
@@ -389,7 +395,11 @@ class _WorkProjectionsScreenState extends State<WorkProjectionsScreen> {
           Text(
             'Belum ada target kerja.\nTekan “Target baru” untuk mulai.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5, height: 1.5, color: AppColors.muted),
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.5,
+              color: AppColors.muted,
+            ),
           ),
         ],
       );
@@ -534,11 +544,7 @@ class _WorkProjectionsScreenState extends State<WorkProjectionsScreen> {
         AppColors.greenLine,
         AppColors.greenDark,
       ),
-      'BLOCKED' => (
-        AppColors.dangerSoft,
-        AppColors.danger,
-        AppColors.danger,
-      ),
+      'BLOCKED' => (AppColors.dangerSoft, AppColors.danger, AppColors.danger),
       'IN_PROGRESS' => (
         AppColors.yellowSoft,
         AppColors.yellowLine,

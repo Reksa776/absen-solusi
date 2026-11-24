@@ -10,17 +10,18 @@ import type { RoleKey } from "@absensi/permissions";
 
 import { HttpError } from "./http.js";
 import { hashPassword } from "./password.js";
-import { evaluateInvitationRole, highestRoleRank } from "./role-policy.js";
+import { highestRoleRank } from "./role-policy.js";
 import { revokeAllSessionsForUser } from "./session.js";
-import { assertEmail, assertName, assertRoleKey } from "./users.js";
+import { assertEmail, assertName } from "./users.js";
 import { assertWorkspaceClaim } from "./workspaces.js";
 
-function assertSecurityDecision(
-  decision: ReturnType<typeof evaluateInvitationRole>,
-): void {
-  if (!decision.allowed) {
-    throw new HttpError(decision.status, decision.code, decision.message);
+function normalizeEmployeeStatus(value: unknown, fallback = "ACTIVE"): "ACTIVE" | "INACTIVE" {
+  if (value === undefined || value === null || value === "") return fallback as "ACTIVE" | "INACTIVE";
+  const status = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (status !== "ACTIVE" && status !== "INACTIVE") {
+    throw new HttpError(400, "INVALID_STATUS", "Status karyawan harus ACTIVE atau INACTIVE");
   }
+  return status;
 }
 
 function optionalUuid(value: string | null | undefined, code: string, message: string): string | null {
@@ -35,8 +36,10 @@ export type DirectAddMemberInput = {
   name: string;
   email: string;
   password: string;
-  role?: string | undefined;
+  status?: string | undefined;
   officeId?: string | null | undefined;
+  divisionId?: string | null | undefined;
+  positionId?: string | null | undefined;
   shiftId?: string | null | undefined;
   ip?: string | null | undefined;
   userAgent?: string | null | undefined;
@@ -47,9 +50,11 @@ export type DirectAddMemberResult = {
   userId: string;
   name: string;
   email: string;
-  status: "ACTIVE";
+  status: "ACTIVE" | "INACTIVE";
   roleKey: RoleKey;
   officeId: string | null;
+  divisionId: string | null;
+  positionId: string | null;
   shiftId: string | null;
 };
 
@@ -63,14 +68,16 @@ export async function directAddMember(
   assertWorkspaceClaim(input.ctx, input.workspaceId);
   const name = assertName(input.name);
   const email = assertEmail(input.email);
-  const roleKey = assertRoleKey(input.role ?? "EMPLOYEE");
-  assertSecurityDecision(
-    evaluateInvitationRole({ actorRoleKeys: input.ctx.roleKeys, roleKey }),
-  );
+  // Data Karyawan selalu membuat akun karyawan standar. Role admin dikelola
+  // terpisah di Pengaturan -> Akun Admin agar tidak tercampur dengan onboarding.
+  const roleKey: RoleKey = "EMPLOYEE";
+  const status = normalizeEmployeeStatus(input.status);
   const officeId = optionalUuid(input.officeId, "INVALID_OFFICE", "Kantor tidak valid");
+  const divisionId = optionalUuid(input.divisionId, "INVALID_DIVISION", "Divisi tidak valid");
+  const positionId = optionalUuid(input.positionId, "INVALID_POSITION", "Jabatan tidak valid");
   const shiftId = optionalUuid(input.shiftId, "INVALID_SHIFT", "Shift tidak valid");
-  if ((officeId || shiftId) && !input.ctx.permissions.includes("office.manage")) {
-    throw new HttpError(403, "FORBIDDEN", "Permission kantor tidak mencukupi");
+  if ((officeId || shiftId || divisionId || positionId) && !input.ctx.permissions.includes("member.manage")) {
+    throw new HttpError(403, "FORBIDDEN", "Permission data karyawan tidak mencukupi");
   }
 
   const passwordHash = await hashPassword(input.password);
@@ -115,6 +122,25 @@ export async function directAddMember(
             throw new HttpError(404, "SHIFT_NOT_FOUND", "Shift aktif tidak ditemukan");
           }
         }
+        if (divisionId) {
+          const division = await tx.division.findFirst({
+            where: { tenantId: input.ctx.tenantId, id: divisionId },
+          });
+          if (!division) {
+            throw new HttpError(404, "DIVISION_NOT_FOUND", "Divisi tidak ditemukan");
+          }
+        }
+        if (positionId) {
+          const position = await tx.position.findFirst({
+            where: { tenantId: input.ctx.tenantId, id: positionId },
+          });
+          if (!position) {
+            throw new HttpError(404, "POSITION_NOT_FOUND", "Jabatan tidak ditemukan");
+          }
+          if (position.divisionId && divisionId && position.divisionId !== divisionId) {
+            throw new HttpError(400, "POSITION_DIVISION_MISMATCH", "Jabatan bukan milik divisi tersebut");
+          }
+        }
 
         await tx.user.create({
           data: {
@@ -130,9 +156,11 @@ export async function directAddMember(
             id: memberId,
             tenantId: input.ctx.tenantId,
             userId,
-            status: "ACTIVE",
+            status,
             joinedAt: now,
             officeLocationId: officeId,
+            divisionId,
+            positionId,
           },
         });
         await tx.memberRole.create({
@@ -163,7 +191,16 @@ export async function directAddMember(
             action: "member.direct_create",
             resourceType: "member",
             resourceId: memberId,
-            metadata: { email, name, roleKey, officeId, shiftId },
+            metadata: {
+              email,
+              name,
+              roleKey,
+              status,
+              officeId,
+              divisionId,
+              positionId,
+              shiftId,
+            },
             ip: input.ip ?? null,
             userAgent: input.userAgent ?? null,
           },
@@ -175,9 +212,11 @@ export async function directAddMember(
           userId,
           name,
           email,
-          status: "ACTIVE" as const,
+          status,
           roleKey,
           officeId,
+          divisionId,
+          positionId,
           shiftId,
         };
     });
@@ -193,6 +232,153 @@ export async function directAddMember(
     }
     throw error;
   }
+}
+
+export type UpdateMemberEmployeeInput = {
+  ctx: TenantContext;
+  workspaceId: string;
+  memberId: string;
+  name?: string | undefined;
+  status?: string | undefined;
+  officeLocationId?: string | null | undefined;
+  divisionId?: string | null | undefined;
+  positionId?: string | null | undefined;
+  ip?: string | null | undefined;
+  userAgent?: string | null | undefined;
+};
+
+export type UpdateMemberEmployeeResult = {
+  memberId: string;
+  userId: string;
+  name: string;
+  status: "ACTIVE" | "INACTIVE";
+  officeLocationId: string | null;
+  divisionId: string | null;
+  positionId: string | null;
+  sessionsRevoked: number;
+};
+
+/** Edit identitas karyawan tanpa menyentuh role akun admin. */
+export async function updateMemberEmployee(
+  input: UpdateMemberEmployeeInput,
+): Promise<UpdateMemberEmployeeResult> {
+  assertWorkspaceClaim(input.ctx, input.workspaceId);
+  if (!input.ctx.permissions.includes("member.manage")) {
+    throw new HttpError(403, "FORBIDDEN", "Permission data karyawan tidak mencukupi");
+  }
+  if (!isUuid(input.memberId)) {
+    throw new HttpError(400, "INVALID_MEMBER", "Member tidak valid");
+  }
+  if (input.memberId === input.ctx.memberId) {
+    throw new HttpError(
+      400,
+      "SELF_EMPLOYEE_EDIT",
+      "Data akun sendiri dikelola melalui Profil & Keamanan",
+    );
+  }
+  const hasChange =
+    input.name !== undefined ||
+    input.status !== undefined ||
+    input.officeLocationId !== undefined ||
+    input.divisionId !== undefined ||
+    input.positionId !== undefined;
+  if (!hasChange) {
+    throw new HttpError(400, "INVALID_INPUT", "Minimal satu data karyawan harus diubah");
+  }
+  const name = input.name === undefined ? undefined : assertName(input.name);
+  const status = input.status === undefined ? undefined : normalizeEmployeeStatus(input.status);
+  const officeId =
+    input.officeLocationId === undefined
+      ? undefined
+      : optionalUuid(input.officeLocationId, "INVALID_OFFICE", "Kantor tidak valid");
+  const divisionId =
+    input.divisionId === undefined
+      ? undefined
+      : optionalUuid(input.divisionId, "INVALID_DIVISION", "Divisi tidak valid");
+  const positionId =
+    input.positionId === undefined
+      ? undefined
+      : optionalUuid(input.positionId, "INVALID_POSITION", "Jabatan tidak valid");
+
+  const result = await systemDb().$transaction(async (tx) => {
+    const target = await tx.workspaceMember.findFirst({
+      where: { tenantId: input.ctx.tenantId, id: input.memberId },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    if (!target) {
+      throw new HttpError(404, "MEMBER_NOT_FOUND", "Member tidak ditemukan");
+    }
+    const finalDivisionId = divisionId === undefined ? target.divisionId : divisionId;
+    if (divisionId) {
+      const division = await tx.division.findFirst({
+        where: { tenantId: input.ctx.tenantId, id: divisionId },
+      });
+      if (!division) throw new HttpError(404, "DIVISION_NOT_FOUND", "Divisi tidak ditemukan");
+    }
+    if (positionId) {
+      const position = await tx.position.findFirst({
+        where: { tenantId: input.ctx.tenantId, id: positionId },
+      });
+      if (!position) throw new HttpError(404, "POSITION_NOT_FOUND", "Jabatan tidak ditemukan");
+      if (position.divisionId && finalDivisionId && position.divisionId !== finalDivisionId) {
+        throw new HttpError(400, "POSITION_DIVISION_MISMATCH", "Jabatan bukan milik divisi tersebut");
+      }
+    }
+    if (officeId) {
+      const office = await tx.officeLocation.findFirst({
+        where: { tenantId: input.ctx.tenantId, id: officeId },
+      });
+      if (!office) throw new HttpError(404, "OFFICE_NOT_FOUND", "Kantor tidak ditemukan");
+    }
+
+    if (name !== undefined) {
+      await tx.user.update({ where: { id: target.userId }, data: { name } });
+    }
+    const updated = await tx.workspaceMember.update({
+      where: { tenantId_id: { tenantId: input.ctx.tenantId, id: target.id } },
+      data: {
+        ...(name === undefined ? {} : {}),
+        ...(status === undefined ? {} : { status }),
+        ...(officeId === undefined ? {} : { officeLocationId: officeId }),
+        ...(divisionId === undefined ? {} : { divisionId }),
+        ...(positionId === undefined ? {} : { positionId }),
+      },
+    });
+    await writeAudit(
+      {
+        tenantId: input.ctx.tenantId,
+        actorType: "USER",
+        actorUserId: input.ctx.userId,
+        actorMemberId: input.ctx.memberId,
+        action: "member.update",
+        resourceType: "member",
+        resourceId: target.id,
+        metadata: {
+          status: updated.status,
+          officeLocationId: updated.officeLocationId,
+          divisionId: updated.divisionId,
+          positionId: updated.positionId,
+          nameChanged: name !== undefined,
+        },
+        ip: input.ip ?? null,
+        userAgent: input.userAgent ?? null,
+      },
+      tx,
+    );
+    return {
+      memberId: updated.id,
+      userId: target.userId,
+      name: name ?? target.user.name,
+      status: updated.status as "ACTIVE" | "INACTIVE",
+      officeLocationId: updated.officeLocationId,
+      divisionId: updated.divisionId,
+      positionId: updated.positionId,
+    };
+  });
+
+  const sessionsRevoked =
+    status === "INACTIVE" ? await revokeAllSessionsForUser(result.userId) : 0;
+  return { ...result, sessionsRevoked };
 }
 
 export type ResetMemberPasswordInput = {

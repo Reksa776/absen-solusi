@@ -724,6 +724,7 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
         throw new HttpError(409, "ALREADY_REVIEWED", "Revisi sudah diproses");
       }
 
+      const revisionDate = correction.requestedTimestamp.toISOString().slice(0, 10);
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: correction.memberId,
@@ -736,15 +737,15 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
         title:
           input.action === "approve"
             ? finalApproval
-              ? "Revisi disetujui"
-              : "Revisi menunggu level berikutnya"
-            : "Revisi ditolak",
+              ? `Revisi ${revisionDate} disetujui`
+              : `Revisi ${revisionDate} disetujui, menunggu level berikutnya`
+            : `Revisi ${revisionDate} ditolak`,
         body:
           input.action === "approve"
             ? finalApproval
-              ? "Data kehadiran Anda sudah diperbarui."
-              : "Pengajuan Anda diteruskan ke approver berikutnya."
-            : "Buka aplikasi untuk melihat alasan penolakan.",
+              ? `Revisi kehadiran tanggal ${revisionDate} disetujui. Data kehadiran Anda sudah diperbarui.`
+              : `Revisi kehadiran tanggal ${revisionDate} disetujui pada level ini dan diteruskan ke approver berikutnya.`
+            : `Revisi kehadiran tanggal ${revisionDate} ditolak. Catatan admin: ${rejectReason}`,
         linkUrl: `/workspaces/${input.ctx.tenantId}/corrections/${correction.id}`,
       });
 

@@ -10,7 +10,8 @@ class CorrectionHistoryScreen extends StatefulWidget {
   final AuthService auth;
 
   @override
-  State<CorrectionHistoryScreen> createState() => _CorrectionHistoryScreenState();
+  State<CorrectionHistoryScreen> createState() =>
+      _CorrectionHistoryScreenState();
 }
 
 class _CorrectionHistoryScreenState extends State<CorrectionHistoryScreen> {
@@ -144,11 +145,17 @@ class _CorrectionHistoryScreenState extends State<CorrectionHistoryScreen> {
               leading: Icon(
                 row.requestType == 'CHECK_IN' ? Icons.login : Icons.logout,
               ),
-              title: Text('${row.typeLabel} • ${_date(row.requestedTimestamp)}'),
+              title: Text(
+                '${row.typeLabel} • ${_date(row.requestedTimestamp)}',
+              ),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(row.reason, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  Text(
+                    row.reason,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 4),
                   Text('Diajukan ${_dateTime(row.createdAt)}'),
                   if (row.isRejected && (row.rejectionReason ?? '').isNotEmpty)

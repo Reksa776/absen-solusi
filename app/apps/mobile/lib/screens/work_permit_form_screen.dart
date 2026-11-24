@@ -74,9 +74,7 @@ class _WorkPermitFormScreenState extends State<WorkPermitFormScreen> {
 
   Future<void> _captureProof() async {
     final bytes = await Navigator.of(context).push<Uint8List>(
-      MaterialPageRoute<Uint8List>(
-        builder: (_) => const ProofCameraScreen(),
-      ),
+      MaterialPageRoute<Uint8List>(builder: (_) => const ProofCameraScreen()),
     );
     if (bytes == null || !mounted) return;
     setState(() => _proof = bytes);
@@ -258,7 +256,9 @@ class _WorkPermitFormScreenState extends State<WorkPermitFormScreen> {
                         size: 16,
                       ),
                       label: Text(
-                        _proof == null ? 'Ambil foto bukti' : 'Ganti foto bukti',
+                        _proof == null
+                            ? 'Ambil foto bukti'
+                            : 'Ganti foto bukti',
                       ),
                     ),
                     if (_proof != null) ...[

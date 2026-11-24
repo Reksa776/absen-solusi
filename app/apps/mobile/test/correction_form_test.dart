@@ -84,7 +84,11 @@ class CorrectionMock {
       requests.where((request) => request.url.path == '/api/corrections');
 }
 
-Future<void> openForm(WidgetTester tester, AuthService auth, {Uint8List? proof}) async {
+Future<void> openForm(
+  WidgetTester tester,
+  AuthService auth, {
+  Uint8List? proof,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Builder(
@@ -118,7 +122,9 @@ Future<void> submit(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('form revisi merender tanggal, tipe, alasan, dan bukti', (tester) async {
+  testWidgets('form revisi merender tanggal, tipe, alasan, dan bukti', (
+    tester,
+  ) async {
     final mock = CorrectionMock();
     await mock.init();
     await openForm(tester, mock.auth);
@@ -131,12 +137,17 @@ void main() {
     expect(find.text('Kirim pengajuan'), findsOneWidget);
   });
 
-  testWidgets('alasan kurang dari 10 karakter ditolak sebelum request', (tester) async {
+  testWidgets('alasan kurang dari 10 karakter ditolak sebelum request', (
+    tester,
+  ) async {
     final mock = CorrectionMock();
     await mock.init();
     await openForm(tester, mock.auth);
 
-    await tester.enterText(find.byKey(const Key('correction-reason')), 'pendek');
+    await tester.enterText(
+      find.byKey(const Key('correction-reason')),
+      'pendek',
+    );
     await submit(tester);
 
     expect(find.byKey(const Key('correction-validation')), findsOneWidget);
@@ -144,7 +155,9 @@ void main() {
     expect(mock.submits.isEmpty, isTrue);
   });
 
-  testWidgets('submit valid mengirim POST JSON dan menutup form', (tester) async {
+  testWidgets('submit valid mengirim POST JSON dan menutup form', (
+    tester,
+  ) async {
     final mock = CorrectionMock();
     await mock.init();
     await openForm(tester, mock.auth);
@@ -196,7 +209,10 @@ void main() {
   });
 
   testWidgets('error WINDOW_EXCEEDED ditampilkan jelas', (tester) async {
-    final mock = CorrectionMock(submitStatus: 400, submitCode: 'WINDOW_EXCEEDED');
+    final mock = CorrectionMock(
+      submitStatus: 400,
+      submitCode: 'WINDOW_EXCEEDED',
+    );
     await mock.init();
     await openForm(tester, mock.auth);
 
