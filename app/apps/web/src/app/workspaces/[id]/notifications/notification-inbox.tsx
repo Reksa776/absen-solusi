@@ -70,9 +70,7 @@ export function NotificationInbox({
       </div>
       {error ? <p role="alert" className="alert">{error}</p> : null}
       {notifications.length === 0 ? (
-        <p className="empty" style={{ border: "1px solid var(--line)", borderRadius: "12px", background: "#fff" }}>
-          Belum ada notifikasi.
-        </p>
+        <p className="empty card">Belum ada notifikasi.</p>
       ) : null}
       <ul className="notification-list">
         {notifications.map((item) => (

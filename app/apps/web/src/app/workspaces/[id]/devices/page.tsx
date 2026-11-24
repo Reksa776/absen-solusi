@@ -42,16 +42,9 @@ export default async function DevicesPage({
         </span>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: "0.75rem",
-          marginBottom: "1rem",
-        }}
-      >
+      <div className="summary-grid">
         {summary.map((item) => (
-          <div key={item.label} className="card" style={{ padding: "0.9rem 1rem" }}>
+          <div key={item.label} className="card summary-cell">
             <p className="section-note" style={{ margin: 0 }}>
               {item.label}
             </p>
@@ -63,10 +56,10 @@ export default async function DevicesPage({
                 fontWeight: 600,
                 color:
                   item.tone === "green"
-                    ? "var(--green)"
+                    ? "var(--green-700)"
                     : item.tone === "red"
-                      ? "var(--red)"
-                      : "var(--yellow-ink, #422006)",
+                      ? "var(--danger)"
+                      : "var(--yellow-ink)",
               }}
             >
               {item.value}

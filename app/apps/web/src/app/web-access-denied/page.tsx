@@ -11,7 +11,7 @@ export default function WebAccessDeniedPage() {
       <section className="centered-card">
         <p className="eyebrow">Akses dibatasi</p>
         <h1>Akses web dibatasi</h1>
-        <p role="alert" style={{ color: "#991b1b", fontWeight: 600, marginTop: "0.75rem" }}>
+        <p role="alert" className="text-danger" style={{ fontWeight: 600, marginTop: "0.75rem" }}>
           {WEB_EMPLOYEE_DENIED_MESSAGE}
         </p>
         <p>

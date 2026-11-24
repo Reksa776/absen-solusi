@@ -49,10 +49,11 @@ ThemeData buildAppTheme() {
   );
 
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
-  final text = base.textTheme.apply(
-    bodyColor: AppColors.ink,
-    displayColor: AppColors.ink,
-  );
+  // tabularFigures di level tema: setiap digit (jam, GPS, kuota, nominal)
+  // rata lebar tanpa perlu diulang di tiap widget.
+  final text = base.textTheme
+      .apply(bodyColor: AppColors.ink, displayColor: AppColors.ink)
+      .apply(fontFeatures: tabularFigures);
 
   OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
     borderRadius: BorderRadius.circular(10),
@@ -96,6 +97,7 @@ ThemeData buildAppTheme() {
         fontWeight: FontWeight.w700,
         letterSpacing: 0.4,
         color: AppColors.muted,
+        fontFeatures: tabularFigures,
       ),
     ),
     appBarTheme: const AppBarTheme(

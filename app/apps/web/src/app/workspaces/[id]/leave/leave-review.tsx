@@ -165,7 +165,7 @@ export function LeaveReview({
                   <td style={{ maxWidth: "18rem" }}>
                     {row.reason}
                     {row.rejectionReason ? (
-                      <span className="cell-sub" style={{ color: "#991b1b" }}>
+                      <span className="cell-sub text-danger">
                         Ditolak: {row.rejectionReason}
                       </span>
                     ) : null}

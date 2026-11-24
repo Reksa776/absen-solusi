@@ -29,7 +29,7 @@ export default async function PayslipPrintPage({ params, searchParams }: { param
     [`Potongan ${item.spLevel ?? "SP"}`, -item.spDeduction],
   ];
   return (
-    <main className="page page--narrow" style={{ background: "#fff" }}>
+    <main className="page page--narrow page--paper">
       <div className="page-head"><div><p className="eyebrow">Slip gaji</p><h1 className="page-title">{company.legalName}</h1><p className="page-subtitle">{monthName.format(new Date(Date.UTC(slip.periodYear, slip.periodMonth - 1, 1)))} · {slip.status}</p></div><PrintButton /></div>
       <div className="card card-pad stack-lg">
         <div><div className="kpi-label">Karyawan</div><div className="cell-title" style={{ fontSize: "1rem" }}>{item.memberName}</div><div className="cell-sub">{item.memberEmail} · {item.divisionName ?? "Tanpa divisi"}</div></div>

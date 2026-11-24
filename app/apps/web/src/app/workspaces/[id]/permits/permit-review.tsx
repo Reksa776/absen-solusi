@@ -169,7 +169,7 @@ export function PermitReview({
                   <td style={{ maxWidth: "20rem" }}>
                     {row.reason}
                     {row.rejectionReason ? (
-                      <span className="cell-sub" style={{ color: "#991b1b" }}>
+                      <span className="cell-sub text-danger">
                         Ditolak: {row.rejectionReason}
                       </span>
                     ) : null}
