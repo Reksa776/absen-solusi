@@ -60,12 +60,24 @@ Map<String, dynamic> attendanceRow(
   'accuracyMeters': 5,
   'isSuspicious': suspicious,
   'photoUrl': '',
+  'latitude': -6.7438107,
+  'longitude': 108.5515617,
+  'deviceName': 'Bandits',
+  'deviceId': 'device-abc-1234',
+  'deviceModel': 'itel S665L',
+  'deviceManufacturer': 'ITEL',
 };
 
 String localDayKey(String timestamp) {
   final date = DateTime.parse(timestamp).toLocal();
   String two(int value) => value.toString().padLeft(2, '0');
   return '${date.year}-${two(date.month)}-${two(date.day)}';
+}
+
+String localTime(String timestamp) {
+  final date = DateTime.parse(timestamp).toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(date.hour)}:${two(date.minute)}';
 }
 
 void main() {
@@ -152,6 +164,121 @@ void main() {
       find.textContaining('Revisi hanya mengubah jam masuk'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('kartu Masuk membuka Detail Aktivitas khusus Masuk', (
+    tester,
+  ) async {
+    const checkInAt = '2026-11-19T02:10:00.000Z';
+    const checkOutAt = '2026-11-19T10:00:00.000Z';
+    final auth = await authWith(
+      () async => http.Response(
+        jsonEncode({
+          'attendance': [
+            attendanceRow('a1', 'CHECK_IN', checkInAt),
+            attendanceRow('a2', 'CHECK_OUT', checkOutAt),
+          ],
+        }),
+        200,
+      ),
+    );
+    await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('history-detail-CHECK_IN-a1')));
+    await tester.pumpAndSettle();
+
+    final detail = find.byKey(const Key('activity-detail'));
+    expect(detail, findsOneWidget);
+    expect(find.text('Detail Aktivitas'), findsOneWidget);
+    expect(
+      find.descendant(of: detail, matching: find.text('Masuk')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text('Keluar')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text(localTime(checkInAt))),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text(localTime(checkOutAt))),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text('Lokasi')),
+      findsOneWidget,
+    );
+    expect(find.text('Lihat di Peta'), findsOneWidget);
+    expect(find.text('Perangkat'), findsOneWidget);
+    expect(find.text('Revisi Kehadiran'), findsOneWidget);
+    expect(find.text('Sesuai Spot Presensi'), findsOneWidget);
+    expect(find.text('108.5515617'), findsOneWidget);
+    expect(find.text('-6.7438107'), findsOneWidget);
+    expect(find.text('Bandits'), findsOneWidget);
+    expect(find.text('device-abc-1234'), findsOneWidget);
+    expect(find.text('itel S665L'), findsOneWidget);
+    expect(find.text('ITEL'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('activity-detail-revise')));
+    await tester.pumpAndSettle();
+    expect(find.text('Revisi Presensi Masuk'), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-in')), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-out')), findsNothing);
+  });
+
+  testWidgets('kartu Keluar membuka Detail Aktivitas khusus Keluar', (
+    tester,
+  ) async {
+    const checkInAt = '2026-11-19T02:10:00.000Z';
+    const checkOutAt = '2026-11-19T10:00:00.000Z';
+    final auth = await authWith(
+      () async => http.Response(
+        jsonEncode({
+          'attendance': [
+            attendanceRow('a1', 'CHECK_IN', checkInAt),
+            attendanceRow('a2', 'CHECK_OUT', checkOutAt),
+          ],
+        }),
+        200,
+      ),
+    );
+    await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('history-detail-CHECK_OUT-a2')));
+    await tester.pumpAndSettle();
+
+    final detail = find.byKey(const Key('activity-detail'));
+    expect(detail, findsOneWidget);
+    expect(
+      find.descendant(of: detail, matching: find.text('Keluar')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text('Masuk')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text(localTime(checkOutAt))),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detail, matching: find.text(localTime(checkInAt))),
+      findsNothing,
+    );
+    expect(find.text('Lokasi'), findsOneWidget);
+    expect(find.text('Lihat di Peta'), findsOneWidget);
+    expect(find.text('Perangkat'), findsOneWidget);
+    expect(find.text('Revisi Kehadiran'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('activity-detail-revise')));
+    await tester.pumpAndSettle();
+    expect(find.text('Revisi Presensi Keluar'), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-out')), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-in')), findsNothing);
   });
 
   testWidgets('check-in tanpa check-out tetap punya kartu Keluar kosong', (

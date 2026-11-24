@@ -9,16 +9,24 @@ class DeviceIdentity {
     required this.deviceId,
     required this.deviceName,
     required this.platform,
+    this.deviceModel,
+    this.deviceManufacturer,
   });
 
   final String deviceId;
   final String deviceName;
   final String platform;
+  final String? deviceModel;
+  final String? deviceManufacturer;
 
   Map<String, String> get headers => {
     'x-device-id': deviceId,
     'x-device-name': deviceName,
     'x-device-platform': platform,
+    if (deviceModel != null && deviceModel!.isNotEmpty)
+      'x-device-model': deviceModel!,
+    if (deviceManufacturer != null && deviceManufacturer!.isNotEmpty)
+      'x-device-manufacturer': deviceManufacturer!,
   };
 }
 
@@ -58,13 +66,18 @@ class DeviceIdentityService {
         const bool.fromEnvironment('FLUTTER_TEST') ||
         Platform.environment.containsKey('FLUTTER_TEST');
     final deviceId = await _persistentId(isTest);
-    final deviceName = await _deviceName(platform, isTest);
+    final (deviceName, deviceModel, deviceManufacturer) = await _deviceInfoFor(
+      platform,
+      isTest,
+    );
     return DeviceIdentity(
       deviceId: deviceId,
       deviceName: deviceName.length > 120
           ? deviceName.substring(0, 120)
           : deviceName,
       platform: platform,
+      deviceModel: deviceModel,
+      deviceManufacturer: deviceManufacturer,
     );
   }
 
@@ -80,25 +93,36 @@ class DeviceIdentityService {
     return _fallbackId;
   }
 
-  Future<String> _deviceName(String platform, bool isTest) async {
+  Future<(String, String?, String?)> _deviceInfoFor(
+    String platform,
+    bool isTest,
+  ) async {
     if (isTest) {
-      return platform == 'UNKNOWN' ? 'Perangkat' : platform;
+      return (platform == 'UNKNOWN' ? 'Perangkat' : platform, null, null);
     }
     try {
       if (Platform.isAndroid) {
         final info = await _deviceInfo.androidInfo.timeout(_timeout);
-        final name = '${info.manufacturer} ${info.model}'.trim();
-        if (name.isNotEmpty) return name;
+        final model = info.model.trim();
+        final manufacturer = info.manufacturer.trim();
+        final name = '$manufacturer $model'.trim();
+        if (name.isNotEmpty) {
+          return (
+            name,
+            model.isEmpty ? null : model,
+            manufacturer.isEmpty ? null : manufacturer,
+          );
+        }
       } else if (Platform.isIOS) {
         final info = await _deviceInfo.iosInfo.timeout(_timeout);
-        final name = info.model.trim().isNotEmpty
+        final model = info.model.trim().isNotEmpty
             ? info.model.trim()
             : info.utsname.machine.trim();
-        if (name.isNotEmpty) return name;
+        if (model.isNotEmpty) return (model, model, 'Apple');
       }
     } catch (_) {
       // Fallback ke label platform bila plugin gagal.
     }
-    return platform == 'UNKNOWN' ? 'Perangkat' : platform;
+    return (platform == 'UNKNOWN' ? 'Perangkat' : platform, null, null);
   }
 }

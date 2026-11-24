@@ -38,6 +38,8 @@ export async function POST(request: Request): Promise<Response> {
         deviceId: request.headers.get("x-device-id"),
         deviceName: request.headers.get("x-device-name"),
         platform: request.headers.get("x-device-platform"),
+        deviceModel: request.headers.get("x-device-model"),
+        deviceManufacturer: request.headers.get("x-device-manufacturer"),
       }),
       workMode:
         form.get("work_mode") === "OUT_OF_TOWN"

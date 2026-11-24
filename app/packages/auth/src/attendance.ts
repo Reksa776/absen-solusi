@@ -417,6 +417,11 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             photoHash: stored.hash,
             idempotencyKey: input.idempotencyKey ?? null,
             deviceInfo: input.deviceInfo?.slice(0, 255) ?? null,
+            deviceName: input.deviceIdentity?.deviceName.slice(0, 120) ?? null,
+            deviceId: input.deviceIdentity?.deviceId.slice(0, 128) ?? null,
+            deviceModel: input.deviceIdentity?.deviceModel?.slice(0, 120) ?? null,
+            deviceManufacturer:
+              input.deviceIdentity?.deviceManufacturer?.slice(0, 120) ?? null,
             userAgent: input.userAgent?.slice(0, 255) ?? null,
           },
         });

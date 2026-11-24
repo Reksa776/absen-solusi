@@ -24,6 +24,8 @@ export type DeviceIdentity = {
   deviceId: string;
   deviceName: string;
   platform: MemberDevicePlatform;
+  deviceModel?: string | null;
+  deviceManufacturer?: string | null;
 };
 
 export type MemberDeviceSummary = {
@@ -86,6 +88,8 @@ export function normalizeDeviceIdentity(input: {
   deviceId?: string | null;
   deviceName?: string | null;
   platform?: string | null;
+  deviceModel?: string | null;
+  deviceManufacturer?: string | null;
 }): DeviceIdentity | null {
   const deviceId = input.deviceId?.trim() ?? "";
   if (!deviceId) return null;
@@ -97,6 +101,8 @@ export function normalizeDeviceIdentity(input: {
     deviceId,
     deviceName: (input.deviceName?.trim() || defaultDeviceName(platform)).slice(0, 120),
     platform,
+    deviceModel: input.deviceModel?.trim().slice(0, 120) || null,
+    deviceManufacturer: input.deviceManufacturer?.trim().slice(0, 120) || null,
   };
 }
 

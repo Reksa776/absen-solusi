@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
@@ -7,6 +5,7 @@ import '../models/attendance_log.dart';
 import '../models/correction.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import 'activity_detail_screen.dart';
 import 'correction_form_screen.dart';
 
 const _monthShort = [
@@ -231,8 +230,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
         '${to.day} ${_monthShort[to.month - 1]} ${to.year}';
   }
 
-  AttendanceLog? _leadLog(_DayLog day) => day.checkIn ?? day.checkOut;
-
   CorrectionRequest? _correctionForEvent(_ActivityEvent event) {
     CorrectionRequest? latest;
     for (final correction in _corrections) {
@@ -269,6 +266,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
           initialKind: 'ADJUST',
           logType: event.type,
           attendanceLogId: event.log?.id,
+        ),
+      ),
+    );
+    if (saved == true && mounted) await _load();
+  }
+
+  Future<void> _openDetail(_ActivityEvent event) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => ActivityDetailScreen(
+          auth: widget.auth,
+          type: event.type,
+          log: event.log,
+          date: event.date,
         ),
       ),
     );
@@ -715,7 +726,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: InkWell(
               key: Key('history-detail-${event.type}-$eventKey'),
               borderRadius: BorderRadius.circular(13),
-              onTap: () => _showDetail(_dayFor(event)),
+              onTap: () => _openDetail(event),
               child: Container(
                 padding: const EdgeInsets.fromLTRB(12, 10, 10, 7),
                 decoration: BoxDecoration(
@@ -939,77 +950,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _statusPill(_DayLog day) {
-    final outOfTown =
-        day.checkIn?.isOutOfTown == true || day.checkOut?.isOutOfTown == true;
-    final pending =
-        (day.checkIn?.isApprovalPending ?? false) ||
-        (day.checkOut?.isApprovalPending ?? false);
-    final rejected =
-        (day.checkIn?.isApprovalRejected ?? false) ||
-        (day.checkOut?.isApprovalRejected ?? false);
-    final suspicious =
-        (day.checkIn?.isSuspicious ?? false) ||
-        (day.checkOut?.isSuspicious ?? false);
-    final late = day.checkIn?.isLate ?? false;
-    final String label;
-    final (Color bg, Color border, Color fg) colors;
-    if (outOfTown) {
-      label = pending
-          ? 'Luar Kota - Pending'
-          : rejected
-          ? 'Luar Kota - Ditolak'
-          : 'Luar Kota - Disetujui';
-      colors = pending
-          ? (AppColors.yellowSoft, AppColors.yellowLine, AppColors.yellowInk)
-          : rejected
-          ? (
-              AppColors.dangerSoft,
-              AppColors.danger.withValues(alpha: 0.25),
-              AppColors.danger,
-            )
-          : (AppColors.greenSoft, AppColors.greenLine, AppColors.greenDark);
-    } else if (suspicious) {
-      label = 'Perlu Tinjau';
-      colors = (
-        AppColors.dangerSoft,
-        AppColors.danger.withValues(alpha: 0.25),
-        AppColors.danger,
-      );
-    } else if (late) {
-      label = 'Terlambat';
-      colors = (
-        AppColors.yellowSoft,
-        AppColors.yellowLine,
-        AppColors.yellowInk,
-      );
-    } else {
-      label = 'Tepat Waktu';
-      colors = (AppColors.greenSoft, AppColors.greenLine, AppColors.greenDark);
-    }
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 96),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: colors.$1,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: colors.$2),
-      ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 8.5,
-          height: 1.15,
-          fontWeight: FontWeight.w700,
-          color: colors.$3,
-        ),
-      ),
-    );
-  }
-
   Widget _indicator(IconData icon, String tooltip, bool active) {
     return Tooltip(
       message: tooltip,
@@ -1157,219 +1097,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
               fontSize: 8.5,
               height: 1.15,
               color: AppColors.muted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showDetail(_DayLog day) async {
-    final lead = _leadLog(day);
-    if (lead == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.88,
-          ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _sheetHandle(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${_dayShort[day.date.weekday - 1]}, '
-                        '${day.date.day} ${_monthShort[day.date.month - 1]} '
-                        '${day.date.year}',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.ink,
-                          fontFeatures: tabularFigures,
-                        ),
-                      ),
-                    ),
-                    _statusPill(day),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _photo(lead),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.canvas,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.line),
-                  ),
-                  child: Column(
-                    children: [
-                      _detailRow(
-                        'Masuk',
-                        day.checkIn == null
-                            ? '—'
-                            : _time(day.checkIn!.timestampServer),
-                      ),
-                      _detailRow(
-                        'Keluar',
-                        day.checkOut == null
-                            ? '—'
-                            : _time(day.checkOut!.timestampServer),
-                      ),
-                      _detailRow(
-                        'Jarak radius',
-                        '${lead.distanceMeters.toStringAsFixed(0)} m',
-                      ),
-                      _detailRow(
-                        'Akurasi GPS',
-                        '${lead.accuracyMeters.toStringAsFixed(0)} m',
-                      ),
-                      _detailRow(
-                        'Mode',
-                        lead.isOutOfTown ? 'Dinas luar kota' : 'Kantor',
-                      ),
-                      if (lead.isLate)
-                        _detailRow(
-                          'Keterlambatan',
-                          '${lead.lateMinutes} menit',
-                        ),
-                      if (lead.isEarlyLeave)
-                        _detailRow(
-                          'Pulang awal',
-                          '${lead.earlyLeaveMinutes} menit',
-                        ),
-                    ],
-                  ),
-                ),
-                if (lead.outOfTownReason != null &&
-                    lead.outOfTownReason!.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    lead.outOfTownReason!,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      height: 1.4,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    key: const Key('history-detail-revise'),
-                    onPressed: () {
-                      Navigator.of(sheetContext).pop();
-                      final lead = _leadLog(day);
-                      if (lead != null) {
-                        _openRevision(
-                          _ActivityEvent(
-                            date: day.date,
-                            type: lead.type,
-                            log: lead,
-                          ),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.edit_calendar_outlined, size: 16),
-                    label: const Text('Ajukan Revisi Kehadiran'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _photo(AttendanceLog log) {
-    if (log.photoUrl.isEmpty) return _photoPlaceholder();
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: FutureBuilder<Uint8List?>(
-        future: widget.auth.api.attendancePhotoBytes(log.photoUrl),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return Container(
-              height: 170,
-              color: AppColors.tableHead,
-              child: const Center(
-                child: SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            );
-          }
-          final bytes = snapshot.data;
-          if (bytes == null || bytes.isEmpty) return _photoPlaceholder();
-          return Image.memory(
-            bytes,
-            height: 170,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _photoPlaceholder(),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _photoPlaceholder() {
-    return Container(
-      height: 110,
-      decoration: BoxDecoration(
-        color: AppColors.tableHead,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.no_photography_outlined, size: 24, color: AppColors.muted),
-          SizedBox(height: 5),
-          Text(
-            'Foto selfie tidak tersedia',
-            style: TextStyle(fontSize: 10.5, color: AppColors.muted),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: AppColors.muted),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.ink,
-              fontFeatures: tabularFigures,
             ),
           ),
         ],

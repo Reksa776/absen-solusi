@@ -8,8 +8,14 @@ class AttendanceLog {
     required this.isSuspicious,
     required this.photoUrl,
     this.workDate,
+    this.latitude,
+    this.longitude,
     this.isMockLocation = false,
     this.deviceInfo,
+    this.deviceName,
+    this.deviceId,
+    this.deviceModel,
+    this.deviceManufacturer,
     this.workMode = 'OFFICE',
     this.outOfRadius = false,
     this.outOfTownReason,
@@ -34,8 +40,14 @@ class AttendanceLog {
       accuracyMeters: (json['accuracyMeters'] as num?)?.toDouble() ?? 0,
       isSuspicious: json['isSuspicious'] as bool? ?? false,
       photoUrl: json['photoUrl'] as String? ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
       isMockLocation: json['isMockLocation'] as bool? ?? false,
       deviceInfo: json['deviceInfo'] as String?,
+      deviceName: json['deviceName'] as String?,
+      deviceId: json['deviceId'] as String?,
+      deviceModel: json['deviceModel'] as String?,
+      deviceManufacturer: json['deviceManufacturer'] as String?,
       workMode: json['workMode'] as String? ?? 'OFFICE',
       outOfRadius: json['outOfRadius'] as bool? ?? false,
       outOfTownReason: json['outOfTownReason'] as String?,
@@ -58,8 +70,14 @@ class AttendanceLog {
   final double accuracyMeters;
   final bool isSuspicious;
   final String photoUrl;
+  final double? latitude;
+  final double? longitude;
   final bool isMockLocation;
   final String? deviceInfo;
+  final String? deviceName;
+  final String? deviceId;
+  final String? deviceModel;
+  final String? deviceManufacturer;
   final String workMode;
   final bool outOfRadius;
   final String? outOfTownReason;

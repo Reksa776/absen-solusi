@@ -215,12 +215,31 @@ test("A7: riwayat pribadi hanya baris sendiri; admin tenant lain 403 identik", a
   const memberB = await seedMember(db, b.tenantId, b.roles.VIEWER);
   const ctxMemberA = await ctxFor(a.tenantId, memberA.userId, memberA.memberId);
 
-  const own = await record(ctxMemberA);
+  const own = await record(ctxMemberA, {
+    deviceIdentity: {
+      deviceId: "device-abc-1234",
+      deviceName: "ITEL itel S665L",
+      platform: "ANDROID",
+      deviceModel: "itel S665L",
+      deviceManufacturer: "ITEL",
+    },
+  });
   await record(b.ctx);
 
   const mine = await listMyAttendance({ ctx: ctxMemberA });
   assert.deepEqual(mine.map((row) => row.id), [own.id]);
   assert.equal(mine.some((row) => row.tenantId === b.tenantId), false);
+  // Detail Aktivitas membutuhkan koordinat dan metadata perangkat per log.
+  const [mineRow] = mine;
+  assert.ok(mineRow);
+  assert.equal(mineRow.latitude, OFFICE.latitude);
+  assert.equal(mineRow.longitude, OFFICE.longitude);
+  assert.equal(mineRow.outOfRadius, false);
+  assert.equal(mineRow.photoUrl, `/api/attendance/${own.id}/photo`);
+  assert.equal(mineRow.deviceName, "ITEL itel S665L");
+  assert.equal(mineRow.deviceId, "device-abc-1234");
+  assert.equal(mineRow.deviceModel, "itel S665L");
+  assert.equal(mineRow.deviceManufacturer, "ITEL");
 
   const adminRows = await listWorkspaceAttendance({
     ctx: a.ctx,
