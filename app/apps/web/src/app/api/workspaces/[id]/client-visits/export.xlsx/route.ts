@@ -5,9 +5,11 @@ import ExcelJS from "exceljs";
 
 import {
   clientVisitPhotoDirectory,
+  fitImageWithin,
   listWorkspaceClientVisitExportRows,
   readCompanyLogo,
   requirePermission,
+  reverseGeocodeCoordinates,
 } from "@absensi/auth";
 
 import { handleRouteError } from "@/lib/api";
@@ -39,6 +41,11 @@ const PHOTO_FILE_PATTERN =
 type EmbeddedImage = {
   base64: string;
   extension: "jpeg" | "png";
+};
+
+type LogoImage = EmbeddedImage & {
+  width: number;
+  height: number;
 };
 
 function dateParts(value: string): Record<string, string> {
@@ -83,10 +90,14 @@ function durationLabel(checkInAt: string | null, checkOutAt: string | null): str
   return rest === 0 ? `${hours} jam` : `${hours} jam ${rest} menit`;
 }
 
-function locationLabel(latitude: number | null, longitude: number | null): string {
-  if (latitude === null || longitude === null) return "";
+function locationLabel(
+  address: string | null,
+  latitude: number | null,
+  longitude: number | null,
+): string {
+  if (latitude === null || longitude === null) return address ?? "";
   const coordinates = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-  return `${coordinates}\nhttps://www.google.com/maps?q=${latitude},${longitude}`;
+  return `${address ?? coordinates}\nhttps://www.google.com/maps?q=${latitude},${longitude}`;
 }
 
 function reportRangeDate(value: string | null, fallback: Date): Date {
@@ -138,7 +149,7 @@ export async function GET(
     });
     const rows = data.rows;
 
-    let logo: EmbeddedImage | null = null;
+    let logo: LogoImage | null = null;
     try {
       const file = await readCompanyLogo({ ctx, workspaceId: id });
       const extension =
@@ -148,7 +159,13 @@ export async function GET(
             ? "jpeg"
             : null;
       if (extension) {
-        logo = { base64: Buffer.from(file.bytes).toString("base64"), extension };
+        const size = fitImageWithin(file.bytes, 140, 32);
+        logo = {
+          base64: Buffer.from(file.bytes).toString("base64"),
+          extension,
+          width: size.width,
+          height: size.height,
+        };
       }
     } catch {
       logo = null;
@@ -199,7 +216,7 @@ export async function GET(
       });
       sheet.addImage(imageId, {
         tl: { col: 9, row: 1 },
-        ext: { width: 145, height: 37 },
+        ext: { width: logo.width, height: logo.height },
       });
     }
 
@@ -223,10 +240,32 @@ export async function GET(
       cell.border = thinBorder("FF000000");
     });
 
+    const addresses = await Promise.all(
+      rows.map(async (row) => ({
+        checkIn:
+          row.checkInAddress ??
+          (row.checkInLatitude !== null && row.checkInLongitude !== null
+            ? await reverseGeocodeCoordinates(
+                row.checkInLatitude,
+                row.checkInLongitude,
+              )
+            : null),
+        checkOut:
+          row.checkOutAddress ??
+          (row.checkOutLatitude !== null && row.checkOutLongitude !== null
+            ? await reverseGeocodeCoordinates(
+                row.checkOutLatitude,
+                row.checkOutLongitude,
+              )
+            : null),
+      })),
+    );
+
     for (const [index, row] of rows.entries()) {
       const rowNumber = index + 4;
       const excelRow = sheet.getRow(rowNumber);
       excelRow.height = 24;
+      const address = addresses[index];
       const values = [
         row.memberName,
         row.positionName ?? "-",
@@ -238,8 +277,16 @@ export async function GET(
         "",
         row.checkInNotes ?? "",
         row.checkOutNotes ?? "",
-        locationLabel(row.checkInLatitude, row.checkInLongitude),
-        locationLabel(row.checkOutLatitude, row.checkOutLongitude),
+        locationLabel(
+          address?.checkIn ?? null,
+          row.checkInLatitude,
+          row.checkInLongitude,
+        ),
+        locationLabel(
+          address?.checkOut ?? null,
+          row.checkOutLatitude,
+          row.checkOutLongitude,
+        ),
       ];
       values.forEach((value, cellIndex) => {
         const cell = excelRow.getCell(cellIndex + 1);

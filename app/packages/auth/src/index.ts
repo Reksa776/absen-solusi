@@ -685,6 +685,18 @@ export {
   type CompanyLogoInput,
 } from "./company-logo.js";
 export {
+  fitImageWithin,
+  readImageDimensions,
+  type FittedImageSize,
+  type ImageDimensions,
+} from "./image-dimensions.js";
+export {
+  clearReverseGeocodeCache,
+  coordinateAddress,
+  reverseGeocodeCoordinates,
+  type ReverseGeocodeOptions,
+} from "./geocoding.js";
+export {
   getCompanyProfile,
   updateCompanyProfile,
   COMPANY_LEGAL_NAME_MAX_LENGTH,

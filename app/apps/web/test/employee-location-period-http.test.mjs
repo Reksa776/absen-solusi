@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,9 +17,12 @@ import {
 
 const root = new URL("../../../", import.meta.url).pathname;
 const PASSWORD = "KaryawanBaru#2026";
-const PNG = new Uint8Array([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-]);
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+const GEOCODE_ADDRESS =
+  "Jl. Uji No. 1, Kelurahan Uji, Kota Uji, Jawa Tengah 50123, Indonesia";
 
 let db;
 let server;
@@ -29,6 +33,7 @@ let summaryEmployee;
 let divisionId;
 let positionId;
 let logoDir;
+let geocodeServer;
 
 async function waitForReady() {
   const deadline = Date.now() + 40_000;
@@ -86,6 +91,11 @@ before(async () => {
   admin = await seedMember(db, tenant.tenantId, tenant.roles.WORKSPACE_ADMIN);
   summaryEmployee = await seedMember(db, tenant.tenantId, tenant.roles.EMPLOYEE);
   logoDir = await mkdtemp(join(tmpdir(), "absensi-period-logo-"));
+  geocodeServer = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ display_name: GEOCODE_ADDRESS }));
+  });
+  await new Promise((resolve) => geocodeServer.listen(0, "127.0.0.1", resolve));
 
   divisionId = randomUUID();
   await db.division.create({
@@ -175,6 +185,8 @@ before(async () => {
       NODE_ENV: "production",
       S1_RATE_LIMITER: "memory",
       COMPANY_LOGO_DIR: logoDir,
+      NOMINATIM_BASE_URL: `http://127.0.0.1:${geocodeServer.address().port}`,
+      GEOCODING_DISABLED: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -199,6 +211,9 @@ after(async () => {
     }
     server.stdout?.destroy();
     server.stderr?.destroy();
+  }
+  if (geocodeServer) {
+    await new Promise((resolve) => geocodeServer.close(resolve));
   }
   if (logoDir) await rm(logoDir, { recursive: true, force: true });
   if (db) await db.$disconnect();
@@ -257,7 +272,7 @@ test("EMP-1: tambah/edit karyawan tanpa role memakai role EMPLOYEE", async () =>
 test("LOC-1: URL Google Maps mengisi koordinat dan disimpan bersama kantor", async () => {
   const payload = {
     name: "Kantor Shareloc",
-    address: "Jl. Raya",
+    address: "",
     googleMapsUrl: "https://www.google.com/maps?q=-6.7320,108.5523",
     radiusMeters: 100,
     timezone: "Asia/Jakarta",
@@ -274,6 +289,7 @@ test("LOC-1: URL Google Maps mengisi koordinat dan disimpan bersama kantor", asy
   assert.equal(created.body.googleMapsUrl, payload.googleMapsUrl);
   assert.equal(created.body.latitude, -6.732);
   assert.equal(created.body.longitude, 108.5523);
+  assert.equal(created.body.address, GEOCODE_ADDRESS);
 
   const patched = await send(
     `/api/workspaces/${tenant.tenantId}/office/${created.body.id}`,
@@ -284,6 +300,7 @@ test("LOC-1: URL Google Maps mengisi koordinat dan disimpan bersama kantor", asy
   assert.equal(patched.response.status, 200);
   assert.equal(patched.body.latitude, -6.75);
   assert.equal(patched.body.longitude, 108.6);
+  assert.equal(patched.body.address, GEOCODE_ADDRESS);
 
   const rejected = await send(
     `/api/workspaces/${tenant.tenantId}/office`,
@@ -410,7 +427,7 @@ test("PERIOD-2: export XLSX ringkasan kehadiran menyematkan logo perusahaan", as
   assert.ok(workbook.model.media.length >= 1);
   const logo = sheet.getImages()[0];
   assert.ok(logo);
-  assert.equal(Number(logo.range.ext.width), 130);
+  assert.equal(Number(logo.range.ext.width), 32);
   assert.equal(Number(logo.range.ext.height), 32);
 
   let dataRow;

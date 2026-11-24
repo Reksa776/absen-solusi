@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { withTenant, writeAudit, type TenantContext } from "@absensi/database";
 
+import { reverseGeocodeCoordinates } from "./geocoding.js";
 import { resolveGoogleMapsUrl } from "./google-maps.js";
 import { HttpError } from "./http.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
@@ -204,16 +205,33 @@ function mapsUrlValue(value: unknown): string | null {
   return trimmed;
 }
 
-async function applyMapsUrl(input: OfficeInput): Promise<OfficeInput> {
+async function applyMapsUrl(
+  input: OfficeInput,
+  currentAddress?: string | null,
+): Promise<OfficeInput> {
   if (input.googleMapsUrl === undefined) return input;
   const raw = mapsUrlValue(input.googleMapsUrl);
   if (!raw) return { ...input, googleMapsUrl: null };
   const resolved = await resolveGoogleMapsUrl(raw);
+  const addressMissing =
+    input.address === undefined
+      ? !currentAddress || currentAddress.trim() === ""
+      : input.address === null ||
+        (typeof input.address === "string" && input.address.trim() === "");
+  let address = input.address;
+  if (addressMissing) {
+    const geocoded = await reverseGeocodeCoordinates(
+      resolved.latitude,
+      resolved.longitude,
+    );
+    if (geocoded) address = geocoded.slice(0, OFFICE_ADDRESS_MAX_LENGTH);
+  }
   return {
     ...input,
     googleMapsUrl: resolved.googleMapsUrl,
     latitude: resolved.latitude,
     longitude: resolved.longitude,
+    address,
   };
 }
 
@@ -341,7 +359,7 @@ export async function updateOffice(input: {
     throw new HttpError(404, "OFFICE_NOT_FOUND", "Kantor tidak ditemukan");
   }
 
-  const values = normalizeUpdate(await applyMapsUrl(input.office), {
+  const values = normalizeUpdate(await applyMapsUrl(input.office, existing.address), {
     name: existing.name,
     address: existing.address,
     latitude: existing.latitude,

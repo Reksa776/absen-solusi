@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import {
+  fitImageWithin,
   getAttendancePeriodSummary,
   getClientIp,
   readCompanyLogo,
@@ -45,6 +46,8 @@ function thinBorder(argb: string): Partial<ExcelJS.Borders> {
 type EmbeddedImage = {
   base64: string;
   extension: "jpeg" | "png";
+  width: number;
+  height: number;
 };
 
 export async function GET(
@@ -74,7 +77,13 @@ export async function GET(
             : null;
       // ExcelJS tidak menulis WebP; logo WebP dilewati dengan aman.
       if (extension) {
-        logo = { base64: Buffer.from(file.bytes).toString("base64"), extension };
+        const size = fitImageWithin(file.bytes, 140, 32);
+        logo = {
+          base64: Buffer.from(file.bytes).toString("base64"),
+          extension,
+          width: size.width,
+          height: size.height,
+        };
       }
     } catch {
       logo = null;
@@ -110,7 +119,7 @@ export async function GET(
       });
       sheet.addImage(imageId, {
         tl: { col: 1.5, row: 1.1 },
-        ext: { width: 130, height: 32 },
+        ext: { width: logo.width, height: logo.height },
       });
     }
 

@@ -975,6 +975,7 @@ model ClientVisitLog {
   photoFileName      String?   @map("photo_file_name") @db.VarChar(255)
   photoContentType   String?   @map("photo_content_type") @db.VarChar(100)
   notes              String?   @db.VarChar(1000)
+  address            String?   @db.Text
   durationMinutes    Int?      @map("duration_minutes")
   validationStatus   String    @default("VALID") @map("validation_status") @db.VarChar(20)
   reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)

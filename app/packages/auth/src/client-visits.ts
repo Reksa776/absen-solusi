@@ -8,6 +8,7 @@ import {
   type TenantContext,
 } from "@absensi/database";
 
+import { reverseGeocodeCoordinates } from "./geocoding.js";
 import { HttpError } from "./http.js";
 import {
   storeClientVisitPhoto,
@@ -52,6 +53,7 @@ export type ClientVisitLogSummary = {
   timestampServer: string;
   latitude: number;
   longitude: number;
+  address: string | null;
   accuracyMeters: number;
   distanceMeters: number | null;
   isInsideRadius: boolean | null;
@@ -73,6 +75,8 @@ export type ClientVisitExportRow = {
   checkOutPhotoFileName: string | null;
   checkInNotes: string | null;
   checkOutNotes: string | null;
+  checkInAddress: string | null;
+  checkOutAddress: string | null;
   checkInLatitude: number | null;
   checkInLongitude: number | null;
   checkOutLatitude: number | null;
@@ -264,6 +268,7 @@ function toLog(row: {
   timestampServer: Date;
   latitude: number;
   longitude: number;
+  address: string | null;
   accuracyMeters: number;
   distanceMeters: number | null;
   isInsideRadius: boolean | null;
@@ -286,6 +291,7 @@ function toLog(row: {
     timestampServer: row.timestampServer.toISOString(),
     latitude: row.latitude,
     longitude: row.longitude,
+    address: row.address,
     accuracyMeters: row.accuracyMeters,
     distanceMeters: row.distanceMeters,
     isInsideRadius: row.isInsideRadius,
@@ -792,6 +798,7 @@ export async function recordClientVisit(input: {
     throw new HttpError(400, "INVALID_ACCURACY", "Akurasi GPS tidak valid");
   }
   const notes = text(input.notes, "Catatan", 0, 1000, true);
+  const address = await reverseGeocodeCoordinates(latitude, longitude);
   const now = input.now ?? new Date();
   const today = dayKey(now);
 
@@ -866,6 +873,7 @@ export async function recordClientVisit(input: {
           timestampServer: now,
           latitude,
           longitude,
+          address,
           accuracyMeters,
           distanceMeters,
           isInsideRadius,
@@ -933,6 +941,7 @@ export async function recordAdHocClientVisit(input: {
   if (!Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > 100_000) {
     throw new HttpError(400, "INVALID_ACCURACY", "Akurasi GPS tidak valid");
   }
+  const address = await reverseGeocodeCoordinates(latitude, longitude);
   const settings = await withTenant(input.ctx, (db) =>
     db.clientVisitSetting.findFirst(),
   );
@@ -957,6 +966,7 @@ export async function recordAdHocClientVisit(input: {
           timestampServer: now,
           latitude,
           longitude,
+          address,
           accuracyMeters,
           distanceMeters: null,
           isInsideRadius: null,
@@ -1120,6 +1130,8 @@ export async function listWorkspaceClientVisitExportRows(input: {
     checkOutPhotoFileName: checkOut?.photoFileName ?? null,
     checkInNotes: checkIn?.notes ?? null,
     checkOutNotes: checkOut?.notes ?? null,
+    checkInAddress: checkIn?.address ?? null,
+    checkOutAddress: checkOut?.address ?? null,
     checkInLatitude: checkIn?.latitude ?? null,
     checkInLongitude: checkIn?.longitude ?? null,
     checkOutLatitude: checkOut?.latitude ?? null,

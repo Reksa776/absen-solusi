@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,9 +17,12 @@ import {
 
 const root = new URL("../../../", import.meta.url).pathname;
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7, 0xff, 0xd9]);
-const PNG = new Uint8Array([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-]);
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+const GEOCODE_ADDRESS =
+  "Jl. Uji No. 1, Kelurahan Uji, Kota Uji, Jawa Tengah 50123, Indonesia";
 const now = new Date();
 const YEAR = now.getUTCFullYear();
 const MONTH = now.getUTCMonth() + 1;
@@ -30,6 +34,7 @@ let server;
 let baseUrl;
 let photoDir;
 let logoDir;
+let geocodeServer;
 let tenantA;
 let tenantB;
 let employee;
@@ -101,6 +106,11 @@ before(async () => {
   otherEmployee = await seedMember(db, tenantA.tenantId, tenantA.roles.EMPLOYEE);
   photoDir = await mkdtemp(join(tmpdir(), "absensi-phase-c-photo-"));
   logoDir = await mkdtemp(join(tmpdir(), "absensi-phase-c-logo-"));
+  geocodeServer = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ display_name: GEOCODE_ADDRESS }));
+  });
+  await new Promise((resolve) => geocodeServer.listen(0, "127.0.0.1", resolve));
 
   const officeId = randomUUID();
   await db.officeLocation.create({
@@ -209,6 +219,8 @@ before(async () => {
       S1_RATE_LIMITER: "memory",
       CLIENT_VISIT_PHOTO_DIR: photoDir,
       COMPANY_LOGO_DIR: logoDir,
+      NOMINATIM_BASE_URL: `http://127.0.0.1:${geocodeServer.address().port}`,
+      GEOCODING_DISABLED: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -233,6 +245,9 @@ after(async () => {
     }
     server.stdout?.destroy();
     server.stderr?.destroy();
+  }
+  if (geocodeServer) {
+    await new Promise((resolve) => geocodeServer.close(resolve));
   }
   if (db) await db.$disconnect();
   if (photoDir) await rm(photoDir, { recursive: true, force: true });
@@ -299,6 +314,7 @@ test("C-1: client visit terjadwal, check-in/out GPS + foto, ringkasan, RBAC, iso
   assert.equal(checkIn.response.status, 201, JSON.stringify(checkIn.body));
   assert.equal(checkIn.body.type, "CHECK_IN");
   assert.equal(checkIn.body.isInsideRadius, true);
+  assert.equal(checkIn.body.address, GEOCODE_ADDRESS);
   assert.ok(checkIn.body.photoUrl);
 
   const proof = await fetch(`${baseUrl}${checkIn.body.photoUrl}`, {
@@ -326,6 +342,7 @@ test("C-1: client visit terjadwal, check-in/out GPS + foto, ringkasan, RBAC, iso
   );
   assert.equal(checkOut.response.status, 201, JSON.stringify(checkOut.body));
   assert.equal(checkOut.body.type, "CHECK_OUT");
+  assert.equal(checkOut.body.address, GEOCODE_ADDRESS);
   assert.ok(checkOut.body.durationMinutes >= 0);
 
   const summary = await send(
@@ -383,6 +400,7 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
   assert.equal(created.body.clientId, null);
   assert.equal(created.body.clientName, clientName);
   assert.equal(created.body.type, "AD_HOC");
+  assert.equal(created.body.address, GEOCODE_ADDRESS);
   assert.ok(created.body.photoUrl);
 
   const stored = await db.clientVisitLog.findUnique({ where: { id: created.body.id } });
@@ -391,6 +409,12 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
   assert.equal(stored.clientName, clientName);
   assert.equal(stored.distanceMeters, null);
   assert.equal(stored.isInsideRadius, null);
+  assert.equal(stored.address, GEOCODE_ADDRESS);
+  // Data lama tanpa kolom address harus tetap mendapat alamat saat export.
+  await db.clientVisitLog.update({
+    where: { id: created.body.id },
+    data: { address: null },
+  });
 
   const logList = await send(
     `/api/workspaces/${tenantA.tenantId}/client-visits/logs?from=${now.toISOString().slice(0, 10)}`,
@@ -473,8 +497,9 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
   }));
   const logoImage = images.find((image) => image.row === 1 && image.col === 9);
   assert.ok(logoImage, "logo perusahaan harus disematkan pada baris 2");
-  assert.equal(logoImage.width, 145);
-  assert.equal(logoImage.height, 37);
+  assert.equal(logoImage.width, 32);
+  assert.equal(logoImage.height, 32);
+  assert.equal(logoImage.width, logoImage.height);
 
   const checkInPhoto = images.find((image) => image.col === 6 && image.row >= 3);
   assert.ok(checkInPhoto, "foto datang harus disematkan di kolom G");
@@ -506,13 +531,13 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
     scheduledRow.getCell(10).value,
     "Kontrak ditandatangani, tindak lanjut minggu depan.",
   );
-  assert.match(
-    String(scheduledRow.getCell(11).value),
-    /^-6\.200000, 106\.816666\nhttps:\/\/www\.google\.com\/maps\?q=-6\.2,106\.816666$/,
+  assert.equal(
+    scheduledRow.getCell(11).value,
+    `${GEOCODE_ADDRESS}\nhttps://www.google.com/maps?q=-6.2,106.816666`,
   );
-  assert.match(
-    String(scheduledRow.getCell(12).value),
-    /^-6\.200000, 106\.816666\nhttps:\/\/www\.google\.com\/maps\?q=-6\.2,106\.816666$/,
+  assert.equal(
+    scheduledRow.getCell(12).value,
+    `${GEOCODE_ADDRESS}\nhttps://www.google.com/maps?q=-6.2,106.816666`,
   );
   assert.equal(scheduledRow.getCell(12).alignment?.vertical, "middle");
   assert.equal(scheduledRow.getCell(12).alignment?.wrapText, true);
@@ -526,9 +551,9 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
   assert.equal(adHocRow.getCell(6).value, "");
   assert.equal(adHocRow.getCell(9).value, "Bertemu PIC untuk membahas renewal kontrak.");
   assert.equal(adHocRow.getCell(12).value, "");
-  assert.match(
-    String(adHocRow.getCell(11).value),
-    /^-6\.210000, 106\.820000\nhttps:\/\/www\.google\.com\/maps\?q=-6\.21,106\.82$/,
+  assert.equal(
+    adHocRow.getCell(11).value,
+    `${GEOCODE_ADDRESS}\nhttps://www.google.com/maps?q=-6.21,106.82`,
   );
   assert.equal(adHocRow.height, 150);
 
