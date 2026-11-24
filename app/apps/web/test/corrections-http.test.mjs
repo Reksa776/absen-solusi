@@ -243,13 +243,12 @@ test("C-HTTP-1: pengajuan valid + bukti → 201 PENDING, file + hash, audit aman
   assert.equal(auditWithout.metadata.hasProof, false);
 });
 
-test("C-HTTP-2: window 7 hari, masa depan, dan alasan pendek ditolak", async () => {
-  const window = await submitJson(
+test("C-HTTP-2: revisi tanggal lama diterima, masa depan dan alasan pendek ditolak", async () => {
+  const oldDate = await submitJson(
     employeeA.token,
     validBody({ requestedTimestamp: daysAgo(8).toISOString() }),
   );
-  assert.equal(window.response.status, 400);
-  assert.equal(window.body.error.code, "WINDOW_EXCEEDED");
+  assert.equal(oldDate.response.status, 201);
 
   const future = await submitJson(
     employeeA.token,
@@ -284,22 +283,56 @@ test("C-HTTP-3: attendanceLogId milik member lain → 403", async () => {
   );
 });
 
-test("C-HTTP-4: batas 3 pengajuan per bulan → 429", async () => {
-  const limited = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER);
-  for (let index = 0; index < 3; index += 1) {
+test("C-HTTP-3B: revisi parsial check-out mempertahankan jam check-in", async () => {
+  const day = new Date("2026-11-15T00:00:00.000Z");
+  const checkInId = await createAttendance(employeeC.memberId, tenantA.tenantId, {
+    workDate: day,
+    type: "CHECK_IN",
+    timestampServer: new Date("2026-11-15T01:00:00.000Z"),
+  });
+  const checkOutId = await createAttendance(employeeC.memberId, tenantA.tenantId, {
+    workDate: day,
+    type: "CHECK_OUT",
+    timestampServer: new Date("2026-11-15T10:00:00.000Z"),
+  });
+
+  const submitted = await submitJson(
+    employeeC.token,
+    validBody({
+      requestType: "CHECK_OUT",
+      attendanceLogId: checkOutId,
+      requestedTimestamp: "2026-11-15T11:00:00.000Z",
+      reason: "Check-out tercatat terlalu cepat karena server kantor",
+    }),
+  );
+  assert.equal(submitted.response.status, 201);
+  assert.equal(submitted.body.requestType, "CHECK_OUT");
+
+  const approved = await review(tenantA.ownerToken, submitted.body.id, {
+    action: "approve",
+  });
+  assert.equal(approved.response.status, 200);
+  assert.equal(approved.body.status, "APPROVED");
+
+  const checkIn = await db.attendanceLog.findUniqueOrThrow({ where: { id: checkInId } });
+  const checkOut = await db.attendanceLog.findUniqueOrThrow({ where: { id: checkOutId } });
+  assert.equal(checkIn.timestampServer.toISOString(), "2026-11-15T01:00:00.000Z");
+  assert.equal(checkOut.timestampServer.toISOString(), "2026-11-15T11:00:00.000Z");
+});
+
+test("C-HTTP-4: pengajuan revisi berulang tidak memiliki kuota bulanan", async () => {
+  const repeated = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER);
+  for (let index = 0; index < 4; index += 1) {
     const result = await submitJson(
-      limited.token,
+      repeated.token,
       validBody({ reason: `Pengajuan revisi wajar nomor ${index + 1}` }),
     );
     assert.equal(result.response.status, 201);
   }
-  const fourth = await submitJson(
-    limited.token,
-    validBody({ reason: "Pengajuan revisi keempat ditolak" }),
+  assert.equal(
+    await db.correctionRequest.count({ where: { memberId: repeated.memberId } }),
+    4,
   );
-  assert.equal(fourth.response.status, 429);
-  assert.equal(fourth.body.error.code, "REVISION_LIMIT_EXCEEDED");
-  assert.ok(fourth.response.headers.get("retry-after"));
 });
 
 test("C-HTTP-5: karyawan hanya melihat revisi sendiri dan bisa filter status", async () => {

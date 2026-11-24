@@ -51,10 +51,15 @@ class FakeLocation extends LocationService {
 }
 
 class AttendanceMock {
-  AttendanceMock({this.checkInStatus = 201, this.checkInCode = ''});
+  AttendanceMock({
+    this.checkInStatus = 201,
+    this.checkInCode = '',
+    this.attendance = const [],
+  });
 
   final int checkInStatus;
   final String checkInCode;
+  final List<Map<String, dynamic>> attendance;
   final List<http.Request> requests = [];
 
   late ApiClient client;
@@ -74,7 +79,7 @@ class AttendanceMock {
           return http.Response(jsonEncode({'office': officeJson}), 200);
         }
         if (path == '/api/attendance/me') {
-          return http.Response(jsonEncode({'attendance': []}), 200);
+          return http.Response(jsonEncode({'attendance': attendance}), 200);
         }
         if (path == '/api/attendance/check-in') {
           if (checkInStatus != 201) {
@@ -96,6 +101,20 @@ class AttendanceMock {
               'photoUrl': '/uploads/attendance/a.jpg',
             }),
             201,
+          );
+        }
+        if (path == '/api/attendance/check-out') {
+          return http.Response(
+            jsonEncode({
+              'id': 'a2',
+              'type': 'CHECK_OUT',
+              'timestampServer': DateTime.now().toUtc().toIso8601String(),
+              'distanceMeters': 3,
+              'accuracyMeters': 5,
+              'isSuspicious': false,
+              'photoUrl': '/uploads/attendance/a.jpg',
+            }),
+            200,
           );
         }
         if (path == '/api/mobile/schedule') {
@@ -154,6 +173,75 @@ void main() {
     expect(find.byKey(const Key('home-office')), findsNothing);
     // GPS tidak diminta sebelum tombol absen ditekan.
     expect(location.calls, 0);
+  });
+
+  testWidgets('sesi terakhir sudah keluar membuka Presensi Masuk lagi', (
+    tester,
+  ) async {
+    final now = DateTime.now().toUtc();
+    final mock = AttendanceMock(
+      attendance: [
+        {
+          'id': 'a1',
+          'type': 'CHECK_IN',
+          'timestampServer': now
+              .subtract(const Duration(hours: 2))
+              .toIso8601String(),
+          'distanceMeters': 3,
+          'accuracyMeters': 5,
+          'isSuspicious': false,
+          'photoUrl': '',
+        },
+        {
+          'id': 'a2',
+          'type': 'CHECK_OUT',
+          'timestampServer': now
+              .subtract(const Duration(hours: 1))
+              .toIso8601String(),
+          'distanceMeters': 3,
+          'accuracyMeters': 5,
+          'isSuspicious': false,
+          'photoUrl': '',
+        },
+      ],
+    );
+    await mock.init();
+    await tester.pumpWidget(shell(HomeScreen(auth: mock.auth)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Presensi Masuk'), findsOneWidget);
+    expect(find.text('Presensi hari ini selesai'), findsNothing);
+    final button = tester.widget<FilledButton>(
+      find.byKey(const Key('attendance-submit')),
+    );
+    expect(button.onPressed, isNotNull);
+  });
+
+  testWidgets('sesi terakhir masih masuk menampilkan Presensi Keluar', (
+    tester,
+  ) async {
+    final mock = AttendanceMock(
+      attendance: [
+        {
+          'id': 'a1',
+          'type': 'CHECK_IN',
+          'timestampServer': DateTime.now()
+              .toUtc()
+              .subtract(const Duration(hours: 1))
+              .toIso8601String(),
+          'distanceMeters': 3,
+          'accuracyMeters': 5,
+          'isSuspicious': false,
+          'photoUrl': '',
+        },
+      ],
+    );
+    await mock.init();
+    await tester.pumpWidget(shell(HomeScreen(auth: mock.auth)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Presensi Keluar'), findsOneWidget);
+    expect(find.text('Presensi Masuk'), findsNothing);
   });
 
   testWidgets('GPS akurasi buruk memblokir pengiriman dan kamera', (

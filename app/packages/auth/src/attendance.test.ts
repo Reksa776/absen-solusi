@@ -174,11 +174,21 @@ test("A4: mock location 403 MOCK_LOCATION_DETECTED", async () => {
   assert.equal(await db.attendanceLog.count({ where: { tenantId: tenant.tenantId } }), 0);
 });
 
-test("A5: check-in ganda hari sama 409 ALREADY_CHECKED_IN dan hanya satu baris", async () => {
+test("A5: multi sesi check-in/out berulang pada hari yang sama", async () => {
   const tenant = await tenantWithOffice();
-  await record(tenant.ctx);
-  await rejectsWith(() => record(tenant.ctx), 409, "ALREADY_CHECKED_IN");
-  assert.equal(await db.attendanceLog.count({ where: { tenantId: tenant.tenantId } }), 1);
+  const first = await record(tenant.ctx, { now: new Date(Date.now() - 7_200_000) });
+  const firstOut = await record(tenant.ctx, {
+    type: "CHECK_OUT",
+    now: new Date(Date.now() - 3_600_000),
+  });
+  const second = await record(tenant.ctx, { now: new Date() });
+  const rows = await db.attendanceLog.findMany({
+    where: { tenantId: tenant.tenantId },
+    orderBy: { timestampServer: "asc" },
+  });
+  assert.deepEqual(rows.map((row) => row.type), ["CHECK_IN", "CHECK_OUT", "CHECK_IN"]);
+  assert.notEqual(first.id, firstOut.id);
+  assert.notEqual(first.id, second.id);
 });
 
 test("A6: check-out setelah check-in berhasil dan menulis audit attendance.check_out", async () => {

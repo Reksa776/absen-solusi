@@ -119,7 +119,7 @@ after(async () => {
   if (db) await db.$disconnect();
 });
 
-test("C-LIM-1: log yang sudah ada wajib attendanceLogId, lalu default 1/bulan", async () => {
+test("C-LIM-1: log yang sudah ada wajib attendanceLogId, tanpa batas kuota bulanan", async () => {
   const missingLog = await submit(validBody());
   assert.equal(missingLog.response.status, 400);
   assert.equal(missingLog.body.error.code, "ATTENDANCE_LOG_REQUIRED");
@@ -138,7 +138,5 @@ test("C-LIM-1: log yang sudah ada wajib attendanceLogId, lalu default 1/bulan", 
       reason: "Pengajuan revisi kedua pada bulan yang sama",
     }),
   );
-  assert.equal(second.response.status, 429);
-  assert.equal(second.body.error.code, "REVISION_LIMIT_EXCEEDED");
-  assert.ok(second.response.headers.get("retry-after"));
+  assert.equal(second.response.status, 201);
 });

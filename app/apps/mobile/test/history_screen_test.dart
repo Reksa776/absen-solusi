@@ -47,21 +47,40 @@ Future<AuthService> authWith(Future<http.Response> Function() history) async {
 
 Widget shell(Widget child) => MaterialApp(home: child);
 
+Map<String, dynamic> attendanceRow(
+  String id,
+  String type,
+  String timestamp, {
+  bool suspicious = false,
+}) => {
+  'id': id,
+  'type': type,
+  'timestampServer': timestamp,
+  'distanceMeters': 4,
+  'accuracyMeters': 5,
+  'isSuspicious': suspicious,
+  'photoUrl': '',
+};
+
+String localDayKey(String timestamp) {
+  final date = DateTime.parse(timestamp).toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${date.year}-${two(date.month)}-${two(date.day)}';
+}
+
 void main() {
-  testWidgets('riwayat merender baris dan status suspicious', (tester) async {
+  testWidgets('riwayat memisahkan kartu Masuk dan Keluar', (tester) async {
     final auth = await authWith(
       () async => http.Response(
         jsonEncode({
           'attendance': [
-            {
-              'id': 'a1',
-              'type': 'CHECK_IN',
-              'timestampServer': '2026-11-19T03:00:00.000Z',
-              'distanceMeters': 4,
-              'accuracyMeters': 5,
-              'isSuspicious': true,
-              'photoUrl': '',
-            },
+            attendanceRow(
+              'a1',
+              'CHECK_IN',
+              '2026-11-19T02:10:00.000Z',
+              suspicious: true,
+            ),
+            attendanceRow('a2', 'CHECK_OUT', '2026-11-19T10:00:00.000Z'),
           ],
         }),
         200,
@@ -69,36 +88,23 @@ void main() {
     );
     await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('history-list')), findsOneWidget);
-    expect(find.text('Masuk'), findsWidgets);
+
+    expect(find.byKey(const Key('history-card-CHECK_IN-a1')), findsOneWidget);
+    expect(find.byKey(const Key('history-card-CHECK_OUT-a2')), findsOneWidget);
+    expect(find.text('Masuk'), findsOneWidget);
+    expect(find.text('Keluar'), findsOneWidget);
     expect(find.text('Perlu Tinjau'), findsOneWidget);
   });
 
-  testWidgets('kartu riwayat membuka form revisi yang terisi otomatis', (
+  testWidgets('revisi kartu Keluar hanya menampilkan jam keluar', (
     tester,
   ) async {
     final auth = await authWith(
       () async => http.Response(
         jsonEncode({
           'attendance': [
-            {
-              'id': 'a1',
-              'type': 'CHECK_IN',
-              'timestampServer': '2026-11-19T02:10:00.000Z',
-              'distanceMeters': 4,
-              'accuracyMeters': 5,
-              'isSuspicious': false,
-              'photoUrl': '',
-            },
-            {
-              'id': 'a2',
-              'type': 'CHECK_OUT',
-              'timestampServer': '2026-11-19T10:00:00.000Z',
-              'distanceMeters': 4,
-              'accuracyMeters': 5,
-              'isSuspicious': false,
-              'photoUrl': '',
-            },
+            attendanceRow('a1', 'CHECK_IN', '2026-11-19T02:10:00.000Z'),
+            attendanceRow('a2', 'CHECK_OUT', '2026-11-19T10:00:00.000Z'),
           ],
         }),
         200,
@@ -107,15 +113,71 @@ void main() {
     await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('history-revise-a1')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('history-revise-a1')));
+    await tester.tap(find.byKey(const Key('history-revise-a2')));
     await tester.pumpAndSettle();
 
     expect(find.byType(CorrectionFormScreen), findsOneWidget);
-    expect(find.byKey(const Key('correction-check-in')), findsOneWidget);
+    expect(find.text('Revisi Presensi Keluar'), findsOneWidget);
     expect(find.byKey(const Key('correction-check-out')), findsOneWidget);
-    expect(find.textContaining('Tercatat: masuk'), findsOneWidget);
-    expect(find.byKey(const Key('correction-kind-ADJUST')), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-in')), findsNothing);
+    expect(find.byKey(const Key('correction-type')), findsNothing);
+    expect(
+      find.textContaining('Revisi hanya mengubah jam keluar'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('kartu Masuk membuka revisi parsial jam masuk', (tester) async {
+    final auth = await authWith(
+      () async => http.Response(
+        jsonEncode({
+          'attendance': [
+            attendanceRow('a1', 'CHECK_IN', '2026-11-19T02:10:00.000Z'),
+            attendanceRow('a2', 'CHECK_OUT', '2026-11-19T10:00:00.000Z'),
+          ],
+        }),
+        200,
+      ),
+    );
+    await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('history-revise-a1')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Revisi Presensi Masuk'), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-in')), findsOneWidget);
+    expect(find.byKey(const Key('correction-check-out')), findsNothing);
+    expect(
+      find.textContaining('Revisi hanya mengubah jam masuk'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('check-in tanpa check-out tetap punya kartu Keluar kosong', (
+    tester,
+  ) async {
+    const timestamp = '2026-11-19T03:00:00.000Z';
+    final day = localDayKey(timestamp);
+    final auth = await authWith(
+      () async => http.Response(
+        jsonEncode({
+          'attendance': [attendanceRow('a1', 'CHECK_IN', timestamp)],
+        }),
+        200,
+      ),
+    );
+    await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(Key('history-card-CHECK_OUT-$day-check-out')),
+      findsOneWidget,
+    );
+    expect(find.text('—'), findsOneWidget);
+    await tester.tap(find.byKey(Key('history-revise-$day-check-out')));
+    await tester.pumpAndSettle();
+    expect(find.text('Revisi Presensi Keluar'), findsOneWidget);
   });
 
   testWidgets('riwayat kosong menampilkan empty state', (tester) async {

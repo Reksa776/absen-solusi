@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter_map/flutter_map.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
 import '../models/client_visit.dart';
@@ -11,16 +15,25 @@ import '../theme/app_theme.dart';
 import 'proof_camera_screen.dart';
 
 class ClientVisitsScreen extends StatefulWidget {
-  const ClientVisitsScreen({super.key, required this.auth});
+  const ClientVisitsScreen({
+    super.key,
+    required this.auth,
+    this.locationService,
+    this.tileProvider,
+  });
 
   final AuthService auth;
+  final LocationService? locationService;
+  final TileProvider? tileProvider;
 
   @override
   State<ClientVisitsScreen> createState() => _ClientVisitsScreenState();
 }
 
 class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
-  final LocationService _location = LocationService();
+  late final LocationService _location;
+  final MapController _mapController = MapController();
+  bool _mapReady = false;
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _clientNameController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
@@ -38,6 +51,7 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
   @override
   void initState() {
     super.initState();
+    _location = widget.locationService ?? LocationService();
     _load();
     _refreshAdhocLocation();
   }
@@ -58,6 +72,9 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
       final reading = await _location.current();
       if (!mounted) return;
       setState(() => _adhocLocation = reading);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _moveMapTo(reading);
+      });
     } on LocationUnavailableException catch (error) {
       if (!mounted) return;
       setState(() => _adhocLocationError = error.message);
@@ -66,6 +83,22 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
       setState(() => _adhocLocationError = 'Lokasi GPS belum dapat dibaca.');
     } finally {
       if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _moveMapTo(GpsReading reading) {
+    if (!mounted || !_mapReady) return;
+    _mapController.move(LatLng(reading.latitude, reading.longitude), 17);
+  }
+
+  Future<void> _openMaps(GpsReading reading) async {
+    final uri = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': '${reading.latitude},${reading.longitude}',
+    });
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      _showMessage('Google Maps tidak dapat dibuka di perangkat ini.');
     }
   }
 
@@ -504,6 +537,87 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
                           ? AppColors.greenDark
                           : AppColors.yellowInk,
                       fontFeatures: tabularFigures,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    key: const Key('adhoc-map'),
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      height: 170,
+                      child: FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter: LatLng(
+                            location.latitude,
+                            location.longitude,
+                          ),
+                          initialZoom: 17,
+                          minZoom: 3,
+                          maxZoom: 19,
+                          interactionOptions: const InteractionOptions(
+                            flags:
+                                InteractiveFlag.drag |
+                                InteractiveFlag.pinchZoom |
+                                InteractiveFlag.doubleTapZoom,
+                          ),
+                          onMapReady: () {
+                            _mapReady = true;
+                            _moveMapTo(location);
+                          },
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.absensi.absensi_mobile',
+                            tileProvider: widget.tileProvider,
+                          ),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                width: 44,
+                                height: 44,
+                                alignment: Alignment.topCenter,
+                                point: LatLng(
+                                  location.latitude,
+                                  location.longitude,
+                                ),
+                                child: const Icon(
+                                  Icons.location_on,
+                                  key: Key('adhoc-map-pin'),
+                                  size: 40,
+                                  color: AppColors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                          RichAttributionWidget(
+                            attributions: [
+                              TextSourceAttribution(
+                                'OpenStreetMap contributors',
+                                onTap: () => unawaited(
+                                  launchUrl(
+                                    Uri.parse(
+                                      'https://www.openstreetmap.org/copyright',
+                                    ),
+                                    mode: LaunchMode.externalApplication,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      key: const Key('adhoc-open-maps'),
+                      onPressed: () => _openMaps(location),
+                      icon: const Icon(Icons.map_outlined, size: 16),
+                      label: const Text('Buka Maps'),
                     ),
                   ),
                 ],

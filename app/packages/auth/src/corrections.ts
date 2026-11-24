@@ -274,18 +274,6 @@ export async function submitCorrection(
   if (requestedTimestamp.getTime() > now.getTime()) {
     throw new HttpError(400, "FUTURE_TIMESTAMP", "Timestamp revisi tidak boleh di masa depan");
   }
-  const windowDays = revisionWindowDays();
-  const dayDistance = Math.floor(
-    (startOfUtcDay(now).getTime() - startOfUtcDay(requestedTimestamp).getTime()) / 86_400_000,
-  );
-  if (dayDistance > windowDays) {
-    throw new HttpError(
-      400,
-      "WINDOW_EXCEEDED",
-      `Revisi hanya dapat diajukan maksimal ${windowDays} hari ke belakang`,
-    );
-  }
-
   if (input.attendanceLogId && !isUuid(input.attendanceLogId)) {
     throw new HttpError(403, "ATTENDANCE_LOG_FORBIDDEN", "Absensi tidak dapat direvisi");
   }
@@ -295,26 +283,6 @@ export async function submitCorrection(
   let committed = false;
   try {
     const result = await withTenant(input.ctx, async (db) => {
-      const limit = revisionMonthlyLimit();
-      const used = await db.correctionRequest.count({
-        where: {
-          memberId: input.ctx.memberId,
-          createdAt: { gte: startOfUtcMonth(now), lt: endOfUtcMonth(now) },
-        },
-      });
-      if (used >= limit) {
-        const retryAfterSeconds = Math.max(
-          1,
-          Math.ceil((endOfUtcMonth(now).getTime() - now.getTime()) / 1000),
-        );
-        throw new HttpError(
-          429,
-          "REVISION_LIMIT_EXCEEDED",
-          `Batas ${limit} pengajuan revisi per bulan sudah tercapai`,
-          retryAfterSeconds,
-        );
-      }
-
       let originalTimestamp: Date | null = null;
       if (!input.attendanceLogId) {
         // Revisi yang menyasar absensi yang sudah ada wajib menunjuk log tersebut,

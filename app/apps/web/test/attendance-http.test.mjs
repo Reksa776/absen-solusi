@@ -180,9 +180,9 @@ test("HTTP: check-in/out, status error, riwayat, audit, dan foto nyata", { timeo
   assert.equal(metadata.includes(String(OFFICE.longitude)), false);
   assert.equal(metadata.includes(row.photoHash), false);
 
-  const duplicate = await attendance("/api/attendance/check-in", tenantA.ownerToken, inside);
-  assert.equal(duplicate.response.status, 409);
-  assert.equal(duplicate.body.error.code, "ALREADY_CHECKED_IN");
+  const secondSession = await attendance("/api/attendance/check-in", tenantA.ownerToken, inside);
+  assert.equal(secondSession.response.status, 201);
+  assert.notEqual(secondSession.body.id, created.body.id);
 
   const checkout = await attendance("/api/attendance/check-out", tenantA.ownerToken, {
     ...inside,
@@ -222,6 +222,7 @@ test("HTTP: check-in/out, status error, riwayat, audit, dan foto nyata", { timeo
   assert.equal(mine.response.status, 200);
   assert.deepEqual(mine.body.attendance.map((entry) => entry.id).sort(), [
     created.body.id,
+    secondSession.body.id,
     checkout.body.id,
   ].sort());
   assert.equal(mine.body.attendance.every((entry) => entry.tenantId === tenantA.tenantId), true);
@@ -236,7 +237,7 @@ test("HTTP: check-in/out, status error, riwayat, audit, dan foto nyata", { timeo
 
   const ownAdmin = await get(`/api/workspaces/${tenantA.tenantId}/attendance`, tenantA.ownerToken);
   assert.equal(ownAdmin.response.status, 200);
-  assert.equal(ownAdmin.body.attendance.length, 2);
+  assert.equal(ownAdmin.body.attendance.length, 3);
 
   const photoResponse = await fetch(`${baseUrl}${row.photoUrl}`, {
     headers: { authorization: `Bearer ${tenantA.ownerToken}`, connection: "close" },
@@ -296,8 +297,8 @@ test("HTTP-2: Idempotency-Key mengembalikan log yang sama dan audit offline_sync
   const different = await attendance("/api/attendance/check-in", employee.token, fields, {
     "idempotency-key": "offline-other-key-0001",
   });
-  assert.equal(different.response.status, 409);
-  assert.equal(different.body.error.code, "ALREADY_CHECKED_IN");
+  assert.equal(different.response.status, 201);
+  assert.notEqual(different.body.id, first.body.id);
 
   const invalid = await attendance("/api/attendance/check-out", employee.token, fields, {
     "idempotency-key": "bad key!",

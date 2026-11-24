@@ -1,13 +1,22 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../services/auth_service.dart';
+import '../services/permission_onboarding_service.dart';
 import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, required this.auth, required this.onLoggedIn});
+  const LoginScreen({
+    super.key,
+    required this.auth,
+    required this.onLoggedIn,
+    this.permissionService = const PermissionOnboardingService(),
+  });
 
   final AuthService auth;
   final VoidCallback onLoggedIn;
+  final PermissionOnboardingService permissionService;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -18,6 +27,16 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Login tampil lebih dulu; dialog izin OS diminta langsung setelah frame
+    // pertama tanpa halaman onboarding kustom.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(widget.permissionService.requestAll());
+    });
+  }
 
   @override
   void dispose() {

@@ -380,10 +380,13 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
       }
 
       if (input.type === "CHECK_OUT") {
-        const checkIn = await db.attendanceLog.findFirst({
-          where: { memberId: input.ctx.memberId, workDate, type: "CHECK_IN" },
+        // Check-out selalu menutup sesi terakhir. Check-in baru setelah
+        // check-out diperbolehkan dan menjadi sesi berikutnya pada hari sama.
+        const latest = await db.attendanceLog.findFirst({
+          where: { memberId: input.ctx.memberId, workDate },
+          orderBy: [{ timestampServer: "desc" }, { createdAt: "desc" }],
         });
-        if (!checkIn) {
+        if (!latest || latest.type !== "CHECK_IN") {
           throw new HttpError(409, "NOT_CHECKED_IN", "Belum check-in untuk sesi ini");
         }
       }

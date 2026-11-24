@@ -161,6 +161,40 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return result;
   }
 
+  List<_ActivityEvent> get _events {
+    final grouped = <String, List<AttendanceLog>>{};
+    for (final row in _rows) {
+      final date = row.workDate ?? row.timestampServer;
+      grouped.putIfAbsent(_dayKey(date), () => <AttendanceLog>[]).add(row);
+    }
+    final events = <_ActivityEvent>[];
+    for (final rows in grouped.values) {
+      rows.sort((a, b) => a.timestampServer.compareTo(b.timestampServer));
+      for (final row in rows) {
+        events.add(
+          _ActivityEvent(
+            date: row.workDate ?? row.timestampServer,
+            type: row.type,
+            log: row,
+          ),
+        );
+      }
+      final last = rows.last;
+      if (last.isCheckIn) {
+        events.add(
+          _ActivityEvent(
+            date: last.workDate ?? last.timestampServer,
+            type: 'CHECK_OUT',
+            log: null,
+            sortAt: last.timestampServer.add(const Duration(milliseconds: 1)),
+          ),
+        );
+      }
+    }
+    events.sort((a, b) => b.sortAt.compareTo(a.sortAt));
+    return events;
+  }
+
   int get _presentDays => _days.where((day) => day.checkIn != null).length;
 
   int get _lateDays =>
@@ -199,14 +233,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   AttendanceLog? _leadLog(_DayLog day) => day.checkIn ?? day.checkOut;
 
-  CorrectionRequest? _correctionFor(AttendanceLog row) {
+  CorrectionRequest? _correctionForEvent(_ActivityEvent event) {
     CorrectionRequest? latest;
     for (final correction in _corrections) {
-      if (correction.requestType != row.type) continue;
-      final sameLog = correction.attendanceLogId == row.id;
+      if (correction.requestType != event.type) continue;
+      final sameLog =
+          event.log != null && correction.attendanceLogId == event.log!.id;
       final sameDay =
-          _dayKey(correction.requestedTimestamp) ==
-          _dayKey(row.timestampServer);
+          _dayKey(correction.requestedTimestamp) == _dayKey(event.date);
       if (!sameLog && !sameDay) continue;
       if (latest == null || correction.createdAt.isAfter(latest.createdAt)) {
         latest = correction;
@@ -215,19 +249,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return latest;
   }
 
-  Future<void> _openRevision(_DayLog day) async {
-    final lead = _leadLog(day);
-    if (lead == null) return;
+  _DayLog _dayFor(_ActivityEvent event) {
+    for (final day in _days) {
+      if (_dayKey(day.date) == _dayKey(event.date)) return day;
+    }
+    return _DayLog(event.date);
+  }
+
+  Future<void> _openRevision(_ActivityEvent event) async {
+    final day = _dayFor(event);
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
+        fullscreenDialog: true,
         builder: (_) => CorrectionFormScreen(
           auth: widget.auth,
           initialDate: day.date.toLocal(),
           initialCheckInTime: day.checkIn?.timestampServer.toLocal(),
           initialCheckOutTime: day.checkOut?.timestampServer.toLocal(),
           initialKind: 'ADJUST',
-          logType: lead.type,
-          attendanceLogId: lead.id,
+          logType: event.type,
+          attendanceLogId: event.log?.id,
         ),
       ),
     );
@@ -605,8 +646,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ),
       );
     }
-    final days = _days;
-    if (days.isEmpty) {
+    final events = _events;
+    if (events.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -647,20 +688,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
         key: const Key('history-list'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-        itemCount: days.length,
+        itemCount: events.length,
         separatorBuilder: (_, _) => const SizedBox(height: 9),
-        itemBuilder: (context, index) => _dayCard(days[index]),
+        itemBuilder: (context, index) => _activityCard(events[index]),
       ),
     );
   }
 
-  Widget _dayCard(_DayLog day) {
-    final lead = _leadLog(day);
-    if (lead == null) return const SizedBox.shrink();
-    final correction = _correctionFor(lead);
-    final local = day.date.toLocal();
+  Widget _activityCard(_ActivityEvent event) {
+    final row = event.log;
+    final correction = _correctionForEvent(event);
+    final local = event.date.toLocal();
+    final isCheckIn = event.type == 'CHECK_IN';
+    final time = row == null ? '—' : _time(row.timestampServer);
+    final eventKey = row?.id ?? '${_dayKey(event.date)}-check-out';
     return Row(
-      key: Key('history-card-${lead.id}'),
+      key: Key('history-card-${event.type}-$eventKey'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _dateBadge(local),
@@ -670,11 +713,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(13),
             child: InkWell(
-              key: Key('history-detail-${lead.id}'),
+              key: Key('history-detail-${event.type}-$eventKey'),
               borderRadius: BorderRadius.circular(13),
-              onTap: () => _showDetail(day),
+              onTap: () => _showDetail(_dayFor(event)),
               child: Container(
-                padding: const EdgeInsets.fromLTRB(11, 10, 11, 8),
+                padding: const EdgeInsets.fromLTRB(12, 10, 10, 7),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(13),
                   border: Border.all(color: AppColors.line),
@@ -683,14 +726,40 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(child: _timeCell('Masuk', day.checkIn)),
-                        Container(width: 1, height: 31, color: AppColors.line),
-                        Expanded(child: _timeCell('Keluar', day.checkOut)),
+                        Icon(
+                          isCheckIn ? Icons.login : Icons.logout,
+                          size: 15,
+                          color: isCheckIn
+                              ? AppColors.greenDark
+                              : AppColors.muted,
+                        ),
                         const SizedBox(width: 6),
-                        _statusPill(day),
+                        Expanded(
+                          child: Text(
+                            isCheckIn ? 'Masuk' : 'Keluar',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                        ),
+                        _eventStatusPill(event),
                       ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      time,
+                      key: Key('history-time-${event.type}-$eventKey'),
+                      style: const TextStyle(
+                        fontSize: 26,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                        color: AppColors.ink,
+                        fontFeatures: tabularFigures,
+                      ),
                     ),
                     const SizedBox(height: 7),
                     Row(
@@ -698,20 +767,24 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         _indicator(
                           Icons.my_location,
                           'GPS terverifikasi',
-                          !(lead.isSuspicious) && !lead.outOfRadius,
+                          row != null && !row.isSuspicious && !row.outOfRadius,
                         ),
                         const SizedBox(width: 6),
                         _indicator(
                           Icons.schedule,
                           'Sesuai Pola Kerja',
-                          lead.attendanceStatus != null,
+                          row?.attendanceStatus != null,
                         ),
                         const SizedBox(width: 6),
-                        _indicator(Icons.fingerprint, 'Waktu tercatat', true),
+                        _indicator(
+                          Icons.fingerprint,
+                          row == null ? 'Belum tercatat' : 'Waktu tercatat',
+                          row != null,
+                        ),
                         const Spacer(),
                         TextButton.icon(
-                          key: Key('history-revise-${lead.id}'),
-                          onPressed: () => _openRevision(day),
+                          key: Key('history-revise-$eventKey'),
+                          onPressed: () => _openRevision(event),
                           icon: const Icon(
                             Icons.edit_calendar_outlined,
                             size: 14,
@@ -741,6 +814,82 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _eventStatusPill(_ActivityEvent event) {
+    final row = event.log;
+    final String label;
+    final (Color bg, Color border, Color fg) colors;
+    if (row == null) {
+      label = 'Belum tercatat';
+      colors = (
+        AppColors.yellowSoft,
+        AppColors.yellowLine,
+        AppColors.yellowInk,
+      );
+    } else if (row.isApprovalPending) {
+      label = 'Menunggu';
+      colors = (
+        AppColors.yellowSoft,
+        AppColors.yellowLine,
+        AppColors.yellowInk,
+      );
+    } else if (row.isApprovalRejected) {
+      label = 'Ditolak';
+      colors = (
+        AppColors.dangerSoft,
+        AppColors.danger.withValues(alpha: 0.25),
+        AppColors.danger,
+      );
+    } else if (row.isOutOfTown) {
+      label = 'Luar Kota';
+      colors = (AppColors.greenSoft, AppColors.greenLine, AppColors.greenDark);
+    } else if (row.isSuspicious) {
+      label = 'Perlu Tinjau';
+      colors = (
+        AppColors.dangerSoft,
+        AppColors.danger.withValues(alpha: 0.25),
+        AppColors.danger,
+      );
+    } else if (event.type == 'CHECK_IN' && row.isLate) {
+      label = 'Terlambat';
+      colors = (
+        AppColors.yellowSoft,
+        AppColors.yellowLine,
+        AppColors.yellowInk,
+      );
+    } else if (event.type == 'CHECK_OUT' && row.isEarlyLeave) {
+      label = 'Pulang Awal';
+      colors = (
+        AppColors.yellowSoft,
+        AppColors.yellowLine,
+        AppColors.yellowInk,
+      );
+    } else {
+      label = 'Tepat Waktu';
+      colors = (AppColors.greenSoft, AppColors.greenLine, AppColors.greenDark);
+    }
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 96),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.$1,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: colors.$2),
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 8.5,
+          height: 1.15,
+          fontWeight: FontWeight.w700,
+          color: colors.$3,
+        ),
+      ),
     );
   }
 
@@ -787,41 +936,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _timeCell(String label, AttendanceLog? row) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 9, color: AppColors.muted),
-        ),
-        const SizedBox(height: 1),
-        Text(
-          row == null ? '—' : _time(row.timestampServer),
-          style: const TextStyle(
-            fontSize: 14,
-            height: 1.1,
-            fontWeight: FontWeight.w800,
-            color: AppColors.ink,
-            fontFeatures: tabularFigures,
-          ),
-        ),
-        if (row?.isLate == true)
-          Text(
-            '+${row!.lateMinutes} mnt',
-            style: const TextStyle(
-              fontSize: 8.5,
-              fontWeight: FontWeight.w600,
-              color: AppColors.amber,
-              fontFeatures: tabularFigures,
-            ),
-          )
-        else
-          const SizedBox(height: 11),
-      ],
     );
   }
 
@@ -1160,7 +1274,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     key: const Key('history-detail-revise'),
                     onPressed: () {
                       Navigator.of(sheetContext).pop();
-                      _openRevision(day);
+                      final lead = _leadLog(day);
+                      if (lead != null) {
+                        _openRevision(
+                          _ActivityEvent(
+                            date: day.date,
+                            type: lead.type,
+                            log: lead,
+                          ),
+                        );
+                      }
                     },
                     icon: const Icon(Icons.edit_calendar_outlined, size: 16),
                     label: const Text('Ajukan Revisi Kehadiran'),
@@ -1275,4 +1398,18 @@ class _DayLog {
   final DateTime date;
   AttendanceLog? checkIn;
   AttendanceLog? checkOut;
+}
+
+class _ActivityEvent {
+  _ActivityEvent({
+    required this.date,
+    required this.type,
+    required this.log,
+    DateTime? sortAt,
+  }) : sortAt = sortAt ?? log?.timestampServer ?? date;
+
+  final DateTime date;
+  final String type;
+  final AttendanceLog? log;
+  final DateTime sortAt;
 }

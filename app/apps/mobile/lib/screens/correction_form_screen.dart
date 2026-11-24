@@ -127,7 +127,7 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
     final now = _now;
     final picked = await showDatePicker(
       context: context,
-      firstDate: DateUtils.dateOnly(now.subtract(const Duration(days: 30))),
+      firstDate: DateTime(now.year - 5),
       lastDate: DateUtils.dateOnly(now),
       initialDate: _date,
       helpText: 'Pilih tanggal revisi',
@@ -187,8 +187,9 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
       _error = null;
     });
     try {
-      // Lupa absen penuh hanya mengirim satu permintaan (batas bulanan server);
-      // jam pulang disertakan agar admin dapat memproses keduanya.
+      // Lupa absen penuh hanya mengirim satu permintaan; jam pulang disertakan
+      // agar admin dapat memproses keduanya. Revisi parsial hanya mengirim
+      // satu tipe dan tidak menyentuh jam sisi lainnya.
       final payloadReason = _kind == 'LUPA_FULL'
           ? '$reason\nJam pulang yang diajukan: ${_timeLabel(_checkOut)}.'
           : reason;
@@ -219,12 +220,17 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final partial = widget.initialKind == 'ADJUST' && widget.logType != null;
+    final targetLabel = _logType == 'CHECK_OUT' ? 'Keluar' : 'Masuk';
     final recorded =
         widget.initialCheckInTime != null || widget.initialCheckOutTime != null;
     return Scaffold(
       backgroundColor: AppColors.canvas,
       appBar: AppBar(
-        title: const Text('Ajukan Revisi'),
+        title: Text(
+          partial ? 'Revisi Presensi $targetLabel' : 'Ajukan Revisi',
+          key: const Key('correction-title'),
+        ),
         actions: [
           IconButton(
             key: const Key('correction-history'),
@@ -261,10 +267,15 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
                   border: Border.all(color: AppColors.line),
                 ),
                 child: Text(
-                  'Tercatat: masuk '
-                  '${widget.initialCheckInTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckInTime!))}'
-                  ' • pulang '
-                  '${widget.initialCheckOutTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckOutTime!))}',
+                  partial
+                      ? 'Revisi hanya mengubah jam ${targetLabel.toLowerCase()}. '
+                            'Jam ${targetLabel == 'Masuk' ? 'keluar' : 'masuk'} '
+                            'tetap '
+                            '${targetLabel == 'Masuk' ? (widget.initialCheckOutTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckOutTime!))) : (widget.initialCheckInTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckInTime!)))}.'
+                      : 'Tercatat: masuk '
+                            '${widget.initialCheckInTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckInTime!))}'
+                            ' • pulang '
+                            '${widget.initialCheckOutTime == null ? '—' : _timeLabel(TimeOfDay.fromDateTime(widget.initialCheckOutTime!))}',
                   style: const TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
@@ -300,27 +311,41 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _timeTile(
-                    key: 'correction-check-in',
-                    label: 'Jam Check-In',
-                    value: _timeLabel(_checkIn),
-                    onTap: () => _pickTime(checkIn: true),
+            if (partial)
+              _timeTile(
+                key: _logType == 'CHECK_OUT'
+                    ? 'correction-check-out'
+                    : 'correction-check-in',
+                label: _logType == 'CHECK_OUT'
+                    ? 'Jam Check-Out'
+                    : 'Jam Check-In',
+                value: _logType == 'CHECK_OUT'
+                    ? _timeLabel(_checkOut)
+                    : _timeLabel(_checkIn),
+                onTap: () => _pickTime(checkIn: _logType != 'CHECK_OUT'),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: _timeTile(
+                      key: 'correction-check-in',
+                      label: 'Jam Check-In',
+                      value: _timeLabel(_checkIn),
+                      onTap: () => _pickTime(checkIn: true),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _timeTile(
-                    key: 'correction-check-out',
-                    label: 'Jam Check-Out',
-                    value: _timeLabel(_checkOut),
-                    onTap: () => _pickTime(checkIn: false),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _timeTile(
+                      key: 'correction-check-out',
+                      label: 'Jam Check-Out',
+                      value: _timeLabel(_checkOut),
+                      onTap: () => _pickTime(checkIn: false),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             if (_kind == 'LUPA_FULL') ...[
               const SizedBox(height: 8),
               const Text(
@@ -328,31 +353,33 @@ class _CorrectionFormScreenState extends State<CorrectionFormScreen> {
                 style: TextStyle(fontSize: 11, color: AppColors.muted),
               ),
             ],
-            const SizedBox(height: 16),
-            const Text(
-              'Jenis koreksi',
-              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              key: const Key('correction-type'),
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final (value, label) in _correctionKinds)
-                  ChoiceChip(
-                    key: Key('correction-kind-$value'),
-                    label: Text(label),
-                    selected: _kind == value,
-                    onSelected: _submitting
-                        ? null
-                        : (selected) {
-                            if (!selected) return;
-                            setState(() => _kind = value);
-                          },
-                  ),
-              ],
-            ),
+            if (!partial) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Jenis koreksi',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                key: const Key('correction-type'),
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final (value, label) in _correctionKinds)
+                    ChoiceChip(
+                      key: Key('correction-kind-$value'),
+                      label: Text(label),
+                      selected: _kind == value,
+                      onSelected: _submitting
+                          ? null
+                          : (selected) {
+                              if (!selected) return;
+                              setState(() => _kind = value);
+                            },
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               key: const Key('correction-reason'),

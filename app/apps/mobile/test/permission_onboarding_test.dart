@@ -1,91 +1,55 @@
+import 'package:absensi_mobile/api/api_client.dart';
+import 'package:absensi_mobile/screens/login_screen.dart';
+import 'package:absensi_mobile/services/auth_service.dart';
 import 'package:absensi_mobile/services/permission_onboarding_service.dart';
-import 'package:absensi_mobile/widgets/permission_gate.dart';
+import 'package:absensi_mobile/services/token_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 class FakeOnboardingService implements PermissionOnboardingService {
-  FakeOnboardingService({required this.initial, required this.afterRequest});
-
-  final PermissionSnapshot initial;
-  final PermissionSnapshot afterRequest;
   bool requested = false;
 
   @override
-  Future<PermissionSnapshot> status() async => initial;
+  Future<PermissionSnapshot> status() async => const PermissionSnapshot(
+    location: true,
+    camera: true,
+    notifications: true,
+    exactAlarm: true,
+  );
 
   @override
   Future<PermissionSnapshot> requestAll() async {
     requested = true;
-    return afterRequest;
+    return status();
   }
 }
 
-const granted = PermissionSnapshot(
-  location: true,
-  camera: true,
-  notifications: true,
-  exactAlarm: true,
-);
-const missing = PermissionSnapshot(
-  location: false,
-  camera: true,
-  notifications: false,
-  exactAlarm: false,
-);
-
 void main() {
-  testWidgets('gerbang izin muncul saat izin wajib belum diberikan', (
+  testWidgets('startup langsung menampilkan login tanpa layar izin kustom', (
     tester,
   ) async {
-    final service = FakeOnboardingService(
-      initial: missing,
-      afterRequest: granted,
+    final service = FakeOnboardingService();
+    final auth = AuthService(
+      api: ApiClient(
+        baseUrl: 'https://absensi.test',
+        tokenStore: MemoryTokenStore(),
+      ),
     );
+
     await tester.pumpWidget(
       MaterialApp(
-        home: PermissionGate(
-          service: service,
-          enabled: true,
-          child: const Text('Masuk'),
+        home: LoginScreen(
+          auth: auth,
+          onLoggedIn: () {},
+          permissionService: service,
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('permission-onboarding')), findsOneWidget);
-    expect(find.text('Lokasi GPS'), findsOneWidget);
-    expect(find.text('Kamera'), findsOneWidget);
-    expect(find.text('Notifikasi & alarm'), findsOneWidget);
-    expect(find.textContaining('Belum diberikan'), findsOneWidget);
-    expect(find.text('Masuk'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('permission-allow-all')));
-    await tester.pumpAndSettle();
-
+    expect(find.byKey(const Key('login-email')), findsOneWidget);
+    expect(find.text('Izin akses aplikasi'), findsNothing);
+    expect(find.text('Lanjutkan tanpa izin'), findsNothing);
     expect(service.requested, isTrue);
-    expect(find.byKey(const Key('permission-onboarding')), findsNothing);
-    expect(find.text('Masuk'), findsOneWidget);
-  });
-
-  testWidgets('gerbang izin melewati layar bila izin sudah lengkap', (
-    tester,
-  ) async {
-    final service = FakeOnboardingService(
-      initial: granted,
-      afterRequest: granted,
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PermissionGate(
-          service: service,
-          enabled: true,
-          child: const Text('Login'),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('permission-onboarding')), findsNothing);
-    expect(find.text('Login'), findsOneWidget);
   });
 }

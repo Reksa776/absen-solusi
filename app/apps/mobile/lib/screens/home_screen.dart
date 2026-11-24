@@ -330,12 +330,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return _isSameDay(date, DateTime.now());
   }
 
-  String? get _nextAction {
-    final hasCheckIn = _today.any((row) => row.isCheckIn);
-    final hasCheckOut = _today.any((row) => row.isCheckOut);
-    if (!hasCheckIn) return 'CHECK_IN';
-    if (!hasCheckOut) return 'CHECK_OUT';
-    return null;
+  String get _nextAction {
+    if (_today.isEmpty) return 'CHECK_IN';
+    var latest = _today.first;
+    for (final row in _today.skip(1)) {
+      if (row.timestampServer.isAfter(latest.timestampServer)) latest = row;
+    }
+    // Sesi terakhir yang sudah keluar membuka siklus presensi berikutnya.
+    return latest.isCheckIn ? 'CHECK_OUT' : 'CHECK_IN';
   }
 
   double? get _distance {
@@ -442,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Izin GPS diminta saat tombol presensi ditekan, bukan saat aplikasi dibuka.
   Future<void> _startAttendance() async {
     final action = _nextAction;
-    if (action == null || _locating || _submitting) return;
+    if (_locating || _submitting) return;
 
     setState(() {
       _locating = true;
@@ -1611,8 +1613,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final blocked = _deviceBlocked;
     final label = blocked
         ? 'Menunggu persetujuan perangkat'
-        : action == null
-        ? 'Presensi hari ini selesai'
         : _locating
         ? 'Mengambil lokasi…'
         : _submitting
@@ -1701,9 +1701,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              onPressed: action == null || busy || blocked
-                  ? null
-                  : _startAttendance,
+              onPressed: busy || blocked ? null : _startAttendance,
               icon: busy
                   ? const SizedBox.square(
                       dimension: 16,

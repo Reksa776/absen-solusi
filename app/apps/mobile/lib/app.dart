@@ -5,9 +5,7 @@ import 'screens/login_screen.dart';
 import 'screens/workspace_picker_screen.dart';
 import 'services/app_update_service.dart';
 import 'services/auth_service.dart';
-import 'services/permission_onboarding_service.dart';
 import 'theme/app_theme.dart';
-import 'widgets/permission_gate.dart';
 import 'widgets/update_dialog.dart';
 
 class AbsensiApp extends StatefulWidget {
@@ -16,15 +14,11 @@ class AbsensiApp extends StatefulWidget {
     required this.auth,
     this.updateService,
     this.checkForUpdates = true,
-    this.onboardingService,
-    this.checkPermissions = true,
   });
 
   final AuthService auth;
   final AppUpdateService? updateService;
   final bool checkForUpdates;
-  final PermissionOnboardingService? onboardingService;
-  final bool checkPermissions;
 
   @override
   State<AbsensiApp> createState() => _AbsensiAppState();
@@ -34,8 +28,6 @@ class _AbsensiAppState extends State<AbsensiApp> {
   bool _picked = false;
   late final AppUpdateService _updates =
       widget.updateService ?? AppUpdateService();
-  late final PermissionOnboardingService _onboarding =
-      widget.onboardingService ?? const PermissionOnboardingService();
 
   @override
   void initState() {
@@ -49,38 +41,34 @@ class _AbsensiAppState extends State<AbsensiApp> {
       title: 'Absensi',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: PermissionGate(
-        service: _onboarding,
-        enabled: widget.checkPermissions,
-        child: _AppUpdateGate(
-          service: _updates,
-          enabled: widget.checkForUpdates,
-          child: AnimatedBuilder(
-            animation: widget.auth,
-            builder: (context, _) {
-              final auth = widget.auth;
-              if (auth.isLoading && !auth.isAuthenticated) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (!auth.isAuthenticated) {
-                return LoginScreen(
-                  auth: auth,
-                  onLoggedIn: () => setState(() => _picked = false),
-                );
-              }
-              final needsPicker =
-                  !_picked && (auth.profile?.workspaces.length ?? 0) > 1;
-              if (needsPicker) {
-                return WorkspacePickerScreen(
-                  auth: auth,
-                  onSelected: () => setState(() => _picked = true),
-                );
-              }
-              return MainShellScreen(auth: auth, updateService: _updates);
-            },
-          ),
+      home: _AppUpdateGate(
+        service: _updates,
+        enabled: widget.checkForUpdates,
+        child: AnimatedBuilder(
+          animation: widget.auth,
+          builder: (context, _) {
+            final auth = widget.auth;
+            if (auth.isLoading && !auth.isAuthenticated) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (!auth.isAuthenticated) {
+              return LoginScreen(
+                auth: auth,
+                onLoggedIn: () => setState(() => _picked = false),
+              );
+            }
+            final needsPicker =
+                !_picked && (auth.profile?.workspaces.length ?? 0) > 1;
+            if (needsPicker) {
+              return WorkspacePickerScreen(
+                auth: auth,
+                onSelected: () => setState(() => _picked = true),
+              );
+            }
+            return MainShellScreen(auth: auth, updateService: _updates);
+          },
         ),
       ),
     );
