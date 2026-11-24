@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { listWorkspaceLeaveRequests } from "@absensi/auth";
+import { listWorkspaceLeaveRequests, listWorkspaceMembers } from "@absensi/auth";
 
+import { AdminLeaveForm } from "@/components/admin-leave-permit-forms";
 import { requirePagePermission } from "@/lib/page-auth";
 import { LeaveReview } from "./leave-review";
 
@@ -22,11 +23,21 @@ export default async function LeavePage({
   if (!ctx || ctx.tenantId !== id) redirect("/workspaces?error=forbidden");
   const requested = (query.status ?? "PENDING").toUpperCase();
   const status = (FILTERS as readonly string[]).includes(requested) ? requested : "PENDING";
-  const rows = await listWorkspaceLeaveRequests({
-    ctx,
-    workspaceId: id,
-    status: status === "ALL" ? undefined : status,
-  });
+  const [rows, memberResult] = await Promise.all([
+    listWorkspaceLeaveRequests({
+      ctx,
+      workspaceId: id,
+      status: status === "ALL" ? undefined : status,
+    }),
+    listWorkspaceMembers({ ctx, workspaceId: id, limit: 100 }),
+  ]);
+  const members = memberResult.members
+    .filter((member) => member.status === "ACTIVE")
+    .map((member) => ({
+      id: member.id,
+      name: member.user.name,
+      divisionName: member.divisionName,
+    }));
 
   return (
     <main className="page">
@@ -66,6 +77,7 @@ export default async function LeavePage({
         </a>
       </form>
 
+      <AdminLeaveForm workspaceId={id} members={members} />
       <LeaveReview rows={rows} canReview={ctx.permissions.includes("correction.review")} />
     </main>
   );

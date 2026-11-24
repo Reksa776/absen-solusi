@@ -12,6 +12,8 @@ import { assertWorkspaceReadClaim } from "./workspaces.js";
 export const WORK_PERMIT_TYPES = [
   "SAKIT",
   "IZIN_PRIBADI",
+  "KEPERLUAN_KELUARGA",
+  "DINAS",
   "PULANG_CEPAT",
   "DATANG_TERLAMBAT",
   "LAINNYA",
@@ -87,6 +89,18 @@ function parseType(value: unknown): WorkPermitType {
     throw new HttpError(400, "INVALID_PERMIT_TYPE", "Jenis izin kerja tidak valid");
   }
   return value.trim().toUpperCase() as WorkPermitType;
+}
+
+function parseAdminCreateStatus(value: unknown): "PENDING" | "APPROVED" {
+  const status = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (status !== "PENDING" && status !== "APPROVED") {
+    throw new HttpError(
+      400,
+      "INVALID_STATUS",
+      "Status awal izin harus PENDING atau APPROVED",
+    );
+  }
+  return status;
 }
 
 function day(date: Date): string {
@@ -219,6 +233,133 @@ export async function submitWorkPermit(input: {
           resourceId: id,
           metadata: {
             permitType,
+            startDate: day(startDate),
+            endDate: day(endDate),
+            reasonLength: reason.length,
+            hasProof: Boolean(proof.proofFileName),
+          },
+          ip: input.ip ?? null,
+          userAgent: input.userAgent ?? null,
+        },
+        tx,
+      );
+      return row;
+    }),
+  );
+  return toSummary(created);
+}
+
+export async function createWorkPermitByAdmin(input: {
+  ctx: TenantContext;
+  workspaceId: string;
+  body: Record<string, unknown>;
+  proof?: PermitProofInput | undefined;
+  ip?: string | null;
+  userAgent?: string | null;
+  now?: Date;
+}): Promise<WorkPermitSummary> {
+  assertReview(input.ctx);
+  assertWorkspaceReadClaim(input.ctx, input.workspaceId);
+  const memberId = input.body.memberId;
+  if (typeof memberId !== "string" || !isUuid(memberId)) {
+    throw new HttpError(400, "INVALID_MEMBER", "Karyawan tidak valid");
+  }
+  const permitType = parseType(input.body.permitType);
+  const status = parseAdminCreateStatus(input.body.status);
+  const startDate = parseReportDay(
+    typeof input.body.startDate === "string" ? input.body.startDate : "",
+    "startDate",
+  );
+  const endDate = parseReportDay(
+    typeof input.body.endDate === "string" ? input.body.endDate : "",
+    "endDate",
+  );
+  if (endDate.getTime() < startDate.getTime()) {
+    throw new HttpError(400, "INVALID_DATE_RANGE", "Tanggal selesai tidak boleh sebelum mulai");
+  }
+  if ((endDate.getTime() - startDate.getTime()) / 86_400_000 > 31) {
+    throw new HttpError(400, "INVALID_DATE_RANGE", "Rentang izin maksimal 32 hari");
+  }
+  const reason = typeof input.body.reason === "string" ? input.body.reason.trim() : "";
+  if (reason.length < PERMIT_REASON_MIN_LENGTH || reason.length > PERMIT_REASON_MAX_LENGTH) {
+    throw new HttpError(
+      400,
+      "INVALID_REASON",
+      `Alasan izin ${PERMIT_REASON_MIN_LENGTH}-${PERMIT_REASON_MAX_LENGTH} karakter`,
+    );
+  }
+
+  const member = await withTenant(input.ctx, (db) =>
+    db.workspaceMember.findFirst({
+      where: { id: memberId, status: "ACTIVE" },
+      select: { id: true },
+    }),
+  );
+  if (!member) {
+    throw new HttpError(404, "MEMBER_NOT_FOUND", "Karyawan aktif tidak ditemukan");
+  }
+
+  const id = randomUUID();
+  const proof = input.proof
+    ? await storePermitProof(id, input.proof)
+    : { proofHash: null, proofFileName: null, proofContentType: null };
+  const now = input.now ?? new Date();
+  const created = await withTenant(input.ctx, (db) =>
+    db.$transaction(async (tx) => {
+      const overlap = await tx.workPermit.findFirst({
+        where: {
+          memberId,
+          status: { in: ["PENDING", "APPROVED"] },
+          startDate: { lte: endDate },
+          endDate: { gte: startDate },
+        },
+        select: { id: true },
+      });
+      if (overlap) {
+        throw new HttpError(409, "PERMIT_OVERLAP", "Sudah ada izin pada rentang tanggal ini");
+      }
+      const row = await tx.workPermit.create({
+        data: {
+          id,
+          tenantId: input.ctx.tenantId,
+          memberId,
+          permitType,
+          startDate,
+          endDate,
+          reason,
+          status,
+          reviewedByMemberId: status === "APPROVED" ? input.ctx.memberId : null,
+          reviewedAt: status === "APPROVED" ? now : null,
+          proofUrl: proof.proofFileName ? `/api/permits/${id}/proof` : null,
+          proofHash: proof.proofHash,
+          proofFileName: proof.proofFileName,
+          proofContentType: proof.proofContentType,
+        },
+        include: INCLUDE,
+      });
+      if (status === "APPROVED") {
+        await createInAppNotification(tx, {
+          tenantId: input.ctx.tenantId,
+          memberId,
+          type: "PERMIT_APPROVED",
+          title: "Izin kerja dicatat dan disetujui",
+          body: `Admin mencatat izin ${permitType} untuk ${day(startDate)} sampai ${day(endDate)}.`,
+          linkUrl: `/workspaces/${input.ctx.tenantId}/permits`,
+        });
+      }
+      await writeAudit(
+        {
+          tenantId: input.ctx.tenantId,
+          actorType: "USER",
+          actorUserId: input.ctx.userId,
+          actorMemberId: input.ctx.memberId,
+          action: "permit.admin_create",
+          resourceType: "work_permit",
+          resourceId: id,
+          metadata: {
+            memberId,
+            permitType,
+            status,
             startDate: day(startDate),
             endDate: day(endDate),
             reasonLength: reason.length,

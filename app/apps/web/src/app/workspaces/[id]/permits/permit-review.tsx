@@ -7,6 +7,8 @@ const CSRF_COOKIE = "aos_csrf";
 const TYPE_LABELS: Record<string, string> = {
   SAKIT: "Sakit",
   IZIN_PRIBADI: "Izin pribadi",
+  KEPERLUAN_KELUARGA: "Keperluan keluarga",
+  DINAS: "Dinas",
   PULANG_CEPAT: "Pulang cepat",
   DATANG_TERLAMBAT: "Datang terlambat",
   LAINNYA: "Lainnya",

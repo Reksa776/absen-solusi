@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { listWorkspaceWorkPermits } from "@absensi/auth";
+import { listWorkspaceMembers, listWorkspaceWorkPermits } from "@absensi/auth";
 
+import { AdminPermitForm } from "@/components/admin-leave-permit-forms";
 import { requirePagePermission } from "@/lib/page-auth";
 import { PermitReview } from "./permit-review";
 
@@ -22,11 +23,21 @@ export default async function PermitsPage({
   if (!ctx || ctx.tenantId !== id) redirect("/workspaces?error=forbidden");
   const requested = (query.status ?? "ALL").toUpperCase();
   const status = (FILTERS as readonly string[]).includes(requested) ? requested : "ALL";
-  const rows = await listWorkspaceWorkPermits({
-    ctx,
-    workspaceId: id,
-    status: status === "ALL" ? undefined : status,
-  });
+  const [rows, memberResult] = await Promise.all([
+    listWorkspaceWorkPermits({
+      ctx,
+      workspaceId: id,
+      status: status === "ALL" ? undefined : status,
+    }),
+    listWorkspaceMembers({ ctx, workspaceId: id, limit: 100 }),
+  ]);
+  const members = memberResult.members
+    .filter((member) => member.status === "ACTIVE")
+    .map((member) => ({
+      id: member.id,
+      name: member.user.name,
+      divisionName: member.divisionName,
+    }));
 
   return (
     <main className="page">
@@ -35,7 +46,7 @@ export default async function PermitsPage({
           <p className="eyebrow">Izin & cuti</p>
           <h1 className="page-title">Izin kerja</h1>
           <p className="page-subtitle">
-            Sakit, izin pribadi, pulang cepat, datang terlambat, dan izin lainnya.
+            Sakit, izin pribadi, keperluan keluarga, dinas, dan izin lainnya.
             Persetujuan mengikuti alur <strong>PERMIT</strong> bila dikonfigurasi.
           </p>
         </div>
@@ -59,6 +70,7 @@ export default async function PermitsPage({
         </button>
       </form>
 
+      <AdminPermitForm workspaceId={id} members={members} />
       <PermitReview rows={rows} canReview={ctx.permissions.includes("correction.review")} />
     </main>
   );

@@ -673,6 +673,46 @@ class ApiClient {
     return ClientVisitLog.fromJson(_decodeObject(response));
   }
 
+  Future<ClientVisitLog> recordAdHocClientVisit({
+    required String clientName,
+    required String notes,
+    required double latitude,
+    required double longitude,
+    required double accuracyMeters,
+    required Uint8List photoBytes,
+    required String photoName,
+  }) async {
+    final lowerName = photoName.toLowerCase();
+    final contentType = lowerName.endsWith('.png')
+        ? MediaType('image', 'png')
+        : lowerName.endsWith('.webp')
+        ? MediaType('image', 'webp')
+        : MediaType('image', 'jpeg');
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/mobile/client-visits'),
+    );
+    request.headers.addAll(await _authHeaders());
+    request.fields.addAll({
+      'clientName': clientName.trim(),
+      'notes': notes.trim(),
+      'latitude': '$latitude',
+      'longitude': '$longitude',
+      'accuracy_meters': '$accuracyMeters',
+    });
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'photo',
+        photoBytes,
+        filename: photoName,
+        contentType: contentType,
+      ),
+    );
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    return ClientVisitLog.fromJson(_decodeObject(response));
+  }
+
   Future<List<WorkProjection>> myWorkProjections() async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/mobile/work-projections'),

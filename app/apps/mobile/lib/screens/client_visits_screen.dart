@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
@@ -20,15 +21,144 @@ class ClientVisitsScreen extends StatefulWidget {
 
 class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
   final LocationService _location = LocationService();
+  final ImagePicker _picker = ImagePicker();
+  final TextEditingController _clientNameController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
   ClientVisitDay? _day;
   bool _loading = true;
   String? _error;
   String? _busyScheduleId;
+  GpsReading? _adhocLocation;
+  String? _adhocLocationError;
+  bool _locating = false;
+  bool _savingAdhoc = false;
+  Uint8List? _adhocPhoto;
+  String _adhocPhotoName = 'kunjungan.jpg';
 
   @override
   void initState() {
     super.initState();
     _load();
+    _refreshAdhocLocation();
+  }
+
+  @override
+  void dispose() {
+    _clientNameController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshAdhocLocation() async {
+    setState(() {
+      _locating = true;
+      _adhocLocationError = null;
+    });
+    try {
+      final reading = await _location.current();
+      if (!mounted) return;
+      setState(() => _adhocLocation = reading);
+    } on LocationUnavailableException catch (error) {
+      if (!mounted) return;
+      setState(() => _adhocLocationError = error.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _adhocLocationError = 'Lokasi GPS belum dapat dibaca.');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  Future<void> _captureAdhocPhoto() async {
+    final photo = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute<Uint8List>(builder: (_) => const ProofCameraScreen()),
+    );
+    if (photo == null || !mounted) return;
+    setState(() {
+      _adhocPhoto = photo;
+      _adhocPhotoName = 'kunjungan.jpg';
+    });
+  }
+
+  Future<void> _pickAdhocPhoto() async {
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1600,
+      );
+      if (picked == null || !mounted) return;
+      final bytes = await picked.readAsBytes();
+      if (!mounted) return;
+      setState(() {
+        _adhocPhoto = bytes;
+        _adhocPhotoName = picked.name;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gambar tidak dapat dipilih.')),
+      );
+    }
+  }
+
+  Future<void> _saveAdhoc() async {
+    final location = _adhocLocation;
+    if (_clientNameController.text.trim().length < 2) {
+      _showMessage('Nama client minimal 2 karakter.');
+      return;
+    }
+    if (_notesController.text.trim().length < 3) {
+      _showMessage('Keterangan kunjungan wajib diisi.');
+      return;
+    }
+    if (location == null) {
+      _showMessage('Tunggu lokasi GPS atau tekan refresh terlebih dahulu.');
+      return;
+    }
+    if (location.isMocked) {
+      _showMessage('Lokasi palsu terdeteksi. Nonaktifkan aplikasi mock GPS.');
+      return;
+    }
+    if (_adhocPhoto == null) {
+      _showMessage('Ambil foto atau pilih gambar bukti kunjungan.');
+      return;
+    }
+    setState(() => _savingAdhoc = true);
+    try {
+      await widget.auth.api.recordAdHocClientVisit(
+        clientName: _clientNameController.text,
+        notes: _notesController.text,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracyMeters: location.accuracyMeters,
+        photoBytes: _adhocPhoto!,
+        photoName: _adhocPhotoName,
+      );
+      if (!mounted) return;
+      _clientNameController.clear();
+      _notesController.clear();
+      setState(() {
+        _adhocPhoto = null;
+        _adhocPhotoName = 'kunjungan.jpg';
+      });
+      _showMessage('Kunjungan client berhasil disimpan.');
+      await _refreshAdhocLocation();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      _showMessage(messageForApiError(error));
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Kunjungan gagal disimpan. Coba lagi.');
+    } finally {
+      if (mounted) setState(() => _savingAdhoc = false);
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _load() async {
@@ -188,6 +318,8 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
       children: [
+        _adhocForm(),
+        const SizedBox(height: 18),
         const Text(
           'Jadwal hari ini',
           style: TextStyle(
@@ -242,6 +374,197 @@ class _ClientVisitsScreenState extends State<ClientVisitsScreen> {
         message,
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 12, color: AppColors.muted),
+      ),
+    );
+  }
+
+  Widget _adhocForm() {
+    final location = _adhocLocation;
+    final accurate = (location?.accuracyMeters ?? 999) <= 50;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Catat Kunjungan Client',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+              color: AppColors.ink,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Kunjungan langsung tanpa jadwal. Lokasi GPS, nama client, catatan, dan foto wajib diisi.',
+            style: TextStyle(fontSize: 11, height: 1.4, color: AppColors.muted),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('adhoc-client-name'),
+            controller: _clientNameController,
+            textInputAction: TextInputAction.next,
+            maxLength: 160,
+            decoration: const InputDecoration(
+              labelText: 'Nama client / instansi',
+              hintText: 'Contoh: PT Nusantara Jaya',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('adhoc-notes'),
+            controller: _notesController,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 1000,
+            decoration: const InputDecoration(
+              labelText: 'Keterangan kunjungan',
+              hintText: 'Tujuan, hasil, PIC yang ditemui, atau kendala.',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            key: const Key('adhoc-gps-card'),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: location == null
+                  ? AppColors.yellowSoft
+                  : AppColors.greenSoft,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: location == null
+                    ? AppColors.yellowLine
+                    : AppColors.greenLine,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.my_location,
+                      size: 15,
+                      color: accurate
+                          ? AppColors.greenDark
+                          : AppColors.yellowInk,
+                    ),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'Lokasi GPS otomatis',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      key: const Key('adhoc-refresh-location'),
+                      onPressed: _locating ? null : _refreshAdhocLocation,
+                      icon: _locating
+                          ? const SizedBox.square(
+                              dimension: 12,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh, size: 15),
+                      label: const Text('Refresh'),
+                    ),
+                  ],
+                ),
+                Text(
+                  location == null
+                      ? (_adhocLocationError ?? 'Mengunci titik GPS perangkat…')
+                      : '${location.latitude.toStringAsFixed(6)}, '
+                            '${location.longitude.toStringAsFixed(6)}',
+                  key: const Key('adhoc-coordinates'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                    fontFeatures: tabularFigures,
+                  ),
+                ),
+                if (location != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'Akurasi ±${location.accuracyMeters.toStringAsFixed(0)} m · '
+                    '${accurate ? 'siap disimpan' : 'cari area lebih terbuka'}',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: accurate
+                          ? AppColors.greenDark
+                          : AppColors.yellowInk,
+                      fontFeatures: tabularFigures,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('adhoc-camera'),
+                  onPressed: _savingAdhoc ? null : _captureAdhocPhoto,
+                  icon: const Icon(Icons.photo_camera_outlined, size: 17),
+                  label: const Text('Kamera'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('adhoc-gallery'),
+                  onPressed: _savingAdhoc ? null : _pickAdhocPhoto,
+                  icon: const Icon(Icons.photo_library_outlined, size: 17),
+                  label: const Text('Galeri'),
+                ),
+              ),
+            ],
+          ),
+          if (_adhocPhoto != null) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Image.memory(
+                _adhocPhoto!,
+                key: const Key('adhoc-photo-preview'),
+                width: double.infinity,
+                height: 120,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: FilledButton.icon(
+              key: const Key('adhoc-save'),
+              onPressed: _savingAdhoc ? null : _saveAdhoc,
+              icon: _savingAdhoc
+                  ? const SizedBox.square(
+                      dimension: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.save_outlined, size: 17),
+              label: Text(_savingAdhoc ? 'Menyimpan…' : 'Simpan Kunjungan'),
+            ),
+          ),
+        ],
       ),
     );
   }

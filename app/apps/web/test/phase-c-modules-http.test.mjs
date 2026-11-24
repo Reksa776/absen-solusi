@@ -5,6 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, before } from "node:test";
+import ExcelJS from "exceljs";
 
 import {
   adminClient,
@@ -61,10 +62,10 @@ async function send(path, token, method = "GET", body) {
   return { response, body: await response.json().catch(() => ({})) };
 }
 
-async function sendPhoto(path, token, fields) {
+async function sendPhoto(path, token, fields, fileField = "photo") {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.set(key, value);
-  form.set("photo", new Blob([JPEG], { type: "image/jpeg" }), "kunjungan.jpg");
+  form.set(fileField, new Blob([JPEG], { type: "image/jpeg" }), "kunjungan.jpg");
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, connection: "close" },
@@ -345,6 +346,185 @@ test("C-1: client visit terjadwal, check-in/out GPS + foto, ringkasan, RBAC, iso
   });
   assert.ok(audit);
   assert.equal(audit.tenantId, tenantA.tenantId);
+});
+
+test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async () => {
+  const clientName = "PT Kunjungan Ad-hoc";
+  const created = await sendPhoto("/api/mobile/client-visits", employee.token, {
+    clientName,
+    notes: "Bertemu PIC untuk membahas renewal kontrak.",
+    latitude: "-6.21",
+    longitude: "106.82",
+    accuracy_meters: "8",
+  });
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.scheduleId, null);
+  assert.equal(created.body.clientId, null);
+  assert.equal(created.body.clientName, clientName);
+  assert.equal(created.body.type, "AD_HOC");
+  assert.ok(created.body.photoUrl);
+
+  const stored = await db.clientVisitLog.findUnique({ where: { id: created.body.id } });
+  assert.equal(stored.scheduleId, null);
+  assert.equal(stored.clientId, null);
+  assert.equal(stored.clientName, clientName);
+  assert.equal(stored.distanceMeters, null);
+  assert.equal(stored.isInsideRadius, null);
+
+  const logList = await send(
+    `/api/workspaces/${tenantA.tenantId}/client-visits/logs?from=${now.toISOString().slice(0, 10)}`,
+    tenantA.ownerToken,
+  );
+  assert.equal(logList.response.status, 200);
+  assert.ok(logList.body.logs.some((row) => row.id === created.body.id && row.clientName === clientName));
+
+  const exportResponse = await fetch(
+    `${baseUrl}/api/workspaces/${tenantA.tenantId}/client-visits/export.xlsx?from=${now.toISOString().slice(0, 10)}&to=${now.toISOString().slice(0, 10)}`,
+    { headers: { authorization: `Bearer ${tenantA.ownerToken}`, connection: "close" } },
+  );
+  assert.equal(exportResponse.status, 200);
+  assert.match(
+    exportResponse.headers.get("content-type") ?? "",
+    /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/,
+  );
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await exportResponse.arrayBuffer()));
+  const sheet = workbook.getWorksheet("Kunjungan Client");
+  assert.ok(sheet);
+  assert.equal(sheet.getRow(1).getCell(1).value, "No");
+  assert.equal(sheet.getRow(1).getCell(6).value, "Nama Client");
+  const rows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber > 1) rows.push(row.values);
+  });
+  const reportRow = rows.find((row) => row[6] === clientName);
+  assert.ok(reportRow, "baris kunjungan ad-hoc harus ada di XLSX");
+  assert.equal(reportRow[4], "Member");
+  assert.equal(reportRow[5], "Tanpa divisi");
+  assert.equal(reportRow[7], "-6.210000, 106.820000");
+  assert.equal(reportRow[8].text, "https://www.google.com/maps?q=-6.21,106.82");
+  assert.match(reportRow[10].text, /\/client-visits\/logs\/.+\/photo$/);
+
+  const foreignExport = await fetch(
+    `${baseUrl}/api/workspaces/${tenantA.tenantId}/client-visits/export.xlsx`,
+    { headers: { authorization: `Bearer ${tenantB.ownerToken}`, connection: "close" } },
+  );
+  assert.equal(foreignExport.status, 403);
+});
+
+test("C-1C: admin mencatat izin dan cuti dengan audit, cuti memotong saldo", async () => {
+  const patternId = randomUUID();
+  await db.workPattern.create({
+    data: {
+      id: patternId,
+      tenantId: tenantA.tenantId,
+      name: "Pola Uji Admin",
+      timezone: "Asia/Jakarta",
+      days: {
+        create: [1, 2, 3, 4, 5].map((dayOfWeek) => ({
+          id: randomUUID(),
+          dayOfWeek,
+          isWorkday: true,
+          startTime: "09:00",
+          endTime: "17:00",
+        })),
+      },
+    },
+  });
+  await db.workPatternAssignment.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      memberId: otherEmployee.memberId,
+      workPatternId: patternId,
+    },
+  });
+  await db.workspaceHoliday.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      date: new Date("2026-12-02T00:00:00.000Z"),
+      name: "Libur uji cuti",
+    },
+  });
+
+  const permit = await sendPhoto(
+    `/api/workspaces/${tenantA.tenantId}/permits`,
+    tenantA.ownerToken,
+    {
+      memberId: otherEmployee.memberId,
+      permitType: "DINAS",
+      startDate: "2026-12-08",
+      endDate: "2026-12-08",
+      reason: "Menghadiri rapat koordinasi dinas di luar kantor.",
+      status: "APPROVED",
+    },
+    "proof",
+  );
+  assert.equal(permit.response.status, 201, JSON.stringify(permit.body));
+  assert.equal(permit.body.status, "APPROVED");
+  assert.equal(permit.body.memberId, otherEmployee.memberId);
+  assert.equal(permit.body.hasProof, true);
+  assert.ok(permit.body.proofUrl);
+  assert.equal(
+    await db.inAppNotification.count({
+      where: { tenantId: tenantA.tenantId, memberId: otherEmployee.memberId, type: "PERMIT_APPROVED" },
+    }),
+    1,
+  );
+  assert.ok(
+    await db.auditLog.findFirst({
+      where: { action: "permit.admin_create", resourceId: permit.body.id, tenantId: tenantA.tenantId },
+    }),
+  );
+
+  const leave = await send(
+    `/api/workspaces/${tenantA.tenantId}/leave`,
+    tenantA.ownerToken,
+    "POST",
+    {
+      memberId: otherEmployee.memberId,
+      leaveType: "CUTI_TAHUNAN",
+      startDate: "2026-12-01",
+      endDate: "2026-12-03",
+      reason: "Cuti keluarga yang sudah disetujui secara langsung oleh admin.",
+      status: "APPROVED",
+    },
+  );
+  assert.equal(leave.response.status, 201, JSON.stringify(leave.body));
+  assert.equal(leave.body.status, "APPROVED");
+  assert.equal(leave.body.memberId, otherEmployee.memberId);
+  assert.equal(leave.body.workingDays, 2);
+  const balance = await db.memberLeaveBalance.findFirst({
+    where: { tenantId: tenantA.tenantId, memberId: otherEmployee.memberId, year: 2026 },
+  });
+  assert.equal(balance?.usedDays, 2);
+  assert.equal(
+    await db.inAppNotification.count({
+      where: { tenantId: tenantA.tenantId, memberId: otherEmployee.memberId, type: "LEAVE_APPROVED" },
+    }),
+    1,
+  );
+  assert.ok(
+    await db.auditLog.findFirst({
+      where: { action: "leave.admin_create", resourceId: leave.body.id, tenantId: tenantA.tenantId },
+    }),
+  );
+
+  const employeeDenied = await send(
+    `/api/workspaces/${tenantA.tenantId}/permits`,
+    employee.token,
+    "POST",
+    {
+      memberId: employee.memberId,
+      permitType: "SAKIT",
+      startDate: "2026-12-10",
+      endDate: "2026-12-10",
+      reason: "Percobaan input izin tanpa izin admin.",
+      status: "APPROVED",
+    },
+  );
+  assert.equal(employeeDenied.response.status, 403);
 });
 
 test("C-2: proyeksi pekerjaan, progres, kendala, review atasan, RBAC dan tenant", async () => {

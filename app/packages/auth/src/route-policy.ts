@@ -479,6 +479,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "attendance.read",
   },
+  "/api/workspaces/:id/client-visits/export.xlsx": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
   "/api/workspaces/:id/client-visits/logs/:logId/review": {
     kind: "permission",
     permission: "member.manage",

@@ -14,7 +14,7 @@ export default async function ClientVisitSummaryPage({ params, searchParams }: {
   const { summary, insights } = await getClientVisitInsights({ ctx, workspaceId: id, from: query.from, to: query.to });
   return (
     <main className="page">
-      <div className="page-head"><div><p className="eyebrow">Kunjungan client</p><h1 className="page-title">Ringkasan &amp; AI insight</h1><p className="page-subtitle">Periode {summary.from} s/d {summary.to} · analisis deterministik dari data kunjungan riil.</p></div><a className="btn btn--secondary" href={`/workspaces/${id}/client-visits/logs`}>Buka log</a></div>
+      <div className="page-head"><div><p className="eyebrow">Kunjungan client</p><h1 className="page-title">Ringkasan &amp; AI insight</h1><p className="page-subtitle">Periode {summary.from} s/d {summary.to} · analisis deterministik dari data kunjungan riil.</p></div><div className="btn-row"><a className="btn btn--primary" href={`/api/workspaces/${id}/client-visits/export.xlsx?from=${summary.from}&to=${summary.to}`}>Download Excel (.xlsx)</a><a className="btn btn--secondary" href={`/workspaces/${id}/client-visits/logs`}>Buka log</a></div></div>
       <form method="get" className="toolbar"><label className="field">Dari<input type="date" name="from" defaultValue={summary.from} /></label><label className="field">Sampai<input type="date" name="to" defaultValue={summary.to} /></label><button className="btn btn--primary">Tampilkan</button></form>
       <section className="kpi-grid">
         <article className="kpi"><div className="kpi-label">Jadwal</div><div className="kpi-value">{summary.totalSchedules}</div><div className="kpi-foot">{summary.completedSchedules} selesai</div></article>

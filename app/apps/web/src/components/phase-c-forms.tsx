@@ -296,13 +296,12 @@ export function ScheduleManager({
 
 type LogRow = {
   id: string;
-  scheduleId: string;
   clientName: string;
   memberName: string;
   type: string;
   timestampServer: string;
-  distanceMeters: number;
-  isInsideRadius: boolean;
+  distanceMeters: number | null;
+  isInsideRadius: boolean | null;
   notes: string | null;
   durationMinutes: number | null;
   validationStatus: string;
@@ -350,10 +349,10 @@ export function VisitLogTable({
                 <td>{log.clientName}</td>
                 <td>{log.memberName}</td>
                 <td><span className="badge badge--neutral">{log.type}</span></td>
-                <td className={log.isInsideRadius ? "num" : "num"} style={{ color: log.isInsideRadius ? undefined : "var(--danger)" }}>{log.distanceMeters} m</td>
+                <td className="num" style={{ color: log.isInsideRadius === false ? "var(--danger)" : undefined }}>{log.distanceMeters === null ? "—" : `${log.distanceMeters} m`}</td>
                 <td className="num">{log.durationMinutes === null ? "—" : `${log.durationMinutes} m`}</td>
                 <td><span className={log.validationStatus === "OUT_OF_RADIUS" ? "badge badge--yellow" : log.validationStatus === "VOID" ? "badge badge--red" : "badge badge--green"}>{log.validationStatus}</span></td>
-                <td>{log.hasPhoto ? <a href={`/api/workspaces/${workspaceId}/client-visits/logs/${log.id}/photo`} target="_blank" rel="noreferrer">Lihat foto</a> : "—"}</td>
+                <td>{log.hasPhoto ? <a href={`/api/workspaces/${workspaceId}/client-visits/logs/${log.id}/photo`} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem" }}><img src={`/api/workspaces/${workspaceId}/client-visits/logs/${log.id}/photo`} alt={`Foto kunjungan ${log.clientName}`} width={38} height={38} loading="lazy" style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 6, border: "1px solid #E2E8E4" }} />Lihat foto</a> : "—"}</td>
                 {canManage ? (
                   <td><div className="btn-row"><button className="btn btn--secondary btn--sm" disabled={busyId === log.id} onClick={() => review(log.id, "VALID")}>Valid</button><button className="btn btn--danger btn--sm" disabled={busyId === log.id} onClick={() => review(log.id, "VOID")}>Void</button></div></td>
                 ) : null}

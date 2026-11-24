@@ -111,6 +111,14 @@ function parseType(value: unknown): LeaveType {
   return value.trim().toUpperCase() as LeaveType;
 }
 
+function parseAdminCreateStatus(value: unknown): "PENDING" | "APPROVED" {
+  const status = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (status !== "PENDING" && status !== "APPROVED") {
+    throw new HttpError(400, "INVALID_STATUS", "Status awal cuti harus PENDING atau APPROVED");
+  }
+  return status;
+}
+
 function parseYear(value: unknown, now: Date): number {
   if (value === undefined || value === null || `${value}`.trim() === "") {
     return now.getUTCFullYear();
@@ -499,6 +507,189 @@ export async function submitLeaveRequest(input: {
           resourceId: row.id,
           metadata: {
             leaveType,
+            startDate: day(startDate),
+            endDate: day(endDate),
+            workingDays,
+            reasonLength: reason.length,
+          },
+          ip: input.ip ?? null,
+          userAgent: input.userAgent ?? null,
+        },
+        tx,
+      );
+      return row;
+    }),
+  );
+  return toSummary(created);
+}
+
+export async function createLeaveRequestByAdmin(input: {
+  ctx: TenantContext;
+  workspaceId: string;
+  body: Record<string, unknown>;
+  ip?: string | null;
+  userAgent?: string | null;
+  now?: Date;
+}): Promise<LeaveRequestSummary> {
+  assertReview(input.ctx);
+  assertWorkspaceReadClaim(input.ctx, input.workspaceId);
+  const memberId = input.body.memberId;
+  if (typeof memberId !== "string" || !isUuid(memberId)) {
+    throw new HttpError(400, "INVALID_MEMBER", "Karyawan tidak valid");
+  }
+  const leaveType = parseType(input.body.leaveType);
+  const status = parseAdminCreateStatus(input.body.status);
+  const startDate = parseReportDay(
+    typeof input.body.startDate === "string" ? input.body.startDate : "",
+    "startDate",
+  );
+  const endDate = parseReportDay(
+    typeof input.body.endDate === "string" ? input.body.endDate : "",
+    "endDate",
+  );
+  if (endDate.getTime() < startDate.getTime()) {
+    throw new HttpError(400, "INVALID_DATE_RANGE", "Tanggal selesai tidak boleh sebelum mulai");
+  }
+  if ((endDate.getTime() - startDate.getTime()) / 86_400_000 > 180) {
+    throw new HttpError(400, "INVALID_DATE_RANGE", "Rentang cuti maksimal 181 hari");
+  }
+  const reason = typeof input.body.reason === "string" ? input.body.reason.trim() : "";
+  if (reason.length < LEAVE_REASON_MIN_LENGTH || reason.length > LEAVE_REASON_MAX_LENGTH) {
+    throw new HttpError(
+      400,
+      "INVALID_REASON",
+      `Alasan cuti ${LEAVE_REASON_MIN_LENGTH}-${LEAVE_REASON_MAX_LENGTH} karakter`,
+    );
+  }
+
+  const member = await withTenant(input.ctx, (db) =>
+    db.workspaceMember.findFirst({
+      where: { id: memberId, status: "ACTIVE" },
+      select: { id: true },
+    }),
+  );
+  if (!member) {
+    throw new HttpError(404, "MEMBER_NOT_FOUND", "Karyawan aktif tidak ditemukan");
+  }
+
+  const now = input.now ?? new Date();
+  const created = await withTenant(input.ctx, (db) =>
+    db.$transaction(async (tx) => {
+      const [holidays, patternAssignment] = await Promise.all([
+        tx.workspaceHoliday.findMany({
+          where: { date: { gte: startDate, lte: endDate } },
+          select: { date: true },
+        }),
+        tx.workPatternAssignment.findFirst({
+          where: { memberId },
+          include: { workPattern: { include: { days: true } } },
+        }),
+      ]);
+      const patternIndex = createWorkPatternRuleIndex(
+        patternAssignment
+          ? [{ memberId, workPattern: patternAssignment.workPattern }]
+          : [],
+      );
+      const workingDays = calculateWorkingDays(
+        startDate,
+        endDate,
+        new Set(holidays.map((row) => day(row.date))),
+        workPatternWorkingDays(patternIndex, memberId),
+      );
+      if (workingDays <= 0) {
+        throw new HttpError(400, "NO_WORKING_DAYS", "Rentang cuti tidak mencakup hari kerja");
+      }
+      const overlap = await tx.leaveRequest.findFirst({
+        where: {
+          memberId,
+          status: { in: ["PENDING", "APPROVED"] },
+          startDate: { lte: endDate },
+          endDate: { gte: startDate },
+        },
+        select: { id: true },
+      });
+      if (overlap) {
+        throw new HttpError(409, "LEAVE_OVERLAP", "Sudah ada cuti pada rentang tanggal ini");
+      }
+      const year = startDate.getUTCFullYear();
+      let balance:
+        | { id: string; entitledDays: number; usedDays: number }
+        | null = null;
+      if (leaveType === "CUTI_TAHUNAN") {
+        const policy = await tx.leavePolicy.findFirst();
+        const quota = policy?.annualQuotaDays ?? DEFAULT_ANNUAL_QUOTA_DAYS;
+        balance = await tx.memberLeaveBalance.findFirst({
+          where: { memberId, year },
+          select: { id: true, entitledDays: true, usedDays: true },
+        });
+        if ((balance?.entitledDays ?? quota) - (balance?.usedDays ?? 0) < workingDays) {
+          throw new HttpError(
+            409,
+            "INSUFFICIENT_LEAVE_BALANCE",
+            "Sisa kuota cuti tahunan tidak mencukupi",
+          );
+        }
+      }
+      const row = await tx.leaveRequest.create({
+        data: {
+          id: randomUUID(),
+          tenantId: input.ctx.tenantId,
+          memberId,
+          leaveType,
+          startDate,
+          endDate,
+          workingDays,
+          reason,
+          status,
+          reviewedByMemberId: status === "APPROVED" ? input.ctx.memberId : null,
+          reviewedAt: status === "APPROVED" ? now : null,
+        },
+        include: INCLUDE,
+      });
+      if (status === "APPROVED" && leaveType === "CUTI_TAHUNAN") {
+        const policy = await tx.leavePolicy.findFirst();
+        const entitled = balance?.entitledDays ?? policy?.annualQuotaDays ?? DEFAULT_ANNUAL_QUOTA_DAYS;
+        if (balance) {
+          await tx.memberLeaveBalance.update({
+            where: { tenantId_id: { tenantId: input.ctx.tenantId, id: balance.id } },
+            data: { usedDays: balance.usedDays + workingDays },
+          });
+        } else {
+          await tx.memberLeaveBalance.create({
+            data: {
+              id: randomUUID(),
+              tenantId: input.ctx.tenantId,
+              memberId,
+              year,
+              entitledDays: entitled,
+              usedDays: workingDays,
+            },
+          });
+        }
+      }
+      if (status === "APPROVED") {
+        await createInAppNotification(tx, {
+          tenantId: input.ctx.tenantId,
+          memberId,
+          type: "LEAVE_APPROVED",
+          title: "Permohonan cuti dicatat dan disetujui",
+          body: `Admin mencatat cuti ${leaveType} untuk ${day(startDate)} sampai ${day(endDate)} (${workingDays} hari kerja).`,
+          linkUrl: `/workspaces/${input.ctx.tenantId}/leave`,
+        });
+      }
+      await writeAudit(
+        {
+          tenantId: input.ctx.tenantId,
+          actorType: "USER",
+          actorUserId: input.ctx.userId,
+          actorMemberId: input.ctx.memberId,
+          action: "leave.admin_create",
+          resourceType: "leave_request",
+          resourceId: row.id,
+          metadata: {
+            memberId,
+            leaveType,
+            status,
             startDate: day(startDate),
             endDate: day(endDate),
             workingDays,

@@ -34,7 +34,7 @@ export default async function ClientVisitsPage({ params }: { params: Promise<{ i
   }));
   return (
     <main className="page">
-      <div className="page-head"><div><p className="eyebrow">Kunjungan client</p><h1 className="page-title">Jadwal kunjungan</h1><p className="page-subtitle">Rencanakan kunjungan lapangan per karyawan dan pantau penyelesaiannya.</p></div><span className="badge badge--yellow"><span className="num">{schedules.filter((row) => row.status === "SCHEDULED").length}</span> terjadwal</span></div>
+      <div className="page-head"><div><p className="eyebrow">Kunjungan client</p><h1 className="page-title">Jadwal kunjungan</h1><p className="page-subtitle">Rencanakan kunjungan lapangan per karyawan dan pantau penyelesaiannya.</p></div><div className="btn-row"><a className="btn btn--secondary" href={`/api/workspaces/${id}/client-visits/export.xlsx`}>Download Excel (.xlsx)</a><span className="badge badge--yellow"><span className="num">{schedules.filter((row) => row.status === "SCHEDULED").length}</span> terjadwal</span></div></div>
       <ScheduleManager
         workspaceId={id}
         clients={clients.map((row) => ({ id: row.id, name: row.name }))}

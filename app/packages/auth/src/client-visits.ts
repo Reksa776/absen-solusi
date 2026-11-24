@@ -20,6 +20,7 @@ const DAY_MS = 86_400_000;
 export const CLIENT_VISIT_RADIUS_MIN = 10;
 export const CLIENT_VISIT_RADIUS_MAX = 10_000;
 export const CLIENT_VISIT_TYPES = ["CHECK_IN", "CHECK_OUT"] as const;
+export const CLIENT_VISIT_AD_HOC_TYPE = "AD_HOC";
 export const CLIENT_VISIT_VALIDATION_STATUSES = ["VALID", "OUT_OF_RADIUS", "VOID"] as const;
 export const CLIENT_VISIT_SCHEDULE_STATUSES = [
   "SCHEDULED",
@@ -42,8 +43,8 @@ export type ClientSummary = {
 
 export type ClientVisitLogSummary = {
   id: string;
-  scheduleId: string;
-  clientId: string;
+  scheduleId: string | null;
+  clientId: string | null;
   clientName: string;
   memberId: string;
   memberName: string;
@@ -52,13 +53,25 @@ export type ClientVisitLogSummary = {
   latitude: number;
   longitude: number;
   accuracyMeters: number;
-  distanceMeters: number;
-  isInsideRadius: boolean;
+  distanceMeters: number | null;
+  isInsideRadius: boolean | null;
   photoUrl: string | null;
   notes: string | null;
   durationMinutes: number | null;
   validationStatus: string;
   reviewedAt: string | null;
+};
+
+export type ClientVisitExportRow = {
+  id: string;
+  timestampServer: string;
+  memberName: string;
+  divisionName: string | null;
+  clientName: string;
+  latitude: number;
+  longitude: number;
+  notes: string | null;
+  hasPhoto: boolean;
 };
 
 export type ClientVisitScheduleSummary = {
@@ -233,29 +246,30 @@ function toClient(row: {
 
 function toLog(row: {
   id: string;
-  scheduleId: string;
-  clientId: string;
+  scheduleId: string | null;
+  clientId: string | null;
+  clientName: string | null;
   memberId: string;
   type: string;
   timestampServer: Date;
   latitude: number;
   longitude: number;
   accuracyMeters: number;
-  distanceMeters: number;
-  isInsideRadius: boolean;
+  distanceMeters: number | null;
+  isInsideRadius: boolean | null;
   photoUrl: string | null;
   notes: string | null;
   durationMinutes: number | null;
   validationStatus: string;
   reviewedAt: Date | null;
-  client: { name: string };
+  client: { name: string } | null;
   member: { user: { name: string } };
 }): ClientVisitLogSummary {
   return {
     id: row.id,
     scheduleId: row.scheduleId,
     clientId: row.clientId,
-    clientName: row.client.name,
+    clientName: row.client?.name ?? row.clientName ?? "Kunjungan client",
     memberId: row.memberId,
     memberName: row.member.user.name,
     type: row.type,
@@ -883,6 +897,98 @@ export async function recordClientVisit(input: {
   return toLog(row);
 }
 
+export async function recordAdHocClientVisit(input: {
+  ctx: TenantContext;
+  clientName: unknown;
+  latitude: unknown;
+  longitude: unknown;
+  accuracyMeters: unknown;
+  notes: unknown;
+  photo?: ClientVisitPhotoInput | undefined;
+  now?: Date;
+  ip?: string | null;
+  userAgent?: string | null;
+}): Promise<ClientVisitLogSummary> {
+  if (
+    !input.ctx.permissions.includes("workspace.read") &&
+    !input.ctx.permissions.includes("workspace.manage")
+  ) {
+    throw new HttpError(403, "FORBIDDEN", "Permission tidak mencukupi");
+  }
+  const clientName = text(input.clientName, "Nama client", 2, 160) as string;
+  const notes = text(input.notes, "Keterangan kunjungan", 3, 1000) as string;
+  const latitude = coordinate(input.latitude, "Latitude", -90, 90);
+  const longitude = coordinate(input.longitude, "Longitude", -180, 180);
+  const accuracyMeters = Number(input.accuracyMeters);
+  if (!Number.isFinite(accuracyMeters) || accuracyMeters < 0 || accuracyMeters > 100_000) {
+    throw new HttpError(400, "INVALID_ACCURACY", "Akurasi GPS tidak valid");
+  }
+  const settings = await withTenant(input.ctx, (db) =>
+    db.clientVisitSetting.findFirst(),
+  );
+  if ((settings?.requirePhoto ?? true) && !input.photo) {
+    throw new HttpError(400, "VISIT_PHOTO_REQUIRED", "Foto bukti kunjungan wajib diunggah");
+  }
+
+  const logId = randomUUID();
+  const stored = input.photo ? await storeClientVisitPhoto(logId, input.photo) : null;
+  const now = input.now ?? new Date();
+  const row = await withTenant(input.ctx, (db) =>
+    db.$transaction(async (tx) => {
+      const created = await tx.clientVisitLog.create({
+        data: {
+          id: logId,
+          tenantId: input.ctx.tenantId,
+          scheduleId: null,
+          clientId: null,
+          clientName,
+          memberId: input.ctx.memberId,
+          type: CLIENT_VISIT_AD_HOC_TYPE,
+          timestampServer: now,
+          latitude,
+          longitude,
+          accuracyMeters,
+          distanceMeters: null,
+          isInsideRadius: null,
+          ...(stored
+            ? {
+                photoUrl: `/api/mobile/client-visits/logs/${logId}/photo`,
+                photoHash: stored.photoHash,
+                photoFileName: stored.photoFileName,
+                photoContentType: stored.photoContentType,
+              }
+            : {}),
+          notes,
+          validationStatus: "VALID",
+        },
+        include: LOG_INCLUDE,
+      });
+      await writeAudit(
+        {
+          tenantId: input.ctx.tenantId,
+          actorType: "USER",
+          actorUserId: input.ctx.userId,
+          actorMemberId: input.ctx.memberId,
+          action: "client_visit.adhoc_create",
+          resourceType: "client_visit_log",
+          resourceId: logId,
+          metadata: {
+            clientName,
+            accuracyMeters,
+            notesLength: notes.length,
+            hasPhoto: Boolean(stored),
+          },
+          ip: input.ip ?? null,
+          userAgent: input.userAgent ?? null,
+        },
+        tx,
+      );
+      return created;
+    }),
+  );
+  return toLog(row);
+}
+
 export async function listWorkspaceClientVisitLogs(input: {
   ctx: TenantContext;
   workspaceId: string;
@@ -925,6 +1031,59 @@ export async function listWorkspaceClientVisitLogs(input: {
     }),
   );
   return rows.map(toLog);
+}
+
+export async function listWorkspaceClientVisitExportRows(input: {
+  ctx: TenantContext;
+  workspaceId: string;
+  from?: string | undefined;
+  to?: string | undefined;
+  memberId?: string | undefined;
+}): Promise<ClientVisitExportRow[]> {
+  assertAttendanceRead(input.ctx);
+  assertWorkspaceReadClaim(input.ctx, input.workspaceId);
+  const from = input.from ? parseReportDay(input.from, "from") : undefined;
+  const to = input.to ? parseReportDay(input.to, "to") : undefined;
+  if (from && to && from.getTime() > to.getTime()) {
+    throw new HttpError(400, "INVALID_DATE_RANGE", "Rentang tanggal tidak valid");
+  }
+  const rows = await withTenant(input.ctx, (db) =>
+    db.clientVisitLog.findMany({
+      where: {
+        ...(from || to
+          ? {
+              timestampServer: {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lt: addDays(to, 1) } : {}),
+              },
+            }
+          : {}),
+        ...(input.memberId ? { memberId: input.memberId } : {}),
+      },
+      include: {
+        client: { select: { name: true } },
+        member: {
+          select: {
+            user: { select: { name: true } },
+            division: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: [{ timestampServer: "asc" }, { id: "asc" }],
+      take: 5000,
+    }),
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    timestampServer: row.timestampServer.toISOString(),
+    memberName: row.member.user.name,
+    divisionName: row.member.division?.name ?? null,
+    clientName: row.client?.name ?? row.clientName ?? "Kunjungan client",
+    latitude: row.latitude,
+    longitude: row.longitude,
+    notes: row.notes,
+    hasPhoto: Boolean(row.photoFileName),
+  }));
 }
 
 export async function reviewClientVisitLog(input: {
@@ -1045,7 +1204,7 @@ export async function getClientVisitSummary(input: {
     for (const log of checkIns) {
       totalVisits += 1;
       entry.visits += 1;
-      if (!log.isInsideRadius) {
+      if (log.isInsideRadius === false) {
         outOfRadiusVisits += 1;
         entry.outOfRadius += 1;
       }
