@@ -8,8 +8,10 @@ abstract final class AppColors {
   static const Color line = Color(0xFFE2E8E4);
   static const Color tableHead = Color(0xFFF1F5F2);
 
+  static const Color teal = Color(0xFF0F766E);
   static const Color green = Color(0xFF15803D);
   static const Color greenDark = Color(0xFF166534);
+  static const Color crimson = Color(0xFFDC2626);
   static const Color greenSoft = Color(0xFFDCFCE7);
   static const Color greenLine = Color(0xFFBBF7D0);
 

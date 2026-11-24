@@ -3,18 +3,14 @@ import { randomUUID } from "node:crypto";
 import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/database";
 
 import { HttpError } from "./http.js";
+import {
+  compareWorkPatternDays,
+  WORK_PATTERN_DAY_NUMBERS,
+  workPatternDayLabel,
+} from "./work-pattern-schedule.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
-const DAY_NAMES = [
-  "Senin",
-  "Selasa",
-  "Rabu",
-  "Kamis",
-  "Jumat",
-  "Sabtu",
-  "Minggu",
-] as const;
 
 export type WorkPatternDaySummary = {
   id: string;
@@ -90,17 +86,14 @@ function assertTimezone(value: unknown): string {
 }
 
 function defaultDays(): DayInput[] {
-  return Array.from({ length: 7 }, (_, index) => {
-    const dayOfWeek = index + 1;
-    return {
-      dayOfWeek,
-      isWorkday: dayOfWeek <= 5,
-      startTime: "09:00",
-      endTime: "17:00",
-      earliestCheckInMinutes: 120,
-      lateToleranceMinutes: 15,
-    };
-  });
+  return WORK_PATTERN_DAY_NUMBERS.map((dayOfWeek) => ({
+    dayOfWeek,
+    isWorkday: dayOfWeek >= 1 && dayOfWeek <= 5,
+    startTime: "09:00",
+    endTime: "17:00",
+    earliestCheckInMinutes: 120,
+    lateToleranceMinutes: 15,
+  }));
 }
 
 function parseDays(value: unknown): DayInput[] {
@@ -114,7 +107,7 @@ function parseDays(value: unknown): DayInput[] {
       throw new HttpError(400, "INVALID_DAYS", "Format hari pola kerja tidak valid");
     }
     const row = raw as Record<string, unknown>;
-    const dayOfWeek = boundedInt(row.dayOfWeek, "Hari", 1, 7);
+    const dayOfWeek = boundedInt(row.dayOfWeek, "Hari", 0, 6);
     if (seen.has(dayOfWeek)) {
       throw new HttpError(400, "INVALID_DAYS", "Hari pola kerja tidak boleh duplikat");
     }
@@ -141,7 +134,7 @@ function parseDays(value: unknown): DayInput[] {
   if (seen.size !== 7) {
     throw new HttpError(400, "INVALID_DAYS", "Setiap hari Senin-Minggu wajib diisi");
   }
-  return days.sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+  return days.sort(compareWorkPatternDays);
 }
 
 function toDay(row: {
@@ -156,7 +149,7 @@ function toDay(row: {
   return {
     id: row.id,
     dayOfWeek: row.dayOfWeek,
-    dayName: DAY_NAMES[row.dayOfWeek - 1] ?? `Hari ${row.dayOfWeek}`,
+    dayName: workPatternDayLabel(row.dayOfWeek),
     isWorkday: row.isWorkday,
     startTime: row.startTime,
     endTime: row.endTime,
@@ -181,14 +174,14 @@ function toPattern(row: {
     timezone: row.timezone,
     isActive: row.isActive,
     assignedCount: row._count?.assignments ?? 0,
-    days: row.days.map(toDay),
+    days: [...row.days].sort(compareWorkPatternDays).map(toDay),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
 const PATTERN_INCLUDE = {
-  days: { orderBy: { dayOfWeek: "asc" as const } },
+  days: true,
   _count: { select: { assignments: true } },
 } as const;
 

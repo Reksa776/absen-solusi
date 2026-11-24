@@ -93,7 +93,7 @@ before(async () => {
   assignedEmployee = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER);
   photoDir = await mkdtemp(join(tmpdir(), "absensi-office-photo-"));
 
-  const port = 3400 + randomInt(400);
+  const port = 4400 + randomInt(400);
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(join(root, "node_modules", ".bin", "next"), ["start", "-p", String(port)], {
     cwd: join(root, "apps", "web"),

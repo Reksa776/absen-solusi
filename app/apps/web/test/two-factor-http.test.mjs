@@ -57,7 +57,7 @@ before(async () => {
     name: "Tenant 2FA",
     passwordHash: await hashPassword(PASSWORD),
   });
-  const port = 3800 + randomInt(400);
+  const port = 4600 + randomInt(300);
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(join(root, "node_modules", ".bin", "next"), ["start", "-p", String(port)], {
     cwd: join(root, "apps", "web"),

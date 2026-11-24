@@ -103,7 +103,7 @@ before(async () => {
     "2026-11-02T09:30:00.000Z",
   );
 
-  const port = 3400 + randomInt(400);
+  const port = 4400 + randomInt(400);
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(join(root, "node_modules", ".bin", "next"), ["start", "-p", String(port)], {
     cwd: join(root, "apps", "web"),

@@ -34,27 +34,25 @@ Map<String, dynamic> scheduleJson() {
       'workStart': '09:00',
       'workEnd': '17:00',
     },
-    'shift': {
-      'id': 's1',
-      'name': 'Reguler',
-      'startTime': '09:00',
-      'endTime': '17:00',
-      'lateToleranceMinutes': 15,
+    'workPattern': {
+      'id': 'p1',
+      'name': 'Pola kantor pusat',
+      'timezone': 'Asia/Jakarta',
     },
     'weekly': [
-      for (var day = 1; day <= 7; day++)
+      for (final entry in const [
+        (1, 'Senin'),
+        (2, 'Selasa'),
+        (3, 'Rabu'),
+        (4, 'Kamis'),
+        (5, 'Jumat'),
+        (6, 'Sabtu'),
+        (0, 'Minggu'),
+      ])
         {
-          'dayOfWeek': day,
-          'label': const [
-            'Senin',
-            'Selasa',
-            'Rabu',
-            'Kamis',
-            'Jumat',
-            'Sabtu',
-            'Minggu',
-          ][day - 1],
-          'isWorkday': day <= 5,
+          'dayOfWeek': entry.$1,
+          'label': entry.$2,
+          'isWorkday': entry.$1 >= 1 && entry.$1 <= 5,
           'startTime': '09:00',
           'endTime': '17:00',
           'lateToleranceMinutes': 15,
@@ -105,9 +103,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Jam Kerja / Shift'), findsOneWidget);
+    expect(find.text('Jam Kerja Mingguan'), findsOneWidget);
     expect(find.byKey(const Key('schedule-day-1')), findsOneWidget);
-    expect(find.byKey(const Key('schedule-day-7')), findsOneWidget);
+    expect(find.byKey(const Key('schedule-day-0')), findsOneWidget);
     expect(find.text('Hari kerja'), findsNWidgets(5));
     expect(find.text('Libur rutin'), findsNWidgets(2));
     expect(find.text('09:00–17:00'), findsWidgets);

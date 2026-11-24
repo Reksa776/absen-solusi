@@ -19,7 +19,7 @@ import {
   recordAttendance,
 } from "./attendance.js";
 import { HttpError } from "./http.js";
-import { lateMinutesForShift } from "./shifts.js";
+import { lateMinutesForWorkPattern } from "./work-pattern-schedule.js";
 import { adminClient, resetDatabase, seedMember, seedTenant } from "./test-support.js";
 
 let db: PrismaClient = null as unknown as PrismaClient;
@@ -124,12 +124,16 @@ test("A1: check-in dalam radius menulis attendance, foto filesystem, dan audit a
   assert.equal(audit.ipHash?.length, 32);
   assert.deepEqual(Object.keys(audit.metadata as object).sort(), [
     "accuracy_meters",
+    "attendance_status",
     "distance_meters",
+    "early_leave_minutes",
+    "late_minutes",
     "office_id",
     "offline_synced",
     "suspicious_reasons",
     "wfh_request_id",
     "work_mode",
+    "work_pattern_id",
   ]);
   const serialized = JSON.stringify(audit.metadata);
   assert.equal(serialized.includes(String(OFFICE.latitude)), false);
@@ -262,25 +266,36 @@ test("A8: kecepatan tidak wajar menandai is_suspicious dan alasan audit", async 
   );
 });
 
-test("A10: shift overnight mengaitkan check-out pagi H+1 ke workDate H", async () => {
+test("A10: Pola Kerja overnight mengaitkan check-out pagi H+1 ke workDate H", async () => {
   const tenant = await tenantWithOffice("Overnight");
-  const shiftId = randomUUID();
-  await db.workShift.create({
+  const patternId = randomUUID();
+  await db.workPattern.create({
     data: {
-      id: shiftId,
+      id: patternId,
       tenantId: tenant.tenantId,
       name: "Malam",
-      startTime: "22:00",
-      endTime: "06:00",
-      lateToleranceMinutes: 15,
+      timezone: "Asia/Jakarta",
+      days: {
+        create: [
+          {
+            id: randomUUID(),
+            dayOfWeek: 5,
+            isWorkday: true,
+            startTime: "22:00",
+            endTime: "06:00",
+            earliestCheckInMinutes: 120,
+            lateToleranceMinutes: 15,
+          },
+        ],
+      },
     },
   });
-  await db.memberShift.create({
+  await db.workPatternAssignment.create({
     data: {
       id: randomUUID(),
       tenantId: tenant.tenantId,
       memberId: tenant.ownerMemberId,
-      shiftId,
+      workPatternId: patternId,
     },
   });
 
@@ -304,11 +319,11 @@ test("A10: shift overnight mengaitkan check-out pagi H+1 ke workDate H", async (
 
   const rule = { startTime: "22:00", endTime: "06:00", lateToleranceMinutes: 15 };
   assert.equal(
-    lateMinutesForShift(new Date("2026-11-20T15:30:00.000Z"), rule, "Asia/Jakarta"),
+    lateMinutesForWorkPattern(new Date("2026-11-20T15:30:00.000Z"), rule, "Asia/Jakarta"),
     15,
   );
   assert.equal(
-    lateMinutesForShift(new Date("2026-11-20T17:30:00.000Z"), rule, "Asia/Jakarta"),
+    lateMinutesForWorkPattern(new Date("2026-11-20T17:30:00.000Z"), rule, "Asia/Jakarta"),
     135,
   );
 });

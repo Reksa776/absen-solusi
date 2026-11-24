@@ -298,7 +298,7 @@ textarea {
 .pattern-day-head,
 .pattern-day-row {
   display: grid;
-  grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)) 4.5rem;
+  grid-template-columns: 5.5rem repeat(4, minmax(0, 1fr)) 6.2rem;
   align-items: center;
   gap: 0.45rem;
 }
@@ -321,6 +321,48 @@ textarea {
 
 .pattern-day-row > strong {
   font-size: 0.8rem;
+}
+
+.pattern-day-row input {
+  font-variant-numeric: tabular-nums;
+}
+
+.pattern-day-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.pattern-toggle {
+  appearance: none;
+  border: 1px solid #e2e8e4;
+  background: #ffffff;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 0.28rem 0.48rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pattern-toggle--active {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #14532d;
+}
+
+.pattern-toggle--off {
+  background: #fef9c3;
+  border-color: #fde68a;
+  color: #422006;
+}
+
+.pattern-day-row input:focus-visible,
+.pattern-toggle:focus-visible {
+  outline: 2px solid #eab308;
+  outline-offset: 1px;
 }
 
 .field--compact {

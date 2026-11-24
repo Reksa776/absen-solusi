@@ -72,7 +72,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.canvas,
-      appBar: AppBar(title: const Text('Jadwal Kerja & Hari Libur')),
+      appBar: AppBar(title: const Text('Pola Kerja & Hari Libur')),
       body: _body(),
     );
   }
@@ -107,7 +107,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       children: [
         _summaryCard(schedule),
         const SizedBox(height: 16),
-        _sectionTitle('Jam Kerja / Shift', Icons.schedule_outlined),
+        _sectionTitle('Jam Kerja Mingguan', Icons.schedule_outlined),
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
@@ -200,7 +200,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      schedule.shiftName,
+                      schedule.workPatternName,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,

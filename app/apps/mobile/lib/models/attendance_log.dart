@@ -16,6 +16,10 @@ class AttendanceLog {
     this.approvalStatus = 'APPROVED',
     this.currentApprovalLevel = 0,
     this.rejectionReason,
+    this.attendanceStatus,
+    this.lateMinutes = 0,
+    this.earlyLeaveMinutes = 0,
+    this.workPatternId,
   });
 
   factory AttendanceLog.fromJson(Map<String, dynamic> json) {
@@ -39,6 +43,10 @@ class AttendanceLog {
       currentApprovalLevel:
           (json['currentApprovalLevel'] as num?)?.toInt() ?? 0,
       rejectionReason: json['rejectionReason'] as String?,
+      attendanceStatus: json['attendanceStatus'] as String?,
+      lateMinutes: (json['lateMinutes'] as num?)?.toInt() ?? 0,
+      earlyLeaveMinutes: (json['earlyLeaveMinutes'] as num?)?.toInt() ?? 0,
+      workPatternId: json['workPatternId'] as String?,
     );
   }
 
@@ -58,7 +66,14 @@ class AttendanceLog {
   final String approvalStatus;
   final int currentApprovalLevel;
   final String? rejectionReason;
+  final String? attendanceStatus;
+  final int lateMinutes;
+  final int earlyLeaveMinutes;
+  final String? workPatternId;
 
+  bool get isLate => attendanceStatus == 'LATE' || lateMinutes > 0;
+  bool get isEarlyLeave =>
+      attendanceStatus == 'EARLY_LEAVE' || earlyLeaveMinutes > 0;
   bool get isCheckIn => type == 'CHECK_IN';
   bool get isCheckOut => type == 'CHECK_OUT';
   bool get isOutOfTown => workMode == 'OUT_OF_TOWN';

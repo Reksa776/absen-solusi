@@ -80,10 +80,7 @@ class AttendanceMock {
           if (checkInStatus != 201) {
             return http.Response(
               jsonEncode({
-                'error': {
-                  'code': checkInCode,
-                  'message': 'Absensi ditolak.',
-                },
+                'error': {'code': checkInCode, 'message': 'Absensi ditolak.'},
               }),
               checkInStatus,
             );
@@ -112,12 +109,10 @@ class AttendanceMock {
                 'workStart': '09:00',
                 'workEnd': '17:00',
               },
-              'shift': {
-                'id': 's1',
-                'name': 'Reguler',
-                'startTime': '09:00',
-                'endTime': '17:00',
-                'lateToleranceMinutes': 15,
+              'workPattern': {
+                'id': 'p1',
+                'name': 'Pola kantor',
+                'timezone': 'Asia/Jakarta',
               },
               'weekly': [],
               'holidays': [],
@@ -155,7 +150,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Status hari ini'), findsOneWidget);
-    expect(find.text('Check-in sekarang'), findsOneWidget);
+    expect(find.text('Presensi Masuk'), findsOneWidget);
     expect(find.byKey(const Key('home-office')), findsNothing);
     // GPS tidak diminta sebelum tombol absen ditekan.
     expect(location.calls, 0);
@@ -190,7 +185,9 @@ void main() {
 
     expect(find.byKey(const Key('accuracy-warning')), findsOneWidget);
     expect(
-      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      mock.requests.any(
+        (request) => request.url.path == '/api/attendance/check-in',
+      ),
       isFalse,
     );
   });
@@ -199,9 +196,8 @@ void main() {
     final mock = AttendanceMock();
     await mock.init();
     final location = FakeLocation(
-      () async => throw const LocationUnavailableException(
-        'Izin lokasi ditolak.',
-      ),
+      () async =>
+          throw const LocationUnavailableException('Izin lokasi ditolak.'),
     );
     await tester.pumpWidget(
       shell(HomeScreen(auth: mock.auth, locationService: location)),
@@ -211,7 +207,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Izin lokasi ditolak.'), findsOneWidget);
     expect(
-      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      mock.requests.any(
+        (request) => request.url.path == '/api/attendance/check-in',
+      ),
       isFalse,
     );
   });
@@ -241,7 +239,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('mock-warning')), findsOneWidget);
     expect(
-      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      mock.requests.any(
+        (request) => request.url.path == '/api/attendance/check-in',
+      ),
       isFalse,
     );
   });
@@ -272,7 +272,9 @@ void main() {
 
     expect(location.calls, 1);
     expect(
-      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      mock.requests.any(
+        (request) => request.url.path == '/api/attendance/check-in',
+      ),
       isTrue,
     );
     expect(find.text('Check-in berhasil dicatat.'), findsOneWidget);
@@ -302,7 +304,9 @@ void main() {
     await tester.tap(find.byKey(const Key('attendance-submit')));
     await tester.pumpAndSettle();
     expect(
-      mock.requests.any((request) => request.url.path == '/api/attendance/check-in'),
+      mock.requests.any(
+        (request) => request.url.path == '/api/attendance/check-in',
+      ),
       isFalse,
     );
   });

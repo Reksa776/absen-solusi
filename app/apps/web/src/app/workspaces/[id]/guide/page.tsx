@@ -12,7 +12,7 @@ export default async function GuidePage({ params }: { params: Promise<{ id: stri
   const setup = [
     ["Perusahaan & kalender", "Lengkapi profil perusahaan, hari libur, dan pengaturan mobile.", "settings/company"],
     ["Struktur karyawan", "Buat divisi, jabatan, lokasi kehadiran, lalu data karyawan dan role.", "divisions"],
-    ["Pola kerja & shift", "Susun pola mingguan, tugaskan ke karyawan, lalu atur shift khusus bila diperlukan.", "work-schedules"],
+    ["Pola kerja", "Susun jam Senin-Minggu, termasuk Sabtu, lalu tugaskan pola kerja aktif ke setiap karyawan.", "work-schedules"],
     ["Kebijakan presensi", "Atur toleransi, jendela check-in/out, wajib selfie, dan mode radius GPS.", "attendance/settings"],
     ["Alur persetujuan", "Tentukan approver berjenjang untuk izin, cuti, lembur, dan presensi luar kota.", "settings/approvals"],
   ] as const;

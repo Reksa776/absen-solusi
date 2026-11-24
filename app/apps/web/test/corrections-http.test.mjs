@@ -151,7 +151,7 @@ before(async () => {
   }
 
   // Hindari 3307 (port MariaDB dev) dan rentang ephemeral umum.
-  const port = 3400 + randomInt(400);
+  const port = 4400 + randomInt(400);
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(join(root, "node_modules", ".bin", "next"), ["start", "-p", String(port)], {
     cwd: join(root, "apps", "web"),

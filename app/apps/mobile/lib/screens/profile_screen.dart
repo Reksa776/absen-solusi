@@ -30,12 +30,16 @@ class ProfileScreen extends StatefulWidget {
     this.updateService,
     this.offlineQueue,
     this.reminderService,
+    this.standalone = false,
   });
 
   final AuthService auth;
   final AppUpdateService? updateService;
   final OfflineAttendanceQueue? offlineQueue;
   final AttendanceReminderService? reminderService;
+
+  /// True saat dibuka dari avatar Beranda: tampilkan AppBar dengan tombol kembali.
+  final bool standalone;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -247,13 +251,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(messageForApiError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Status perangkat tidak dapat diperiksa.')),
+        const SnackBar(
+          content: Text('Status perangkat tidak dapat diperiksa.'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _refreshingDevice = false);
@@ -283,14 +288,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } on AppUpdateException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Tidak dapat memeriksa pembaruan. Periksa koneksi Anda.'),
+          content: Text(
+            'Tidak dapat memeriksa pembaruan. Periksa koneksi Anda.',
+          ),
         ),
       );
     } finally {
@@ -301,10 +307,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _uploadProfilePhoto() async {
     final bytes = await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute<Uint8List>(
-        builder: (_) => const CameraScreen(
-          insideGeofence: true,
-          wfh: true,
-        ),
+        builder: (_) => const CameraScreen(insideGeofence: true, wfh: true),
       ),
     );
     if (bytes == null || !mounted) return;
@@ -323,9 +326,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(messageForApiError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
       unawaited(_load());
     } catch (_) {
       if (!mounted) return;
@@ -391,17 +393,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      bottom: false,
-      child: RefreshIndicator(
-        color: AppColors.green,
-        onRefresh: _load,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+    final content = RefreshIndicator(
+      color: AppColors.green,
+      onRefresh: _load,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!widget.standalone)
               const Text(
                 'Profil',
                 style: TextStyle(
@@ -411,66 +412,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: AppColors.ink,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                widget.auth.activeWorkspace?.name ?? 'Akun karyawan',
-                style: const TextStyle(fontSize: 12, color: AppColors.muted),
-              ),
-              const SizedBox(height: 14),
-              _identityCard(),
-              if (_warnings.any((row) => row.isActive)) ...[
-                const SizedBox(height: 12),
-                _warningCard(),
-              ],
+            if (!widget.standalone) const SizedBox(height: 2),
+            Text(
+              widget.auth.activeWorkspace?.name ?? 'Akun karyawan',
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+            const SizedBox(height: 14),
+            _todayScheduleCard(),
+            if (_schedule != null) const SizedBox(height: 12),
+            _identityCard(),
+            if (_warnings.any((row) => row.isActive)) ...[
               const SizedBox(height: 12),
-              _photoCard(),
-              if (_device != null && _device!.blocksAttendance) ...[
-                const SizedBox(height: 12),
-                _deviceCard(_device!),
-              ],
-              const SizedBox(height: 12),
-              _officeCard(),
-              const SizedBox(height: 12),
-              _organizationCard(),
-              const SizedBox(height: 12),
-              _scheduleCard(),
-              const SizedBox(height: 12),
-              _payslipCard(),
-              const SizedBox(height: 12),
-              _reminderCard(),
-              const SizedBox(height: 12),
-              _offlineCard(),
-              const SizedBox(height: 12),
-              _versionCard(),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 50,
-                child: OutlinedButton.icon(
-                  key: const Key('profile-logout'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: BorderSide(
-                      color: AppColors.danger.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  onPressed: widget.auth.logout,
-                  icon: const Icon(Icons.logout, size: 18),
-                  label: const Text('Keluar dari akun'),
-                ),
-              ),
-              if (_loading) ...[
-                const SizedBox(height: 16),
-                const Center(
-                  child: SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              ],
+              _warningCard(),
             ],
-          ),
+            const SizedBox(height: 12),
+            _photoCard(),
+            if (_device != null && _device!.blocksAttendance) ...[
+              const SizedBox(height: 12),
+              _deviceCard(_device!),
+            ],
+            const SizedBox(height: 12),
+            _officeCard(),
+            const SizedBox(height: 12),
+            _organizationCard(),
+            const SizedBox(height: 12),
+            _scheduleCard(),
+            const SizedBox(height: 12),
+            _payslipCard(),
+            const SizedBox(height: 12),
+            _reminderCard(),
+            const SizedBox(height: 12),
+            _offlineCard(),
+            const SizedBox(height: 12),
+            _versionCard(),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 50,
+              child: OutlinedButton.icon(
+                key: const Key('profile-logout'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.danger,
+                  side: BorderSide(
+                    color: AppColors.danger.withValues(alpha: 0.3),
+                  ),
+                ),
+                onPressed: widget.auth.logout,
+                icon: const Icon(Icons.logout, size: 18),
+                label: const Text('Keluar dari akun'),
+              ),
+            ),
+            if (_loading) ...[
+              const SizedBox(height: 16),
+              const Center(
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
+    );
+    if (!widget.standalone) {
+      return SafeArea(bottom: false, child: content);
+    }
+    return Scaffold(
+      backgroundColor: AppColors.canvas,
+      appBar: AppBar(title: const Text('Profil & Pengaturan')),
+      body: SafeArea(top: false, child: content),
     );
   }
 
@@ -490,9 +500,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(messageForApiError(error))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -513,9 +522,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       decoration: BoxDecoration(
         color: AppColors.dangerSoft,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.danger.withValues(alpha: 0.28),
-        ),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -542,9 +549,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onPressed: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => WarningLettersScreen(
-                        auth: widget.auth,
-                      ),
+                      builder: (_) => WarningLettersScreen(auth: widget.auth),
                     ),
                   );
                   if (mounted) await _load();
@@ -657,6 +662,64 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _todayScheduleCard() {
+    final schedule = _schedule;
+    if (schedule == null) return const SizedBox.shrink();
+    final now = DateTime.now();
+    final day = schedule.dayFor(now);
+    final holiday = schedule.isHoliday(now);
+    final isWorkday = !holiday && (day?.isWorkday ?? false);
+    final hours = isWorkday ? day!.hours : 'Libur';
+    return Container(
+      key: const Key('profile-today-schedule'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: AppColors.yellowSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.yellowLine),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.schedule, size: 17, color: AppColors.yellowInk),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Jam kerja hari ini',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.yellowInk,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${schedule.workPatternName} · ${day?.label ?? 'Hari ini'}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            hours,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppColors.yellowInk,
+              fontFeatures: tabularFigures,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _identityCard() {
     return _card(
       child: Row(
@@ -746,7 +809,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.badge_outlined, size: 15, color: AppColors.muted),
+              const Icon(
+                Icons.badge_outlined,
+                size: 15,
+                color: AppColors.muted,
+              ),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
@@ -1067,11 +1134,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.calendar_month_outlined, size: 15, color: AppColors.muted),
+              const Icon(
+                Icons.calendar_month_outlined,
+                size: 15,
+                color: AppColors.muted,
+              ),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
-                  'Jadwal kerja minggu ini',
+                  'Pola kerja minggu ini',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -1095,8 +1166,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 6),
           Text(
             schedule == null
-                ? 'Jadwal shift belum dapat dimuat dari server.'
-                : '${schedule.shiftName} • '
+                ? 'Jadwal kerja belum dapat dimuat dari server.'
+                : '${schedule.workPatternName} • '
                       '${workdays.isEmpty ? 'Tidak ada hari kerja' : workdays.join(', ')}',
             style: const TextStyle(
               fontSize: 11.5,
@@ -1162,7 +1233,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 6),
           const Text(
             'Lihat rincian penerimaan, potongan, dan take home pay milik Anda.',
-            style: TextStyle(fontSize: 11.5, height: 1.4, color: AppColors.muted),
+            style: TextStyle(
+              fontSize: 11.5,
+              height: 1.4,
+              color: AppColors.muted,
+            ),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -1190,11 +1265,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.alarm,
-                size: 15,
-                color: AppColors.muted,
-              ),
+              const Icon(Icons.alarm, size: 15, color: AppColors.muted),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
@@ -1330,14 +1401,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
-                  color: pending
-                      ? AppColors.yellowSoft
-                      : AppColors.greenSoft,
+                  color: pending ? AppColors.yellowSoft : AppColors.greenSoft,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: pending ? AppColors.yellowLine : AppColors.greenLine,
@@ -1442,9 +1508,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh, size: 16),
-              label: Text(
-                _checking ? 'Memeriksa…' : 'Cek Update Aplikasi',
-              ),
+              label: Text(_checking ? 'Memeriksa…' : 'Cek Update Aplikasi'),
             ),
           ),
         ],

@@ -97,7 +97,7 @@ before(async () => {
   });
 
   releaseDir = await mkdtemp(join(tmpdir(), "absensi-releases-"));
-  const port = 3800 + randomInt(300);
+  const port = 4600 + randomInt(300);
   baseUrl = `http://127.0.0.1:${port}`;
   // server.mjs adalah entry produksi: menangani unduhan APK dengan
   // Content-Length, lalu meneruskan sisanya ke Next.

@@ -34,7 +34,6 @@ test("sidebar operasional: seluruh sub-nav standar Kerjoo punya halaman nyata", 
     "Lokasi Kehadiran",
     "Data Karyawan",
     "Jadwal Hari Kerja",
-    "Jadwal Shift",
     "Kirim Surat Peringatan",
     "Hari Kerja",
     "Kehadiran Harian",
@@ -68,6 +67,15 @@ test("sidebar operasional: seluruh sub-nav standar Kerjoo punya halaman nyata", 
   ]) {
     assert.match(sidebar, new RegExp(`label: "${label}"`));
   }
+  assert.doesNotMatch(sidebar, /Jadwal Shift/);
+  assert.doesNotMatch(sidebar, /settings\/shifts/);
+  for (const page of [
+    "workspaces/[id]/shifts/page.tsx",
+    "workspaces/[id]/settings/shifts/page.tsx",
+  ]) {
+    const redirectPage = read(page);
+    assert.match(redirectPage, /redirect\(`\/workspaces\/\$\{id\}\/work-schedules`\)/);
+  }
   for (const page of [
     "workspaces/[id]/divisions/page.tsx",
     "workspaces/[id]/positions/page.tsx",
@@ -99,4 +107,16 @@ test("organisasi: penugasan karyawan dan filter laporan memakai divisi", () => {
   assert.match(reports, /divisionId/);
   assert.match(reports, /divisionName/);
   assert.match(reports, /Semua divisi/);
+});
+
+test("pola kerja: form tujuh hari memakai Minggu=0 dan toggle kerja/libur", () => {
+  const manager = readFileSync(
+    new URL("../src/components/work-pattern-manager.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(manager, /\{ dayOfWeek: 6, dayName: "Sabtu" \}/);
+  assert.match(manager, /\{ dayOfWeek: 0, dayName: "Minggu" \}/);
+  assert.match(manager, /pattern-toggle/);
+  assert.match(manager, /Toleransi telat/);
+  assert.match(manager, /Aktifkan Sabtu/);
 });

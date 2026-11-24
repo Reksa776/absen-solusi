@@ -84,7 +84,7 @@ before(async () => {
   }
 
   // Hindari 3307 (port MariaDB dev) dan rentang ephemeral umum.
-  const port = 3400 + randomInt(400);
+  const port = 4400 + randomInt(400);
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(join(root, "node_modules", ".bin", "next"), ["start", "-p", String(port)], {
     cwd: join(root, "apps", "web"),
@@ -163,12 +163,16 @@ test("HTTP: check-in/out, status error, riwayat, audit, dan foto nyata", { timeo
   assert.equal(audit.ipHash?.length, 32);
   assert.deepEqual(Object.keys(audit.metadata).sort(), [
     "accuracy_meters",
+    "attendance_status",
     "distance_meters",
+    "early_leave_minutes",
+    "late_minutes",
     "office_id",
     "offline_synced",
     "suspicious_reasons",
     "wfh_request_id",
     "work_mode",
+    "work_pattern_id",
   ]);
   assert.equal(audit.metadata.offline_synced, false);
   const metadata = JSON.stringify(audit.metadata);

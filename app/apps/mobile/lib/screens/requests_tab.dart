@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
+import '../models/attendance_log.dart';
 import '../models/correction.dart';
 import '../models/employee_request.dart';
 import '../models/leave.dart';
@@ -17,9 +18,20 @@ import 'work_projections_screen.dart';
 
 /// Tab Pengajuan: satu tempat untuk revisi absensi, lembur, dan WFH.
 class RequestsTab extends StatefulWidget {
-  const RequestsTab({super.key, required this.auth});
+  const RequestsTab({
+    super.key,
+    required this.auth,
+    this.compact = false,
+    this.initialSegment = 'CORRECTION',
+    this.combined = false,
+  });
 
   final AuthService auth;
+  final bool compact;
+  final String initialSegment;
+
+  /// Menampilkan seluruh jenis pengajuan sekaligus untuk tab Pesan > Submisi.
+  final bool combined;
 
   @override
   State<RequestsTab> createState() => _RequestsTabState();
@@ -48,8 +60,9 @@ class _RequestsTabState extends State<RequestsTab> {
     'Des',
   ];
 
-  String _segment = 'CORRECTION';
+  late String _segment;
   List<CorrectionRequest> _corrections = const [];
+  List<AttendanceLog> _outOfTown = const [];
   List<OvertimeRequest> _overtime = const [];
   List<OvertimeSchedule> _overtimeSchedules = const [];
   List<WfhRequest> _wfh = const [];
@@ -62,6 +75,7 @@ class _RequestsTabState extends State<RequestsTab> {
   @override
   void initState() {
     super.initState();
+    _segment = widget.initialSegment;
     _load();
   }
 
@@ -91,6 +105,19 @@ class _RequestsTabState extends State<RequestsTab> {
         _balance = results[6] as LeaveBalance;
         _loading = false;
       });
+      // Presensi luar kota melengkapi tampilan gabungan; kegagalan endpoint
+      // ini tidak boleh mengosongkan seluruh daftar submisi.
+      try {
+        final logs = await widget.auth.api.attendanceHistory();
+        if (!mounted) return;
+        setState(() {
+          _outOfTown = logs
+              .where((row) => row.isOutOfTown)
+              .toList(growable: false);
+        });
+      } catch (_) {
+        // Bagian luar kota dilewati bila riwayat presensi tidak tersedia.
+      }
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -117,73 +144,75 @@ class _RequestsTabState extends State<RequestsTab> {
         top: false,
         child: SingleChildScrollView(
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(
-              width: 38,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.line,
-                borderRadius: BorderRadius.circular(999),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.line,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 14, 20, 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Buat pengajuan',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.ink,
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 14, 20, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Buat pengajuan',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.ink,
+                    ),
                   ),
                 ),
               ),
-            ),
-            _sheetOption(
-              sheetContext,
-              key: 'create-CORRECTION',
-              icon: Icons.assignment_late_outlined,
-              title: 'Revisi Absen',
-              subtitle: 'Koreksi jam check-in atau check-out yang salah.',
-              value: 'CORRECTION',
-            ),
-            _sheetOption(
-              sheetContext,
-              key: 'create-OVERTIME',
-              icon: Icons.more_time,
-              title: 'Lembur',
-              subtitle: 'Ajukan jam kerja tambahan setelah shift.',
-              value: 'OVERTIME',
-            ),
-            _sheetOption(
-              sheetContext,
-              key: 'create-WFH',
-              icon: Icons.home_work_outlined,
-              title: 'WFH',
-              subtitle: 'Minta izin bekerja dari rumah untuk tanggal tertentu.',
-              value: 'WFH',
-            ),
-            _sheetOption(
-              sheetContext,
-              key: 'create-IZIN',
-              icon: Icons.badge_outlined,
-              title: 'Izin Kerja',
-              subtitle: 'Sakit, izin pribadi, pulang cepat, atau terlambat.',
-              value: 'IZIN',
-            ),
-            _sheetOption(
-              sheetContext,
-              key: 'create-CUTI',
-              icon: Icons.beach_access_outlined,
-              title: 'Cuti',
-              subtitle: 'Ajukan cuti tahunan atau cuti khusus beserta alasannya.',
-              value: 'CUTI',
-            ),
-            const SizedBox(height: 10),
-          ],
+              _sheetOption(
+                sheetContext,
+                key: 'create-CORRECTION',
+                icon: Icons.assignment_late_outlined,
+                title: 'Revisi Absen',
+                subtitle: 'Koreksi jam check-in atau check-out yang salah.',
+                value: 'CORRECTION',
+              ),
+              _sheetOption(
+                sheetContext,
+                key: 'create-OVERTIME',
+                icon: Icons.more_time,
+                title: 'Lembur',
+                subtitle: 'Ajukan jam kerja tambahan setelah shift.',
+                value: 'OVERTIME',
+              ),
+              _sheetOption(
+                sheetContext,
+                key: 'create-WFH',
+                icon: Icons.home_work_outlined,
+                title: 'WFH',
+                subtitle:
+                    'Minta izin bekerja dari rumah untuk tanggal tertentu.',
+                value: 'WFH',
+              ),
+              _sheetOption(
+                sheetContext,
+                key: 'create-IZIN',
+                icon: Icons.badge_outlined,
+                title: 'Izin Kerja',
+                subtitle: 'Sakit, izin pribadi, pulang cepat, atau terlambat.',
+                value: 'IZIN',
+              ),
+              _sheetOption(
+                sheetContext,
+                key: 'create-CUTI',
+                icon: Icons.beach_access_outlined,
+                title: 'Cuti',
+                subtitle:
+                    'Ajukan cuti tahunan atau cuti khusus beserta alasannya.',
+                value: 'CUTI',
+              ),
+              const SizedBox(height: 10),
+            ],
           ),
         ),
       ),
@@ -252,7 +281,11 @@ class _RequestsTabState extends State<RequestsTab> {
         subtitle,
         style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
       ),
-      trailing: const Icon(Icons.chevron_right, size: 20, color: AppColors.muted),
+      trailing: const Icon(
+        Icons.chevron_right,
+        size: 20,
+        color: AppColors.muted,
+      ),
       onTap: () => Navigator.of(sheetContext).pop(value),
     );
   }
@@ -264,121 +297,126 @@ class _RequestsTabState extends State<RequestsTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Pengajuan',
-                  style: TextStyle(
-                    fontSize: 23,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    color: AppColors.ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Revisi absensi, lembur, WFH, izin kerja, dan cuti.',
-                  style: TextStyle(fontSize: 12, color: AppColors.muted),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 46,
-                  child: FilledButton.icon(
-                    key: const Key('requests-create'),
-                    onPressed: _create,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Buat Pengajuan'),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        key: const Key('requests-client-visits'),
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                ClientVisitsScreen(auth: widget.auth),
-                          ),
-                        ),
-                        icon: const Icon(Icons.location_on_outlined, size: 16),
-                        label: const Text('Kunjungan Client'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        key: const Key('requests-work-projections'),
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                WorkProjectionsScreen(auth: widget.auth),
-                          ),
-                        ),
-                        icon: const Icon(Icons.track_changes, size: 16),
-                        label: const Text('Proyeksi Kerja'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppColors.tableHead,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.line),
-              ),
-              child: Row(
+          if (!widget.compact)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final (value, label) in _segments)
-                    Expanded(
-                      child: InkWell(
-                        key: Key('requests-segment-$value'),
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () => setState(() => _segment = value),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 140),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _segment == value
-                                ? AppColors.surface
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _segment == value
-                                  ? AppColors.line
-                                  : Colors.transparent,
+                  const Text(
+                    'Pengajuan',
+                    style: TextStyle(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Revisi absensi, lembur, WFH, izin kerja, dan cuti.',
+                    style: TextStyle(fontSize: 12, color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 46,
+                    child: FilledButton.icon(
+                      key: const Key('requests-create'),
+                      onPressed: _create,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Buat Pengajuan'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          key: const Key('requests-client-visits'),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  ClientVisitsScreen(auth: widget.auth),
                             ),
                           ),
-                          child: Text(
-                            label,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: _segment == value
-                                  ? AppColors.greenDark
-                                  : AppColors.muted,
-                            ),
+                          icon: const Icon(
+                            Icons.location_on_outlined,
+                            size: 16,
                           ),
+                          label: const Text('Kunjungan Client'),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          key: const Key('requests-work-projections'),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  WorkProjectionsScreen(auth: widget.auth),
+                            ),
+                          ),
+                          icon: const Icon(Icons.track_changes, size: 16),
+                          label: const Text('Proyeksi Kerja'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
-          ),
+          if (!widget.combined)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.tableHead,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.line),
+                ),
+                child: Row(
+                  children: [
+                    for (final (value, label) in _segments)
+                      Expanded(
+                        child: InkWell(
+                          key: Key('requests-segment-$value'),
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => setState(() => _segment = value),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 140),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: _segment == value
+                                  ? AppColors.surface
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: _segment == value
+                                    ? AppColors.line
+                                    : Colors.transparent,
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: _segment == value
+                                    ? AppColors.greenDark
+                                    : AppColors.muted,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           Expanded(child: _body()),
         ],
       ),
@@ -455,15 +493,19 @@ class _RequestsTabState extends State<RequestsTab> {
     );
   }
 
-  String get _emptyText => switch (_segment) {
-    'OVERTIME' => 'Belum ada pengajuan lembur.',
-    'WFH' => 'Belum ada pengajuan WFH.',
-    'IZIN' => 'Belum ada pengajuan izin kerja.',
-    'CUTI' => 'Belum ada pengajuan cuti.',
-    _ => 'Belum ada pengajuan revisi.',
-  };
+  String get _emptyText {
+    if (widget.combined) return 'Belum ada pengajuan.';
+    return switch (_segment) {
+      'OVERTIME' => 'Belum ada pengajuan lembur.',
+      'WFH' => 'Belum ada pengajuan WFH.',
+      'IZIN' => 'Belum ada pengajuan izin kerja.',
+      'CUTI' => 'Belum ada pengajuan cuti.',
+      _ => 'Belum ada pengajuan revisi.',
+    };
+  }
 
   List<Widget> _cards() {
+    if (widget.combined) return _combinedCards();
     if (_segment == 'OVERTIME') {
       return [
         for (final schedule in _overtimeSchedules)
@@ -579,15 +621,114 @@ class _RequestsTabState extends State<RequestsTab> {
     return [
       for (final row in _corrections)
         _requestCard(
-          icon: row.requestType == 'CHECK_OUT'
-              ? Icons.logout
-              : Icons.login,
+          icon: row.requestType == 'CHECK_OUT' ? Icons.logout : Icons.login,
           title: '${row.typeLabel} • ${_date(row.requestedTimestamp)}',
           subtitle: row.reason,
           status: row.status,
           statusLabel: row.statusLabel,
         ),
     ];
+  }
+
+  List<Widget> _combinedCards() {
+    final cards = <Widget>[];
+    void addSection(String title, List<Widget> rows) {
+      if (rows.isEmpty) return;
+      if (cards.isNotEmpty) cards.add(const SizedBox(height: 4));
+      cards.add(_sectionLabel(title));
+      cards.addAll(rows);
+    }
+
+    addSection('Revisi Kehadiran', [
+      for (final row in _corrections)
+        _requestCard(
+          icon: row.requestType == 'CHECK_OUT' ? Icons.logout : Icons.login,
+          title: '${row.typeLabel} • ${_date(row.requestedTimestamp)}',
+          subtitle: row.reason,
+          status: row.status,
+          statusLabel: row.statusLabel,
+        ),
+    ]);
+    addSection('Lembur', [
+      for (final row in _overtime)
+        _requestCard(
+          icon: Icons.more_time,
+          title: 'Lembur • ${_date(row.date)}',
+          subtitle:
+              '${row.startTime}–${row.endTime} • '
+              '${row.durationMinutes} menit\n${row.reason}',
+          status: row.status,
+          statusLabel: row.statusLabel,
+        ),
+    ]);
+    addSection('Izin Kerja', [
+      for (final row in _permits)
+        _requestCard(
+          icon: row.permitType == 'SAKIT'
+              ? Icons.medical_services_outlined
+              : Icons.badge_outlined,
+          title:
+              '${row.typeLabel} • ${_date(row.startDate)}'
+              '${row.endDate == row.startDate ? '' : ' – ${_date(row.endDate)}'}',
+          subtitle: row.reason,
+          status: row.status,
+          statusLabel: row.statusLabel,
+        ),
+    ]);
+    addSection('Cuti', [
+      for (final row in _leave)
+        _requestCard(
+          icon: Icons.event_busy_outlined,
+          title:
+              '${row.typeLabel} • ${_date(row.startDate)}'
+              '${row.endDate == row.startDate ? '' : ' – ${_date(row.endDate)}'}',
+          subtitle: '${row.workingDays} hari kerja\n${row.reason}',
+          status: row.status,
+          statusLabel: row.statusLabel,
+        ),
+    ]);
+    addSection('Presensi Luar Kota', [
+      for (final row in _outOfTown)
+        _requestCard(
+          icon: Icons.flight_takeoff,
+          title: 'Presensi Luar Kota • ${_date(row.timestampServer)}',
+          subtitle:
+              '${row.label} • '
+              '${row.outOfTownReason ?? 'Tanpa catatan alasan'}',
+          status: row.approvalStatus,
+          statusLabel: switch (row.approvalStatus) {
+            'APPROVED' => 'Disetujui',
+            'REJECTED' => 'Ditolak',
+            _ => 'Menunggu',
+          },
+        ),
+    ]);
+    addSection('WFH', [
+      for (final row in _wfh)
+        _requestCard(
+          icon: Icons.home_work_outlined,
+          title: 'WFH • ${_date(row.date)}',
+          subtitle: row.reason,
+          status: row.status,
+          statusLabel: row.statusLabel,
+        ),
+    ]);
+    return cards;
+  }
+
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+          color: AppColors.muted,
+        ),
+      ),
+    );
   }
 
   Widget _requestCard({

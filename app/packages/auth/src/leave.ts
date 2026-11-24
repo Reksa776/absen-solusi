@@ -6,6 +6,11 @@ import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
 import { parseReportDay } from "./reports.js";
+import {
+  createWorkPatternRuleIndex,
+  isWeekendDay,
+  workPatternWorkingDays,
+} from "./work-pattern-schedule.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
 export const LEAVE_TYPES = [
@@ -121,11 +126,15 @@ function day(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Hari kerja = Senin–Jumat, bukan hari libur workspace, inklusif. */
+/**
+ * Hari kerja mengikuti hari aktif Pola Kerja karyawan. Tanpa penugasan,
+ * fallback lama Senin-Jumat tetap dipakai. Hari libur workspace selalu dilewati.
+ */
 export function calculateWorkingDays(
   startDate: Date,
   endDate: Date,
   holidayDates: ReadonlySet<string>,
+  workdayNumbers?: ReadonlySet<number> | null,
 ): number {
   let count = 0;
   for (
@@ -135,7 +144,11 @@ export function calculateWorkingDays(
   ) {
     const date = new Date(cursor);
     const weekday = date.getUTCDay();
-    if (weekday === 0 || weekday === 6) continue;
+    if (workdayNumbers) {
+      if (!workdayNumbers.has(weekday)) continue;
+    } else if (isWeekendDay(weekday)) {
+      continue;
+    }
     if (holidayDates.has(day(date))) continue;
     count += 1;
   }
@@ -402,14 +415,31 @@ export async function submitLeaveRequest(input: {
 
   const created = await withTenant(input.ctx, (db) =>
     db.$transaction(async (tx) => {
-      const holidays = await tx.workspaceHoliday.findMany({
-        where: { date: { gte: startDate, lte: endDate } },
-        select: { date: true },
-      });
+      const [holidays, patternAssignment] = await Promise.all([
+        tx.workspaceHoliday.findMany({
+          where: { date: { gte: startDate, lte: endDate } },
+          select: { date: true },
+        }),
+        tx.workPatternAssignment.findFirst({
+          where: { memberId: input.ctx.memberId },
+          include: { workPattern: { include: { days: true } } },
+        }),
+      ]);
+      const patternIndex = createWorkPatternRuleIndex(
+        patternAssignment
+          ? [
+              {
+                memberId: input.ctx.memberId,
+                workPattern: patternAssignment.workPattern,
+              },
+            ]
+          : [],
+      );
       const workingDays = calculateWorkingDays(
         startDate,
         endDate,
         new Set(holidays.map((row) => day(row.date))),
+        workPatternWorkingDays(patternIndex, input.ctx.memberId),
       );
       if (workingDays <= 0) {
         throw new HttpError(

@@ -6,11 +6,11 @@ import '../services/location_service.dart';
 import '../theme/app_theme.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
-import 'profile_screen.dart';
-import 'requests_tab.dart';
+import 'messages_tab.dart';
+import 'schedule_tab.dart';
 
-/// Shell utama aplikasi: empat tab dengan IndexedStack agar state kamera,
-/// GPS, dan posisi gulir tiap tab tetap hidup saat berpindah tab.
+/// Shell utama aplikasi: Beranda, Jadwal, Aktivitas, dan Pesan.
+/// IndexedStack menjaga state kamera, GPS, dan posisi gulir tiap tab.
 class MainShellScreen extends StatefulWidget {
   const MainShellScreen({
     super.key,
@@ -32,30 +32,46 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   final List<Widget?> _tabs = List<Widget?>.filled(4, null);
   int _index = 0;
+  int _unread = 0;
 
   @override
   void initState() {
     super.initState();
     _tabs[0] = _buildTab(0);
+    _loadUnread();
+  }
+
+  Future<void> _loadUnread() async {
+    try {
+      final page = await widget.auth.api.myNotifications(limit: 1);
+      if (!mounted) return;
+      setState(() => _unread = page.unreadCount);
+    } catch (_) {
+      // Badge unread bersifat informatif; kegagalan jaringan diabaikan.
+    }
   }
 
   Widget _buildTab(int index) {
     switch (index) {
       case 1:
-        return HistoryScreen(auth: widget.auth, embedded: true);
+        return ScheduleTab(auth: widget.auth);
       case 2:
-        return RequestsTab(auth: widget.auth);
+        return HistoryScreen(auth: widget.auth, embedded: true);
       case 3:
-        return ProfileScreen(
+        return MessagesTab(
           auth: widget.auth,
-          updateService: widget.updateService,
+          onUnreadChanged: (count) {
+            if (mounted && count != _unread) setState(() => _unread = count);
+          },
         );
       default:
         return HomeScreen(
           auth: widget.auth,
           embedded: true,
+          updateService: widget.updateService,
           locationService: widget.locationService,
           photoTaker: widget.photoTaker,
+          onOpenActivity: () => _select(2),
         );
     }
   }
@@ -90,35 +106,69 @@ class _MainShellScreenState extends State<MainShellScreen> {
             key: const Key('main-nav'),
             selectedIndex: _index,
             onDestinationSelected: _select,
-            destinations: const [
-              NavigationDestination(
-                key: Key('nav-absen'),
-                icon: Icon(Icons.fingerprint_outlined),
-                selectedIcon: Icon(Icons.fingerprint),
-                label: 'Absen',
+            destinations: [
+              const NavigationDestination(
+                key: Key('nav-beranda'),
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: 'Beranda',
+              ),
+              const NavigationDestination(
+                key: Key('nav-jadwal'),
+                icon: Icon(Icons.calendar_month_outlined),
+                selectedIcon: Icon(Icons.calendar_month_rounded),
+                label: 'Jadwal',
+              ),
+              const NavigationDestination(
+                key: Key('nav-aktivitas'),
+                icon: Icon(Icons.fact_check_outlined),
+                selectedIcon: Icon(Icons.fact_check_rounded),
+                label: 'Aktivitas',
               ),
               NavigationDestination(
-                key: Key('nav-riwayat'),
-                icon: Icon(Icons.history_rounded),
-                selectedIcon: Icon(Icons.history_rounded),
-                label: 'Riwayat',
-              ),
-              NavigationDestination(
-                key: Key('nav-pengajuan'),
-                icon: Icon(Icons.assignment_outlined),
-                selectedIcon: Icon(Icons.assignment),
-                label: 'Pengajuan',
-              ),
-              NavigationDestination(
-                key: Key('nav-profil'),
-                icon: Icon(Icons.person_outline_rounded),
-                selectedIcon: Icon(Icons.person_rounded),
-                label: 'Profil',
+                key: const Key('nav-pesan'),
+                icon: _unread > 0
+                    ? _PesanBadge(
+                        count: _unread,
+                        child: const Icon(Icons.chat_bubble_outline_rounded),
+                      )
+                    : const Icon(Icons.chat_bubble_outline_rounded),
+                selectedIcon: _unread > 0
+                    ? _PesanBadge(
+                        count: _unread,
+                        child: const Icon(Icons.chat_bubble_rounded),
+                      )
+                    : const Icon(Icons.chat_bubble_rounded),
+                label: 'Pesan',
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PesanBadge extends StatelessWidget {
+  const _PesanBadge({required this.count, required this.child});
+
+  final int count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Badge(
+      backgroundColor: AppColors.amber,
+      textColor: AppColors.yellowInk,
+      label: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          fontFeatures: tabularFigures,
+        ),
+      ),
+      child: child,
     );
   }
 }

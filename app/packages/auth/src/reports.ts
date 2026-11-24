@@ -2,11 +2,12 @@ import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/dat
 
 import { HttpError } from "./http.js";
 import {
-  createShiftRuleIndex,
-  lateMinutesForShift,
-  shiftRuleFor,
-  type ShiftRuleIndex,
-} from "./shifts.js";
+  createWorkPatternRuleIndex,
+  isScheduledWorkday,
+  lateMinutesForWorkPattern,
+  workPatternRuleFor,
+  type WorkPatternRuleIndex,
+} from "./work-pattern-schedule.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
 export const LATE_TOLERANCE_MINUTES_DEFAULT = 15;
@@ -178,7 +179,8 @@ export async function getTodayDashboard(input: TodayDashboardInput): Promise<Tod
   const tolerance = lateToleranceMinutes();
 
   return withTenant(input.ctx, async (db) => {
-    const [members, groupedLogs, holiday, office, correctionsPending, memberShiftRows] = await Promise.all([
+    const [members, groupedLogs, holiday, office, correctionsPending, patternAssignments] =
+      await Promise.all([
       db.workspaceMember.findMany({
         where: {
           status: "ACTIVE",
@@ -203,22 +205,11 @@ export async function getTodayDashboard(input: TodayDashboardInput): Promise<Tod
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
       db.correctionRequest.count({ where: { status: "PENDING" } }),
-      db.memberShift.findMany({
-        where: { OR: [{ workDate: date }, { workDate: null }] },
-        include: {
-          shift: {
-            select: {
-              id: true,
-              name: true,
-              startTime: true,
-              endTime: true,
-              lateToleranceMinutes: true,
-            },
-          },
-        },
+      db.workPatternAssignment.findMany({
+        include: { workPattern: { include: { days: true } } },
       }),
     ]);
-    const shiftIndex = createShiftRuleIndex(memberShiftRows);
+    const patternIndex = createWorkPatternRuleIndex(patternAssignments);
     const dateKey = formatDay(date);
 
     const byMember = new Map<string, { checkIn?: Date; checkOut?: Date }>();
@@ -234,20 +225,23 @@ export async function getTodayDashboard(input: TodayDashboardInput): Promise<Tod
       const entry = byMember.get(member.id);
       const checkIn = entry?.checkIn ?? null;
       const checkOut = entry?.checkOut ?? null;
-      const rule = shiftRuleFor(shiftIndex, member.id, dateKey);
+      const rule = workPatternRuleFor(patternIndex, member.id, date);
       const lateThreshold = rule
         ? minutesOfDay(rule.startTime) + rule.lateToleranceMinutes
         : office
           ? minutesOfDay(office.workStart) + tolerance
           : Number.POSITIVE_INFINITY;
       const lateMinutes =
-        checkIn && office
+        checkIn && (rule || office)
           ? rule
-            ? lateMinutesForShift(checkIn, rule, office.timezone)
-            : Math.max(0, zonedMinutes(checkIn, office.timezone) - lateThreshold)
+            ? lateMinutesForWorkPattern(checkIn, rule, rule.timezone)
+            : office
+              ? Math.max(0, zonedMinutes(checkIn, office.timezone) - lateThreshold)
+              : 0
           : 0;
+      const scheduled = isScheduledWorkday(rule, date.getUTCDay());
       const status: DashboardMemberStatus = !checkIn
-        ? holiday
+        ? holiday || !scheduled
           ? "HOLIDAY"
           : "ABSENT"
         : !checkOut
@@ -370,7 +364,7 @@ type MonthlyBuild = {
   dates: Date[];
   holidayDates: Set<string>;
   today: Date;
-  shiftIndex: ShiftRuleIndex;
+  workPatternIndex: WorkPatternRuleIndex;
   toleranceMinutes: number;
   office: { timezone: string; workStart: string } | null;
   statusFilter: string | undefined;
@@ -403,14 +397,15 @@ function buildMonthlyDays(
     const checkOut = entry?.checkOut ?? null;
     const isFuture = date.getTime() > build.today.getTime();
     const weekday = date.getUTCDay();
-    const isWeekend = weekday === 0 || weekday === 6;
+    const rule = workPatternRuleFor(build.workPatternIndex, memberId, date);
+    const scheduled = isScheduledWorkday(rule, weekday);
     let late = 0;
-    if (checkIn && build.office) {
-      const rule = shiftRuleFor(build.shiftIndex, memberId, formatDay(date));
-      const threshold = minutesOfDay(build.office.workStart) + build.toleranceMinutes;
+    if (checkIn && (rule || build.office)) {
+      const threshold = minutesOfDay(build.office?.workStart ?? "09:00") + build.toleranceMinutes;
+      const timezone = rule?.timezone ?? build.office?.timezone ?? "UTC";
       late = rule
-        ? lateMinutesForShift(checkIn, rule, build.office.timezone)
-        : Math.max(0, zonedMinutes(checkIn, build.office.timezone) - threshold);
+        ? lateMinutesForWorkPattern(checkIn, rule, timezone)
+        : Math.max(0, zonedMinutes(checkIn, timezone) - threshold);
     }
 
     let status: MonthlyDayStatus;
@@ -419,7 +414,7 @@ function buildMonthlyDays(
       status = "FUTURE";
     } else if (build.holidayDates.has(formatDay(date))) {
       status = "HOLIDAY";
-    } else if (isWeekend) {
+    } else if (!scheduled) {
       status = "WEEKEND";
     } else if (!checkIn) {
       status = "ABSENT";
@@ -493,7 +488,7 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
   const breakMins = breakMinutes();
 
   return withTenant(input.ctx, async (db) => {
-    const [members, logs, holidays, office, memberShiftRows] = await Promise.all([
+    const [members, logs, holidays, office, patternAssignments] = await Promise.all([
       db.workspaceMember.findMany({
         where: {
           status: "ACTIVE",
@@ -519,30 +514,14 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
         where: { isActive: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
-      db.memberShift.findMany({
-        where: {
-          OR: [
-            { workDate: { gte: start, lt: end } },
-            { workDate: null },
-          ],
-        },
-        include: {
-          shift: {
-            select: {
-              id: true,
-              name: true,
-              startTime: true,
-              endTime: true,
-              lateToleranceMinutes: true,
-            },
-          },
-        },
+      db.workPatternAssignment.findMany({
+        include: { workPattern: { include: { days: true } } },
       }),
     ]);
 
     const holidayDates = new Set(holidays.map((holiday) => formatDay(holiday.date)));
     const byMemberDay = indexLogs(logs);
-    const shiftIndex = createShiftRuleIndex(memberShiftRows);
+    const workPatternIndex = createWorkPatternRuleIndex(patternAssignments);
     const rangeStart =
       range.fromDate && range.fromDate.getTime() > start.getTime()
         ? range.fromDate
@@ -561,7 +540,7 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
         dates,
         holidayDates,
         today,
-        shiftIndex,
+        workPatternIndex,
         toleranceMinutes: tolerance,
         office,
         statusFilter,
@@ -722,31 +701,15 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
     dates.push(day);
   }
 
-  const [holidays, office, memberShiftRows] = await withTenant(input.ctx, async (db) =>
+  const [holidays, office, patternAssignments] = await withTenant(input.ctx, async (db) =>
     Promise.all([
       db.workspaceHoliday.findMany({ where: { date: { gte: start, lt: end } } }),
       db.officeLocation.findFirst({
         where: { isActive: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       }),
-      db.memberShift.findMany({
-        where: {
-          OR: [
-            { workDate: { gte: start, lt: end } },
-            { workDate: null },
-          ],
-        },
-        include: {
-          shift: {
-            select: {
-              id: true,
-              name: true,
-              startTime: true,
-              endTime: true,
-              lateToleranceMinutes: true,
-            },
-          },
-        },
+      db.workPatternAssignment.findMany({
+        include: { workPattern: { include: { days: true } } },
       }),
     ]),
   );
@@ -754,7 +717,7 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
     dates,
     holidayDates: new Set(holidays.map((holiday) => formatDay(holiday.date))),
     today,
-    shiftIndex: createShiftRuleIndex(memberShiftRows),
+    workPatternIndex: createWorkPatternRuleIndex(patternAssignments),
     toleranceMinutes: tolerance,
     office,
     statusFilter,

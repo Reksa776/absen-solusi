@@ -70,8 +70,8 @@ void main() {
     await tester.pumpWidget(shell(HistoryScreen(auth: auth)));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('history-list')), findsOneWidget);
-    expect(find.textContaining('Check-in'), findsOneWidget);
-    expect(find.text('Suspicious'), findsOneWidget);
+    expect(find.text('Masuk'), findsWidgets);
+    expect(find.text('Perlu Tinjau'), findsOneWidget);
   });
 
   testWidgets('kartu riwayat membuka form revisi yang terisi otomatis', (

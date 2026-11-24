@@ -6,7 +6,14 @@ import { withTenant, writeAudit, type TenantContext } from "@absensi/database";
 
 import { assertAttendanceDevice, type DeviceIdentity } from "./devices.js";
 import { HttpError } from "./http.js";
-import { isOvernightShift, shiftMinutes } from "./shifts.js";
+import {
+  createWorkPatternRuleIndex,
+  evaluateAttendanceSchedule,
+  isOvernightPattern,
+  timeToMinutes,
+  workPatternRuleFor,
+  zonedMinutesOfDay,
+} from "./work-pattern-schedule.js";
 
 export const ACCURACY_THRESHOLD_METERS = 100;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -68,6 +75,14 @@ export type AttendanceResult = {
   outOfTownReason?: string | null;
   notes?: string | null;
   faceVerified?: boolean;
+  attendanceStatus?: "ON_TIME" | "LATE" | "EARLY_LEAVE" | "OFF_DAY";
+  lateMinutes?: number;
+  earlyLeaveMinutes?: number;
+  workPatternId?: string | null;
+  workPatternName?: string | null;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
+  isWorkday?: boolean | null;
 };
 
 function assertCoordinate(value: number, label: string, min: number, max: number): void {
@@ -170,34 +185,27 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
       const localMinutes = zonedMinutesOfDay(now, timezone);
       const today = utcDay(now);
       const yesterday = new Date(today.getTime() - 86_400_000);
-      const shiftRows = await db.memberShift.findMany({
-        where: {
-          memberId: input.ctx.memberId,
-          OR: [{ workDate: null }, { workDate: { in: [today, yesterday] } }],
-        },
-        include: {
-          shift: {
-            select: { startTime: true, endTime: true },
-          },
-        },
+      const patternAssignment = await db.workPatternAssignment.findFirst({
+        where: { memberId: input.ctx.memberId },
+        include: { workPattern: { include: { days: true } } },
       });
-      const byDate = new Map<string, { startTime: string; endTime: string }>();
-      let defaultShift: { startTime: string; endTime: string } | null = null;
-      for (const row of shiftRows) {
-        if (row.workDate) {
-          byDate.set(row.workDate.toISOString().slice(0, 10), row.shift);
-        } else {
-          defaultShift = row.shift;
-        }
-      }
-      const shiftForDate = (date: Date) =>
-        byDate.get(date.toISOString().slice(0, 10)) ?? defaultShift;
-      const yesterdayShift = shiftForDate(yesterday);
-      // Check-out pagi H+1 tetap milik sesi shift yang dimulai H.
+      const patternIndex = createWorkPatternRuleIndex(
+        patternAssignment
+          ? [
+              {
+                memberId: input.ctx.memberId,
+                workPattern: patternAssignment.workPattern,
+              },
+            ]
+          : [],
+      );
+      const yesterdayRule = workPatternRuleFor(patternIndex, input.ctx.memberId, yesterday);
+      // Check-out pagi H+1 tetap milik sesi Pola Kerja yang dimulai H.
       const workDate =
-        yesterdayShift &&
-        isOvernightShift(yesterdayShift.startTime, yesterdayShift.endTime) &&
-        localMinutes < shiftMinutes(yesterdayShift.endTime)
+        yesterdayRule &&
+        yesterdayRule.isWorkday &&
+        isOvernightPattern(yesterdayRule.startTime, yesterdayRule.endTime) &&
+        localMinutes < timeToMinutes(yesterdayRule.endTime)
           ? yesterday
           : today;
 
@@ -298,38 +306,50 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
       const approvalStatus =
         isOutOfTown || (outOfRadius && radiusPolicy === "FLAG") ? "PENDING" : "APPROVED";
 
-      if (attendanceSetting) {
-        const shiftRule = shiftForDate(workDate);
-        const selectedOffice = office ? offices.find((row) => row.id === office?.id) ?? null : null;
-        const startTime = shiftRule?.startTime ?? selectedOffice?.workStart;
-        const endTime = shiftRule?.endTime ?? selectedOffice?.workEnd;
-        if (startTime && endTime) {
-          const zone = selectedOffice?.timezone ?? timezone;
-          const localNow = zonedMinutesOfDay(now, zone);
-          const startMinute = shiftMinutes(startTime);
-          const endMinuteRaw = shiftMinutes(endTime);
-          const endMinute = endMinuteRaw <= startMinute ? endMinuteRaw + 1440 : endMinuteRaw;
-          const adjustedNow = endMinute > 1440 && localNow < startMinute ? localNow + 1440 : localNow;
-          if (
-            input.type === "CHECK_IN" &&
-            localNow < startMinute - attendanceSetting.earliestCheckInMinutes
-          ) {
-            throw new HttpError(
-              403,
-              "CHECK_IN_TOO_EARLY",
-              "Batas awal check-in belum tercapai",
-            );
-          }
-          if (
-            input.type === "CHECK_OUT" &&
-            adjustedNow > endMinute + attendanceSetting.maxCheckOutMinutes
-          ) {
-            throw new HttpError(
-              403,
-              "CHECK_OUT_WINDOW_CLOSED",
-              "Batas waktu check-out sudah berakhir",
-            );
-          }
+      const selectedOffice = office ? offices.find((row) => row.id === office?.id) ?? null : null;
+      const scheduleRule = workPatternRuleFor(patternIndex, input.ctx.memberId, workDate);
+      const scheduleTimezone =
+        scheduleRule?.timezone ?? selectedOffice?.timezone ?? timezone;
+      const scheduleEvaluation = evaluateAttendanceSchedule({
+        type: input.type,
+        at: now,
+        rule: scheduleRule,
+        timezone: scheduleTimezone,
+      });
+
+      const startTime = scheduleRule?.startTime ?? selectedOffice?.workStart;
+      const endTime = scheduleRule?.endTime ?? selectedOffice?.workEnd;
+      const isWorkday = scheduleRule ? scheduleRule.isWorkday : startTime !== undefined;
+      if (startTime && endTime && isWorkday) {
+        const localNow = zonedMinutesOfDay(now, scheduleTimezone);
+        const startMinute = timeToMinutes(startTime);
+        const endMinuteRaw = timeToMinutes(endTime);
+        const endMinute = endMinuteRaw <= startMinute ? endMinuteRaw + 1440 : endMinuteRaw;
+        const adjustedNow =
+          endMinute > 1440 && localNow < startMinute ? localNow + 1440 : localNow;
+        const earliestCheckInMinutes =
+          scheduleRule?.earliestCheckInMinutes ?? attendanceSetting?.earliestCheckInMinutes;
+        if (
+          input.type === "CHECK_IN" &&
+          earliestCheckInMinutes !== undefined &&
+          localNow < startMinute - earliestCheckInMinutes
+        ) {
+          throw new HttpError(
+            403,
+            "CHECK_IN_TOO_EARLY",
+            "Batas awal check-in belum tercapai",
+          );
+        }
+        if (
+          input.type === "CHECK_OUT" &&
+          attendanceSetting &&
+          adjustedNow > endMinute + attendanceSetting.maxCheckOutMinutes
+        ) {
+          throw new HttpError(
+            403,
+            "CHECK_OUT_WINDOW_CLOSED",
+            "Batas waktu check-out sudah berakhir",
+          );
         }
       }
       const notes = (input.notes ?? "").trim();
@@ -415,6 +435,10 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
                 ? { out_of_radius: outOfRadius, approval_status: approvalStatus }
                 : {}),
               wfh_request_id: wfh?.id ?? null,
+              work_pattern_id: scheduleRule?.workPatternId ?? null,
+              attendance_status: scheduleEvaluation.status,
+              late_minutes: scheduleEvaluation.lateMinutes,
+              early_leave_minutes: scheduleEvaluation.earlyLeaveMinutes,
               suspicious_reasons: suspiciousReasons,
               offline_synced: Boolean(input.idempotencyKey),
             },
@@ -439,6 +463,14 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           outOfTownReason: isOutOfTown ? outOfTownReason : null,
           notes: notes || null,
           faceVerified: Boolean(input.faceVerified),
+          attendanceStatus: scheduleEvaluation.status,
+          lateMinutes: scheduleEvaluation.lateMinutes,
+          earlyLeaveMinutes: scheduleEvaluation.earlyLeaveMinutes,
+          workPatternId: scheduleRule?.workPatternId ?? null,
+          workPatternName: scheduleRule?.workPatternName ?? null,
+          scheduledStart: scheduleRule?.startTime ?? null,
+          scheduledEnd: scheduleRule?.endTime ?? null,
+          isWorkday: scheduleRule ? scheduleRule.isWorkday : null,
         };
       } catch (error) {
         if (typeof error === "object" && error !== null && "code" in error) {
@@ -463,18 +495,6 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
 
 function utcDay(value: Date): Date {
   return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-}
-
-function zonedMinutesOfDay(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
-  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
-  return (hour % 24) * 60 + minute;
 }
 
 export async function listActiveOffices(ctx: TenantContext) {

@@ -25,35 +25,38 @@ export type WorkPatternRow = {
   days: PatternDay[];
 };
 
-const DAY_NAMES = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
+/** Pemetaan JavaScript: Minggu=0, Senin=1 ... Sabtu=6. */
+const DAYS = [
+  { dayOfWeek: 1, dayName: "Senin" },
+  { dayOfWeek: 2, dayName: "Selasa" },
+  { dayOfWeek: 3, dayName: "Rabu" },
+  { dayOfWeek: 4, dayName: "Kamis" },
+  { dayOfWeek: 5, dayName: "Jumat" },
+  { dayOfWeek: 6, dayName: "Sabtu" },
+  { dayOfWeek: 0, dayName: "Minggu" },
+] as const;
 
-function defaultDays(): PatternDay[] {
-  return DAY_NAMES.map((dayName, index) => ({
-    dayOfWeek: index + 1,
+function newDay(dayOfWeek: number, dayName: string): PatternDay {
+  return {
+    dayOfWeek,
     dayName,
-    isWorkday: index < 5,
+    isWorkday: dayOfWeek >= 1 && dayOfWeek <= 5,
     startTime: "09:00",
     endTime: "17:00",
     earliestCheckInMinutes: 120,
     lateToleranceMinutes: 15,
-  }));
+  };
+}
+
+function defaultDays(): PatternDay[] {
+  return DAYS.map((day) => newDay(day.dayOfWeek, day.dayName));
 }
 
 function draftDays(pattern?: WorkPatternRow): PatternDay[] {
   if (!pattern) return defaultDays();
-  return DAY_NAMES.map((dayName, index) => {
-    const existing = pattern.days.find((day) => day.dayOfWeek === index + 1);
-    return (
-      existing ?? {
-        dayOfWeek: index + 1,
-        dayName,
-        isWorkday: index < 5,
-        startTime: "09:00",
-        endTime: "17:00",
-        earliestCheckInMinutes: 120,
-        lateToleranceMinutes: 15,
-      }
-    );
+  return DAYS.map((day) => {
+    const existing = pattern.days.find((entry) => entry.dayOfWeek === day.dayOfWeek);
+    return existing ?? newDay(day.dayOfWeek, day.dayName);
   });
 }
 
@@ -145,8 +148,8 @@ export function WorkPatternEditor({
           <span>Masuk</span>
           <span>Pulang</span>
           <span>Awal absen</span>
-          <span>Toleransi</span>
-          <span>Kerja</span>
+          <span>Toleransi telat</span>
+          <span>Status</span>
         </div>
         {days.map((day) => (
           <div className="pattern-day-row" role="row" key={day.dayOfWeek}>
@@ -203,19 +206,34 @@ export function WorkPatternEditor({
                 }
               />
             </label>
-            <label className="field--check">
-              <input
-                type="checkbox"
-                checked={day.isWorkday}
-                onChange={(event) => updateDay(day.dayOfWeek, { isWorkday: event.target.checked })}
-              />
-              Kerja
-            </label>
+            <div
+              className="pattern-day-status"
+              role="group"
+              aria-label={`Status ${day.dayName}`}
+            >
+              <button
+                type="button"
+                className={`pattern-toggle${day.isWorkday ? " pattern-toggle--active" : ""}`}
+                aria-pressed={day.isWorkday}
+                onClick={() => updateDay(day.dayOfWeek, { isWorkday: true })}
+              >
+                Kerja
+              </button>
+              <button
+                type="button"
+                className={`pattern-toggle${!day.isWorkday ? " pattern-toggle--off" : ""}`}
+                aria-pressed={!day.isWorkday}
+                onClick={() => updateDay(day.dayOfWeek, { isWorkday: false })}
+              >
+                Libur
+              </button>
+            </div>
           </div>
         ))}
       </div>
       <p className="field-hint" style={{ marginTop: "0.5rem" }}>
-        Awal absen dan toleransi memakai satuan menit.
+        Aktifkan Sabtu bila hari tersebut hari kerja; jam masuk, pulang, dan toleransi
+        dapat berbeda dari hari lain. Awal absen dan toleransi memakai satuan menit.
       </p>
       <div className="btn-row" style={{ marginTop: "0.9rem" }}>
         <button type="submit" className="btn btn--primary" disabled={busy}>

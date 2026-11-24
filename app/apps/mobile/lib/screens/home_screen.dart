@@ -9,9 +9,11 @@ import '../core/app_config.dart';
 import '../models/attendance_log.dart';
 import '../models/broadcast.dart';
 import '../models/employee_request.dart';
+import '../models/leave.dart';
 import '../models/member_device.dart';
 import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
+import '../models/schedule.dart';
 import '../models/warning_letter.dart';
 import '../services/app_update_service.dart';
 import '../services/attendance_reminder_service.dart';
@@ -21,51 +23,55 @@ import '../services/offline_attendance_queue.dart';
 import '../services/push_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/geofence_map.dart' show distanceMeters;
-import '../widgets/update_dialog.dart';
 import 'broadcasts_screen.dart';
 import 'camera_screen.dart';
-import 'notifications_screen.dart';
+import 'client_visits_screen.dart';
+import 'correction_form_screen.dart';
+import 'employee_requests_screen.dart';
+import 'history_screen.dart';
+import 'leave_form_screen.dart';
+import 'payslips_screen.dart';
+import 'profile_screen.dart';
+import 'schedule_screen.dart';
 import 'warning_letters_screen.dart';
+import 'work_permit_form_screen.dart';
+import 'work_projections_screen.dart';
 import 'workspace_picker_screen.dart';
 
 typedef PhotoTaker = Future<Uint8List?> Function(BuildContext context);
 
-const List<String> _weekdays = [
-  'Senin',
-  'Selasa',
-  'Rabu',
-  'Kamis',
-  'Jumat',
-  'Sabtu',
-  'Minggu',
-];
-
-const List<String> _months = [
-  'Januari',
-  'Februari',
-  'Maret',
-  'April',
+const List<String> _monthShort = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
   'Mei',
-  'Juni',
-  'Juli',
-  'Agustus',
-  'September',
-  'Oktober',
-  'November',
-  'Desember',
+  'Jun',
+  'Jul',
+  'Agu',
+  'Sep',
+  'Okt',
+  'Nov',
+  'Des',
 ];
 
 String _two(int value) => value.toString().padLeft(2, '0');
 
-String _clockText(DateTime value) =>
-    '${_two(value.hour)}:${_two(value.minute)}:${_two(value.second)}';
+String _timeText(DateTime value) => '${_two(value.hour)}:${_two(value.minute)}';
 
-String _timeText(DateTime value) =>
-    '${_two(value.hour)}:${_two(value.minute)}';
+String _shortDate(DateTime value) {
+  final local = value.toLocal();
+  return '${local.day} ${_monthShort[local.month - 1]} ${local.year}';
+}
 
-String _dateText(DateTime value) =>
-    '${_weekdays[value.weekday - 1]}, ${value.day} '
-    '${_months[value.month - 1]} ${value.year}';
+String _zoneLabel(String timezone) {
+  return switch (timezone) {
+    'Asia/Jakarta' => 'WIB',
+    'Asia/Makassar' => 'WITA',
+    'Asia/Jayapura' => 'WIT',
+    _ => timezone.isEmpty ? 'WIB' : timezone,
+  };
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
@@ -76,6 +82,8 @@ class HomeScreen extends StatefulWidget {
     this.pushService,
     this.offlineQueue,
     this.reminderService,
+    this.updateService,
+    this.onOpenActivity,
     this.embedded = false,
   });
 
@@ -85,6 +93,8 @@ class HomeScreen extends StatefulWidget {
   final PushService? pushService;
   final OfflineAttendanceQueue? offlineQueue;
   final AttendanceReminderService? reminderService;
+  final AppUpdateService? updateService;
+  final VoidCallback? onOpenActivity;
   final bool embedded;
 
   @override
@@ -94,22 +104,21 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final LocationService _location;
   late final OfflineAttendanceQueue _offlineQueue;
-  late final AppUpdateService _updates;
   late final AttendanceReminderService _reminders;
-  InstalledAppInfo _installed = InstalledAppInfo.unknown;
-  bool _checkingUpdate = false;
-  Timer? _clockTimer;
-  DateTime _now = DateTime.now();
   int _pendingOffline = 0;
   bool _syncingOffline = false;
   Timer? _offlineRetry;
   List<OfficeLocation> _offices = const [];
   List<AttendanceLog> _today = const [];
+  WorkSchedule? _schedule;
   MemberDevice? _device;
   bool _refreshingDevice = false;
   bool _wfhToday = false;
   List<BroadcastMessage> _broadcasts = const [];
   List<WarningLetter> _warnings = const [];
+  LeaveBalance? _leaveBalance;
+  Uint8List? _avatarBytes;
+  bool _showMoreServices = false;
   bool _outOfTown = false;
   String _outOfTownReason = '';
   GpsReading? _gps;
@@ -123,17 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _location = widget.locationService ?? LocationService();
     _offlineQueue = widget.offlineQueue ?? OfflineAttendanceQueue();
-    _updates = AppUpdateService();
     _reminders = widget.reminderService ?? AttendanceReminderService();
-    unawaited(_loadInstalledVersion());
     unawaited(_refreshOffline().then((_) => _syncOffline()));
-    // Retry berkala: koneksi yang pulih akan menyinkronkan antrean tanpa aksi user.
+    // Retry berkala: koneksi yang pulih menyinkronkan antrean tanpa aksi user.
     _offlineRetry = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_pendingOffline > 0 && !_syncingOffline) unawaited(_syncOffline());
-    });
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _now = DateTime.now());
     });
     unawaited(
       PushRegistrar.register(
@@ -141,13 +144,13 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.pushService ?? const NoopPushService(),
       ),
     );
+    unawaited(_loadAvatar());
     _load();
   }
 
   @override
   void dispose() {
     _offlineRetry?.cancel();
-    _clockTimer?.cancel();
     super.dispose();
   }
 
@@ -171,18 +174,31 @@ class _HomeScreenState extends State<HomeScreen> {
             .where(_isToday)
             .toList(growable: false);
         _wfhToday = (results[2] as List<WfhRequest>).any(
-          (row) => row.status == 'APPROVED' && _isSameDay(row.date, DateTime.now()),
+          (row) =>
+              row.status == 'APPROVED' && _isSameDay(row.date, DateTime.now()),
         );
         _broadcasts = results[3] as List<BroadcastMessage>;
         _warnings = results[4] as List<WarningLetter>;
         _loading = false;
       });
       try {
+        final schedule = await widget.auth.api.workSchedule();
+        if (mounted) setState(() => _schedule = schedule);
+      } catch (_) {
+        // Kartu header tetap bisa dipakai; jadwal tampil kosong bila gagal.
+      }
+      try {
         final device = await widget.auth.api.myDevice();
         if (mounted) setState(() => _device = device);
       } catch (_) {
         // Status perangkat bersifat informatif; server tetap menolak aksi
         // check-in jika perangkat belum disetujui.
+      }
+      try {
+        final balance = await widget.auth.api.myLeaveBalance();
+        if (mounted) setState(() => _leaveBalance = balance);
+      } catch (_) {
+        // Kuota cuti bersifat informatif; badge menampilkan tanda kosong.
       }
       unawaited(_syncReminders());
     } on ApiException catch (error) {
@@ -197,6 +213,18 @@ class _HomeScreenState extends State<HomeScreen> {
         _error = 'Data absensi tidak dapat dimuat.';
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _loadAvatar() async {
+    try {
+      final photo = await widget.auth.api.myProfilePhoto();
+      if (!photo.hasPhoto) return;
+      final bytes = await widget.auth.api.profilePhotoBytes(photo.photoUrl!);
+      if (!mounted || bytes == null) return;
+      setState(() => _avatarBytes = bytes);
+    } catch (_) {
+      // Avatar jatuh ke inisial bila foto belum tersedia.
     }
   }
 
@@ -222,13 +250,14 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } on ApiException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(messageForApiError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(messageForApiError(error))));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Status perangkat tidak dapat diperiksa.')),
+        const SnackBar(
+          content: Text('Status perangkat tidak dapat diperiksa.'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _refreshingDevice = false);
@@ -286,11 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _isToday(AttendanceLog log) {
     final date = log.workDate ?? log.timestampServer;
-    final local = date.toLocal();
-    final now = DateTime.now();
-    return local.year == now.year &&
-        local.month == now.month &&
-        local.day == now.day;
+    return _isSameDay(date, DateTime.now());
   }
 
   String? get _nextAction {
@@ -336,12 +361,18 @@ class _HomeScreenState extends State<HomeScreen> {
   bool get _locationPositive =>
       _outOfTown || _wfhToday || (_gps != null && _insideRadius);
 
-  String get _todayStatus {
-    final hasCheckIn = _today.any((row) => row.isCheckIn);
-    final hasCheckOut = _today.any((row) => row.isCheckOut);
-    if (hasCheckIn && hasCheckOut) return 'Lengkap';
-    if (hasCheckIn) return 'Belum check-out';
-    return 'Belum absen';
+  String get _name => widget.auth.user?.name ?? 'Pengguna';
+
+  String get _initials {
+    final parts = _name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2);
+    final letters = parts
+        .map((part) => part.substring(0, 1).toUpperCase())
+        .join();
+    return letters.isEmpty ? 'A' : letters;
   }
 
   AttendanceLog? _firstOf(bool Function(AttendanceLog) test) {
@@ -396,8 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Izin GPS diminta saat tombol absen ditekan, bukan saat aplikasi dibuka.
-  /// Setelah lokasi valid, kamera selfie langsung dibuka dan absen dikirim.
+  /// Izin GPS diminta saat tombol presensi ditekan, bukan saat aplikasi dibuka.
   Future<void> _startAttendance() async {
     final action = _nextAction;
     if (action == null || _locating || _submitting) return;
@@ -442,7 +472,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final office = _office;
     final distance = _distance;
     final inside =
-        _wfhToday || (office != null && distance != null && distance <= office.radiusMeters);
+        _wfhToday ||
+        (office != null && distance != null && distance <= office.radiusMeters);
     final photo = await _takePhoto(
       context,
       office: office,
@@ -552,12 +583,17 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _error = null);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Tidak ada koneksi. Absensi disimpan dan akan disinkronkan.'),
+          content: Text(
+            'Tidak ada koneksi. Absensi disimpan dan akan disinkronkan.',
+          ),
         ),
       );
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'Absensi gagal dikirim dan tidak dapat disimpan offline.');
+      setState(
+        () =>
+            _error = 'Absensi gagal dikirim dan tidak dapat disimpan offline.',
+      );
     }
   }
 
@@ -572,60 +608,20 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       if (synced > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$synced absensi offline berhasil disinkronkan.')),
+          SnackBar(
+            content: Text('$synced absensi offline berhasil disinkronkan.'),
+          ),
         );
         await _load();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sinkronisasi gagal. Periksa koneksi Anda.')),
+          const SnackBar(
+            content: Text('Sinkronisasi gagal. Periksa koneksi Anda.'),
+          ),
         );
       }
     } finally {
       if (mounted) setState(() => _syncingOffline = false);
-    }
-  }
-
-  Future<void> _loadInstalledVersion() async {
-    final info = await _updates.installed();
-    if (!mounted) return;
-    setState(() => _installed = info);
-  }
-
-  Future<void> _checkForAppUpdate() async {
-    if (_checkingUpdate) return;
-    setState(() => _checkingUpdate = true);
-    try {
-      final result = await _updates.checkForUpdate();
-      if (!mounted) return;
-      if (result == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Aplikasi sudah versi terbaru (${_installed.version}).',
-            ),
-          ),
-        );
-        return;
-      }
-      await UpdateAvailableDialog.show(
-        context,
-        service: _updates,
-        result: result,
-      );
-    } on AppUpdateException catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message)),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tidak dapat memeriksa pembaruan. Periksa koneksi Anda.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _checkingUpdate = false);
     }
   }
 
@@ -641,135 +637,29 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final workspace = widget.auth.activeWorkspace;
-    return AnimatedBuilder(
-      animation: widget.auth,
-      builder: (context, _) {
-        return Scaffold(
-          backgroundColor: AppColors.canvas,
-          appBar: widget.embedded
-              ? null
-              : AppBar(
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(workspace?.name ?? 'Absensi'),
-                      const Text(
-                        'Absensi harian',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.muted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    IconButton(
-                      key: const Key('home-notifications'),
-                      tooltip: 'Notifikasi',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => NotificationsScreen(auth: widget.auth),
-                        ),
-                      ),
-                      icon: const Icon(Icons.notifications_outlined, size: 22),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                ),
-          body: SafeArea(
-            bottom: false,
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : RefreshIndicator(
-                    color: AppColors.green,
-                    onRefresh: () async {
-                      await _load();
-                      await _syncOffline();
-                    },
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (_deviceBlocked) ...[
-                            _deviceBanner(_device!),
-                            const SizedBox(height: 12),
-                          ],
-                          if (_pendingOffline > 0) ...[
-                            Card(
-                              key: const Key('offline-queue-banner'),
-                              color: AppColors.yellowSoft,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: const BorderSide(color: AppColors.yellowLine),
-                              ),
-                              child: ListTile(
-                                leading: const Icon(
-                                  Icons.cloud_off,
-                                  color: AppColors.yellowInk,
-                                ),
-                                title: Text(
-                                  '$_pendingOffline absensi menunggu sinkronisasi',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.yellowInk,
-                                  ),
-                                ),
-                                trailing: TextButton(
-                                  key: const Key('sync-offline-now'),
-                                  onPressed: _syncingOffline ? null : _syncOffline,
-                                  child: Text(
-                                    _syncingOffline ? 'Menyinkronkan…' : 'Sinkronkan',
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                          if (_broadcasts.isNotEmpty) ...[
-                            _buildBroadcastBanner(_broadcasts.first),
-                            const SizedBox(height: 12),
-                          ],
-                          if (_activeWarnings.isNotEmpty) ...[
-                            _buildWarningBanner(_activeWarnings.first),
-                            const SizedBox(height: 12),
-                          ],
-                          _buildGreeting(),
-                          const SizedBox(height: 16),
-                          _buildClockCard(),
-                          const SizedBox(height: 12),
-                          _buildModeSelector(),
-                          const SizedBox(height: 16),
-                          ..._buildWarnings(),
-                          _buildSubmitButton(),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Selfie diambil lewat kamera depan setelah lokasi dicek.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11, color: AppColors.muted),
-                          ),
-                          const SizedBox(height: 20),
-                          _buildTodayCard(),
-                          if (!widget.embedded) ...[
-                            const SizedBox(height: 14),
-                            _buildAppInfoCard(),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-          ),
-        );
-      },
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfileScreen(
+          auth: widget.auth,
+          updateService: widget.updateService,
+          standalone: true,
+        ),
+      ),
     );
+  }
+
+  void _openPage(Widget page) {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
+  }
+
+  Future<void> _openCorrection() async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CorrectionFormScreen(auth: widget.auth),
+      ),
+    );
+    if (saved == true && mounted) await _load();
   }
 
   List<WarningLetter> get _activeWarnings =>
@@ -793,69 +683,1125 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) await _load();
   }
 
-  Widget _buildBroadcastBanner(BroadcastMessage item) {
-    final important = item.isImportant;
+  Future<void> _openModeSheet() async {
+    var selectedOutOfTown = _outOfTown;
+    final reason = TextEditingController(text: _outOfTownReason);
+    String? validation;
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              18,
+              12,
+              18,
+              MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.line,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    'Mode presensi',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  const Text(
+                    'Presensi kantor memakai geofence dan selfie. Dinas luar kota '
+                    'tetap dicatat dan menunggu persetujuan approver.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.4,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      _modeButton(
+                        key: const Key('home-mode-office'),
+                        label: 'Kantor',
+                        icon: Icons.business_outlined,
+                        selected: !selectedOutOfTown,
+                        onTap: () =>
+                            setSheetState(() => selectedOutOfTown = false),
+                      ),
+                      const SizedBox(width: 8),
+                      _modeButton(
+                        key: const Key('home-mode-out-of-town'),
+                        label: 'Luar kota',
+                        icon: Icons.flight_takeoff,
+                        selected: selectedOutOfTown,
+                        onTap: () =>
+                            setSheetState(() => selectedOutOfTown = true),
+                      ),
+                    ],
+                  ),
+                  if (selectedOutOfTown) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      key: const Key('home-out-of-town-reason'),
+                      controller: reason,
+                      minLines: 2,
+                      maxLines: 3,
+                      maxLength: 500,
+                      onChanged: (_) {
+                        if (validation != null) {
+                          setSheetState(() => validation = null);
+                        }
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Tujuan dan keperluan dinas luar kota (min. 10 karakter)',
+                        counterText: '',
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                  if (validation != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      validation!,
+                      key: const Key('home-mode-error'),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    height: 46,
+                    child: FilledButton(
+                      key: const Key('home-mode-save'),
+                      onPressed: () {
+                        if (selectedOutOfTown &&
+                            reason.text.trim().length < 10) {
+                          setSheetState(
+                            () => validation =
+                                'Alasan dinas luar kota minimal 10 karakter.',
+                          );
+                          return;
+                        }
+                        Navigator.of(sheetContext).pop(true);
+                      },
+                      child: const Text('Simpan mode'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (saved == true && mounted) {
+      setState(() {
+        _outOfTown = selectedOutOfTown;
+        _outOfTownReason = selectedOutOfTown ? reason.text.trim() : '';
+      });
+    }
+    reason.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.auth,
+      builder: (context, _) {
+        final warnings = _buildWarnings();
+        return Scaffold(
+          backgroundColor: AppColors.canvas,
+          body: SafeArea(
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildTopBar(),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : RefreshIndicator(
+                          color: AppColors.green,
+                          onRefresh: () async {
+                            await _load();
+                            await _syncOffline();
+                          },
+                          child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (_deviceBlocked) ...[
+                                  _deviceBanner(_device!),
+                                  const SizedBox(height: 10),
+                                ],
+                                if (_pendingOffline > 0) ...[
+                                  _offlineBanner(),
+                                  const SizedBox(height: 10),
+                                ],
+                                _companyScheduleCard(),
+                                if (_activeWarnings.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  _buildWarningBanner(_activeWarnings.first),
+                                ],
+                                if (warnings.isNotEmpty)
+                                  const SizedBox(height: 10),
+                                ...warnings,
+                                const SizedBox(height: 14),
+                                _serviceGrid(),
+                                const SizedBox(height: 12),
+                                _attendanceSummaryBanner(),
+                                const SizedBox(height: 10),
+                                const Text(
+                                  'Selfie diambil lewat kamera depan setelah lokasi dicek.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: _loading ? null : _buildStickyCta(),
+        );
+      },
+    );
+  }
+
+  Widget _buildTopBar() {
+    final workspace = widget.auth.activeWorkspace;
+    final quota = _leaveBalance?.remainingDays;
+    return Container(
+      key: const Key('home-top-bar'),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.teal,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'A',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: InkWell(
+                  key: const Key('home-switch-workspace'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _openWorkspacePicker,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        workspace?.name ?? 'Absensi',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      const Text(
+                        'Portal absensi karyawan',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                key: const Key('home-profile'),
+                borderRadius: BorderRadius.circular(999),
+                onTap: _openProfile,
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: AppColors.greenSoft,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.greenLine),
+                  ),
+                  alignment: Alignment.center,
+                  child: _avatarBytes == null
+                      ? Text(
+                          _initials,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.greenDark,
+                          ),
+                        )
+                      : Image.memory(_avatarBytes!, fit: BoxFit.cover),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  key: const Key('home-profile-name'),
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: _openProfile,
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                            color: AppColors.ink,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 15,
+                        color: AppColors.muted,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              _topBadge(
+                key: const Key('home-leave-quota'),
+                icon: Icons.beach_access_outlined,
+                text: 'Kuota Cuti ${quota ?? '—'}',
+              ),
+              const SizedBox(width: 6),
+              _topBadge(
+                key: const Key('home-timezone'),
+                icon: Icons.public,
+                text: _zoneLabel(_schedule?.timezone ?? 'Asia/Jakarta'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _topBadge({
+    required Key key,
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.tableHead,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppColors.muted),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+              fontFeatures: tabularFigures,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _companyScheduleCard() {
+    final schedule = _schedule;
+    final now = DateTime.now();
+    final day = schedule?.dayFor(now);
+    final holiday = schedule?.holidayOn(now);
+    final isWorkday = day?.isWorkday == true && holiday == null;
+    final hours = isWorkday
+        ? '${day!.startTime} ··· ${day.endTime}'
+        : 'Hari Libur';
+    final tolerance =
+        day?.lateToleranceMinutes ?? schedule?.lateToleranceMinutes ?? 0;
+    final checkIn = _firstOf((log) => log.isCheckIn);
+    final broadcast = _broadcasts.isEmpty ? null : _broadcasts.first;
+    final workspace = widget.auth.activeWorkspace;
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: AppColors.teal,
+            child: InkWell(
+              key: const Key('home-broadcast-banner'),
+              onTap: broadcast == null ? null : _openBroadcasts,
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        broadcast == null
+                            ? Icons.business_outlined
+                            : Icons.campaign_outlined,
+                        size: 19,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            workspace?.name ?? 'Absensi',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            broadcast?.title ??
+                                'Portal absensi dan jadwal kerja karyawan.',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              height: 1.3,
+                              color: Colors.white.withValues(alpha: 0.88),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (broadcast != null)
+                      Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: Colors.white.withValues(alpha: 0.75),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Jadwal Anda Hari Ini',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isWorkday
+                            ? AppColors.greenSoft
+                            : AppColors.tableHead,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: isWorkday
+                              ? AppColors.greenLine
+                              : AppColors.line,
+                        ),
+                      ),
+                      child: Text(
+                        isWorkday ? 'Hari Kerja' : 'Hari Libur',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: isWorkday
+                              ? AppColors.greenDark
+                              : AppColors.muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        hours,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          height: 1.1,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.6,
+                          color: AppColors.ink,
+                          fontFeatures: tabularFigures,
+                        ),
+                      ),
+                    ),
+                    if (isWorkday && tolerance > 0) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.yellowSoft,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AppColors.yellowLine),
+                        ),
+                        child: Text(
+                          '$tolerance menit',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.yellowInk,
+                            fontFeatures: tabularFigures,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.free_breakfast_outlined,
+                      size: 13,
+                      color: AppColors.muted,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        holiday != null
+                            ? '${holiday.name} · ${holiday.typeLabel}'
+                            : 'Istirahat mengikuti kebijakan kantor.',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          height: 1.3,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 11),
+                Container(
+                  key: const Key('home-checkin-strip'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.greenDark,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        checkIn == null
+                            ? Icons.login
+                            : Icons.check_circle_outline,
+                        size: 15,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Status hari ini',
+                              style: TextStyle(
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.72),
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              checkIn == null
+                                  ? 'Belum Presensi Masuk'
+                                  : 'Presensi Masuk, '
+                                        '${_shortDate(checkIn.workDate ?? checkIn.timestampServer)} '
+                                        '(${_timeText(checkIn.timestampServer.toLocal())})',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                fontFeatures: tabularFigures,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceGrid() {
+    final services = _services();
+    final visible = _showMoreServices ? services : services.take(4).toList();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 12, 10, 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        children: [
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisExtent: 80,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
+            ),
+            itemCount: visible.length,
+            itemBuilder: (context, index) => _serviceTile(visible[index]),
+          ),
+          TextButton.icon(
+            key: const Key('home-services-toggle'),
+            onPressed: () =>
+                setState(() => _showMoreServices = !_showMoreServices),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              textStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            icon: Icon(
+              _showMoreServices ? Icons.expand_less : Icons.expand_more,
+              size: 17,
+            ),
+            label: Text(_showMoreServices ? 'Tutup' : 'Lainnya'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _serviceTile(_ServiceItem item) {
+    return InkWell(
+      key: Key(item.key),
+      borderRadius: BorderRadius.circular(10),
+      onTap: item.onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.tableHead,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Icon(item.icon, size: 20, color: AppColors.ink),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            item.label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 9.5,
+              height: 1.15,
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<_ServiceItem> _services() {
+    return [
+      _ServiceItem(
+        key: 'service-lembur',
+        label: 'Lembur',
+        icon: Icons.more_time_outlined,
+        onTap: () => _openPage(EmployeeRequestsScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-cuti',
+        label: 'Cuti',
+        icon: Icons.beach_access_outlined,
+        onTap: () => _openPage(LeaveFormScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-izin',
+        label: 'Izin',
+        icon: Icons.badge_outlined,
+        onTap: () => _openPage(WorkPermitFormScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-proyeksi',
+        label: 'Proyeksi',
+        icon: Icons.track_changes_outlined,
+        onTap: () => _openPage(WorkProjectionsScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-kunjungan',
+        label: 'Kunjungan Klien',
+        icon: Icons.location_on_outlined,
+        onTap: () => _openPage(ClientVisitsScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-kalender',
+        label: 'Kalender Libur',
+        icon: Icons.event_busy_outlined,
+        onTap: () => _openPage(ScheduleScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-slip',
+        label: 'Slip Gaji',
+        icon: Icons.receipt_long_outlined,
+        onTap: () => _openPage(PayslipsScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-surat-peringatan',
+        label: 'Surat Peringatan',
+        icon: Icons.gpp_maybe_outlined,
+        onTap: () => _openPage(WarningLettersScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-revisi',
+        label: 'Revisi Presensi',
+        icon: Icons.edit_calendar_outlined,
+        onTap: _openCorrection,
+      ),
+      _ServiceItem(
+        key: 'service-broadcast',
+        label: 'Broadcast',
+        icon: Icons.campaign_outlined,
+        onTap: () => _openPage(BroadcastsScreen(auth: widget.auth)),
+      ),
+      _ServiceItem(
+        key: 'service-profil',
+        label: 'Profil Saya',
+        icon: Icons.person_outline_rounded,
+        onTap: _openProfile,
+      ),
+    ];
+  }
+
+  Widget _attendanceSummaryBanner() {
     return Material(
-      key: const Key('home-broadcast-banner'),
-      color: important ? AppColors.yellowSoft : AppColors.greenSoft,
+      key: const Key('home-attendance-summary'),
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: _openBroadcasts,
+        onTap:
+            widget.onOpenActivity ??
+            () => _openPage(HistoryScreen(auth: widget.auth)),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: important ? AppColors.yellowLine : AppColors.greenLine,
-            ),
+            border: Border.all(color: AppColors.line),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                important ? Icons.priority_high : Icons.campaign_outlined,
-                size: 18,
-                color: important ? AppColors.yellowInk : AppColors.greenDark,
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.greenSoft,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.greenLine),
+                ),
+                child: const Icon(
+                  Icons.insert_chart_outlined,
+                  size: 19,
+                  color: AppColors.greenDark,
+                ),
               ),
-              const SizedBox(width: 9),
-              Expanded(
+              const SizedBox(width: 10),
+              const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      important ? 'Pengumuman penting' : 'Pengumuman terbaru',
+                      'Ringkasan Kehadiran',
                       style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: important
-                            ? AppColors.yellowInk
-                            : AppColors.greenDark,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
                         color: AppColors.ink,
                       ),
                     ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Periksa kinerja rekap Anda bulan ini',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        height: 1.3,
+                        color: AppColors.muted,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: AppColors.muted,
+              const SizedBox(width: 8),
+              Container(
+                width: 26,
+                height: 26,
+                decoration: const BoxDecoration(
+                  color: AppColors.green,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_outward,
+                  size: 14,
+                  color: Colors.white,
+                ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStickyCta() {
+    final action = _nextAction;
+    final busy = _locating || _submitting;
+    final blocked = _deviceBlocked;
+    final label = blocked
+        ? 'Menunggu persetujuan perangkat'
+        : action == null
+        ? 'Presensi hari ini selesai'
+        : _locating
+        ? 'Mengambil lokasi…'
+        : _submitting
+        ? 'Mengirim presensi…'
+        : action == 'CHECK_IN'
+        ? 'Presensi Masuk'
+        : 'Presensi Keluar';
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 7, 14, 9),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  key: const Key('home-mode-select'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: busy ? null : _openModeSheet,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _outOfTown
+                              ? Icons.flight_takeoff
+                              : Icons.business_outlined,
+                          size: 15,
+                          color: AppColors.muted,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Mode presensi',
+                                style: TextStyle(
+                                  fontSize: 8.5,
+                                  color: AppColors.muted,
+                                ),
+                              ),
+                              Text(
+                                _outOfTown ? 'Dinas luar kota' : 'Kantor',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.ink,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _locationPill(),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              key: const Key('attendance-submit'),
+              style: FilledButton.styleFrom(
+                backgroundColor: action == 'CHECK_OUT'
+                    ? AppColors.crimson
+                    : AppColors.green,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.line,
+                disabledForegroundColor: AppColors.muted,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              onPressed: action == null || busy || blocked
+                  ? null
+                  : _startAttendance,
+              icon: busy
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Icon(
+                      action == 'CHECK_OUT' ? Icons.logout : Icons.login,
+                      size: 18,
+                    ),
+              label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _locationPill() {
+    final positive = _locationPositive;
+    final neutral = _gps == null && !_wfhToday;
+    final foreground = neutral
+        ? AppColors.muted
+        : positive
+        ? AppColors.greenDark
+        : AppColors.yellowInk;
+    final distance = _distance;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 156),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: neutral
+              ? AppColors.tableHead
+              : positive
+              ? AppColors.greenSoft
+              : AppColors.yellowSoft,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: neutral
+                ? AppColors.line
+                : positive
+                ? AppColors.greenLine
+                : AppColors.yellowLine,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: neutral
+                    ? AppColors.muted
+                    : positive
+                    ? AppColors.green
+                    : AppColors.amber,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                [
+                  _locationLabel,
+                  if (distance != null) '${distance.toStringAsFixed(0)} m',
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  color: foreground,
+                  fontFeatures: tabularFigures,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _offlineBanner() {
+    return Container(
+      key: const Key('offline-queue-banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.yellowSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.yellowLine),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, size: 16, color: AppColors.yellowInk),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              '$_pendingOffline absensi menunggu sinkronisasi',
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.yellowInk,
+                fontFeatures: tabularFigures,
+              ),
+            ),
+          ),
+          TextButton(
+            key: const Key('sync-offline-now'),
+            onPressed: _syncingOffline ? null : _syncOffline,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 30),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              foregroundColor: AppColors.yellowInk,
+              textStyle: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            child: Text(_syncingOffline ? 'Menyinkronkan…' : 'Sinkronkan'),
+          ),
+        ],
       ),
     );
   }
@@ -864,59 +1810,56 @@ class _HomeScreenState extends State<HomeScreen> {
     return Material(
       key: const Key('home-warning-banner'),
       color: AppColors.dangerSoft,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         onTap: _openWarnings,
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.danger.withValues(alpha: 0.28),
-            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.danger.withValues(alpha: 0.28)),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Icon(
                 Icons.gpp_maybe_outlined,
-                size: 18,
+                size: 16,
                 color: AppColors.danger,
               ),
-              const SizedBox(width: 9),
+              const SizedBox(width: 7),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       '${item.level} aktif · ${item.letterNumber}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
                         color: AppColors.danger,
                         fontFeatures: tabularFigures,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                     Text(
                       item.isAcknowledged
                           ? 'Surat peringatan sudah dikonfirmasi dibaca.'
                           : 'Buka profil untuk membaca dan mengonfirmasi surat.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 10.5,
-                        height: 1.35,
+                        fontSize: 10,
+                        height: 1.3,
                         color: AppColors.muted,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: AppColors.muted,
-              ),
+              const Icon(Icons.chevron_right, size: 17, color: AppColors.muted),
             ],
           ),
         ),
@@ -924,120 +1867,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildGreeting() {
-    final name = widget.auth.user?.name ?? 'Pengguna';
-    final office = _office;
-    final shiftLabel = office == null
-        ? 'Belum ada shift'
-        : '${office.workStart}–${office.workEnd}';
-    final shiftName = _wfhToday ? 'WFH' : 'Shift aktif';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Selamat datang',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 23,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
-                      color: AppColors.ink,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              key: const Key('home-switch-workspace'),
-              tooltip: 'Ganti workspace',
-              visualDensity: VisualDensity.compact,
-              onPressed: _openWorkspacePicker,
-              icon: const Icon(Icons.swap_horiz, size: 20),
-            ),
-            if (widget.embedded)
-              IconButton(
-                key: const Key('home-notifications'),
-                tooltip: 'Notifikasi',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => NotificationsScreen(auth: widget.auth),
-                  ),
-                ),
-                icon: const Icon(Icons.notifications_outlined, size: 20),
-              )
-            else
-              IconButton(
-                key: const Key('home-logout'),
-                tooltip: 'Keluar',
-                visualDensity: VisualDensity.compact,
-                onPressed: widget.auth.logout,
-                icon: const Icon(Icons.logout, size: 20),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.yellowSoft,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.yellowLine),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.schedule, size: 14, color: AppColors.yellowInk),
-              const SizedBox(width: 6),
-              Text(
-                shiftName,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.yellowInk,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                shiftLabel,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.yellowInk,
-                  fontFeatures: tabularFigures,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _deviceBanner(MemberDevice device) {
     final revoked = device.isRevoked;
     return Container(
       key: const Key('device-pending-banner'),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
         color: revoked ? AppColors.dangerSoft : AppColors.yellowSoft,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: revoked
               ? AppColors.danger.withValues(alpha: 0.3)
@@ -1049,10 +1886,10 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Icon(
             revoked ? Icons.phonelink_erase : Icons.verified_user_outlined,
-            size: 18,
+            size: 16,
             color: revoked ? AppColors.danger : AppColors.yellowInk,
           ),
-          const SizedBox(width: 9),
+          const SizedBox(width: 7),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1060,27 +1897,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   revoked
                       ? 'Perangkat sudah direset Admin HR'
-                      : 'Perangkat baru menunggu persetujuan Admin HR',
+                      : 'Perangkat menunggu persetujuan Admin HR',
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                     color: revoked ? AppColors.danger : AppColors.yellowInk,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
-                  '${device.deviceName} · ${device.platform}. Check-in dan check-out '
-                  'diblokir sampai perangkat disetujui.',
+                  '${device.deviceName} · ${device.platform}. Presensi diblokir '
+                  'sampai perangkat disetujui.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
-                    height: 1.4,
+                    fontSize: 10,
+                    height: 1.35,
                     color: revoked ? AppColors.danger : AppColors.muted,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 OutlinedButton.icon(
                   key: const Key('device-check-again'),
                   onPressed: _refreshingDevice ? null : _refreshDevice,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    textStyle: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   icon: _refreshingDevice
                       ? const SizedBox.square(
                           dimension: 13,
@@ -1131,230 +1978,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: selected ? AppColors.greenDark : AppColors.muted,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? AppColors.greenDark : AppColors.muted,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? AppColors.greenDark : AppColors.muted,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildModeSelector() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Mode presensi',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.ink,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _modeButton(
-                key: const Key('home-mode-office'),
-                label: 'Kantor',
-                icon: Icons.business_outlined,
-                selected: !_outOfTown,
-                onTap: () => setState(() {
-                  _outOfTown = false;
-                  _outOfTownReason = '';
-                }),
-              ),
-              const SizedBox(width: 8),
-              _modeButton(
-                key: const Key('home-mode-out-of-town'),
-                label: 'Luar kota',
-                icon: Icons.flight_takeoff,
-                selected: _outOfTown,
-                onTap: () => setState(() => _outOfTown = true),
-              ),
-            ],
-          ),
-          if (_outOfTown) ...[
-            const SizedBox(height: 8),
-            TextField(
-              key: const Key('home-out-of-town-reason'),
-              maxLength: 500,
-              minLines: 2,
-              maxLines: 3,
-              onChanged: (value) => _outOfTownReason = value,
-              decoration: const InputDecoration(
-                hintText: 'Tujuan dan keperluan dinas luar kota (min. 10 karakter)',
-                counterText: '',
-                isDense: true,
-              ),
-            ),
-            const Text(
-              'Presensi luar kota tetap dicatat dan menunggu persetujuan approver.',
-              style: TextStyle(fontSize: 10.5, height: 1.4, color: AppColors.muted),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    final busy = _locating || _submitting;
-    return SizedBox(
-      height: 56,
-      child: FilledButton.icon(
-        key: const Key('attendance-submit'),
-        style: FilledButton.styleFrom(
-          backgroundColor: _nextAction == 'CHECK_OUT'
-              ? AppColors.yellow
-              : AppColors.green,
-          foregroundColor: _nextAction == 'CHECK_OUT'
-              ? AppColors.yellowInk
-              : Colors.white,
-          disabledBackgroundColor: AppColors.line,
-          disabledForegroundColor: AppColors.muted,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        onPressed: _nextAction == null || busy || _deviceBlocked
-            ? null
-            : _startAttendance,
-        icon: busy
-            ? SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: _nextAction == 'CHECK_OUT'
-                      ? AppColors.yellowInk
-                      : Colors.white,
-                ),
-              )
-            : Icon(
-                _nextAction == 'CHECK_IN' ? Icons.login : Icons.logout,
-                size: 20,
-              ),
-        label: Text(
-          _deviceBlocked
-              ? 'Menunggu persetujuan perangkat'
-              : _nextAction == null
-              ? 'Absensi hari ini selesai'
-              : _locating
-              ? 'Mengambil lokasi…'
-              : _submitting
-              ? 'Mengirim absensi…'
-              : _nextAction == 'CHECK_IN'
-              ? 'Check-in sekarang'
-              : 'Check-out sekarang',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildClockCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: _locationPill()),
-          const SizedBox(height: 12),
-          Text(
-            _clockText(_now),
-            style: const TextStyle(
-              fontSize: 42,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -1.2,
-              height: 1.05,
-              color: AppColors.ink,
-              fontFeatures: tabularFigures,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            _dateText(_now),
-            style: const TextStyle(fontSize: 12, color: AppColors.muted),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _locationPill() {
-    final positive = _locationPositive;
-    final neutral = _gps == null && !_wfhToday;
-    final foreground = neutral
-        ? AppColors.muted
-        : positive
-        ? AppColors.greenDark
-        : AppColors.yellowInk;
-    final distance = _distance;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: neutral
-            ? AppColors.tableHead
-            : positive
-            ? AppColors.greenSoft
-            : AppColors.yellowSoft,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: neutral
-              ? AppColors.line
-              : positive
-              ? AppColors.greenLine
-              : AppColors.yellowLine,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: neutral
-                  ? AppColors.muted
-                  : positive
-                  ? AppColors.green
-                  : AppColors.amber,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            [
-              _locationLabel,
-              if (distance != null) '${distance.toStringAsFixed(0)} m',
-            ].join(' · '),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: foreground,
-              fontFeatures: tabularFigures,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1411,13 +2050,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (warnings.isEmpty) return const [];
     return [
-      ...warnings.expand(
-        (widget) => [
-          widget,
-          const SizedBox(height: 8),
-        ],
-      ),
-      const SizedBox(height: 4),
+      ...warnings.expand((widget) => [widget, const SizedBox(height: 8)]),
     ];
   }
 
@@ -1428,7 +2061,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     return Container(
       key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.dangerSoft,
         borderRadius: BorderRadius.circular(8),
@@ -1437,12 +2070,12 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Icon(icon, size: 15, color: AppColors.danger),
-          const SizedBox(width: 8),
+          const SizedBox(width: 7),
           Expanded(
             child: Text(
               text,
               style: const TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
                 color: AppColors.danger,
               ),
@@ -1452,211 +2085,18 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _buildTodayCard() {
-    final checkIn = _firstOf((log) => log.isCheckIn);
-    final checkOut = _firstOf((log) => log.isCheckOut);
-    final suspicious = _today.any((log) => log.isSuspicious);
-    final complete = checkIn != null && checkOut != null;
+class _ServiceItem {
+  const _ServiceItem({
+    required this.key,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(
-                child: Text(
-                  'Status hari ini',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: complete
-                      ? AppColors.greenSoft
-                      : checkIn != null
-                      ? AppColors.yellowSoft
-                      : AppColors.tableHead,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: complete
-                        ? AppColors.greenLine
-                        : checkIn != null
-                        ? AppColors.yellowLine
-                        : AppColors.line,
-                  ),
-                ),
-                child: Text(
-                  _todayStatus,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: complete
-                        ? AppColors.greenDark
-                        : checkIn != null
-                        ? AppColors.yellowInk
-                        : AppColors.muted,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _summaryCell(
-                  label: 'Jam masuk',
-                  value: checkIn == null
-                      ? '—'
-                      : _timeText(checkIn.timestampServer.toLocal()),
-                ),
-              ),
-              Container(width: 1, height: 34, color: AppColors.line),
-              Expanded(
-                child: _summaryCell(
-                  label: 'Jam pulang',
-                  value: checkOut == null
-                      ? '—'
-                      : _timeText(checkOut.timestampServer.toLocal()),
-                ),
-              ),
-              Container(width: 1, height: 34, color: AppColors.line),
-              Expanded(
-                child: _summaryCell(
-                  label: 'Jarak',
-                  value: checkIn == null
-                      ? '—'
-                      : '${checkIn.distanceMeters.toStringAsFixed(0)} m',
-                ),
-              ),
-            ],
-          ),
-          if (suspicious) ...[
-            const SizedBox(height: 10),
-            const Row(
-              children: [
-                Icon(Icons.warning_amber, size: 14, color: AppColors.amber),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Ada absensi yang ditandai perlu ditinjau.',
-                    style: TextStyle(fontSize: 11, color: AppColors.muted),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _summaryCell({required String label, required String value}) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.3,
-            color: AppColors.muted,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AppColors.ink,
-            fontFeatures: tabularFigures,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAppInfoCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.system_update_alt,
-                size: 16,
-                color: AppColors.muted,
-              ),
-              const SizedBox(width: 7),
-              const Expanded(
-                child: Text(
-                  'Pembaruan aplikasi',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
-                  ),
-                ),
-              ),
-              Text(
-                'v${_installed.version} (${_installed.buildNumber})',
-                key: const Key('home-app-version'),
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.muted,
-                  fontFeatures: tabularFigures,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Pasang rilis terbaru langsung dari server kantor tanpa mengunduh manual.',
-            style: TextStyle(fontSize: 11.5, color: AppColors.muted),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              key: const Key('home-check-update'),
-              onPressed: _checkingUpdate ? null : _checkForAppUpdate,
-              icon: _checkingUpdate
-                  ? const SizedBox.square(
-                      dimension: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh, size: 16),
-              label: Text(
-                _checkingUpdate ? 'Memeriksa…' : 'Cek Pembaruan Aplikasi',
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  final String key;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
 }

@@ -41,23 +41,34 @@ before(async () => {
       workEnd: "17:30",
     },
   });
-  const shift = await db.workShift.create({
+  const pattern = await db.workPattern.create({
     data: {
       id: randomUUID(),
       tenantId: tenant.tenantId,
-      name: "Reguler",
-      startTime: "09:00",
-      endTime: "17:00",
-      lateToleranceMinutes: 20,
+      name: "Reguler Sabtu Pendek",
+      timezone: "Asia/Jakarta",
+      days: {
+        create: [
+          { dayOfWeek: 1, isWorkday: true, startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 20 },
+          { dayOfWeek: 2, isWorkday: true, startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 20 },
+          { dayOfWeek: 3, isWorkday: true, startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 20 },
+          { dayOfWeek: 4, isWorkday: true, startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 20 },
+          { dayOfWeek: 5, isWorkday: true, startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 20 },
+          { dayOfWeek: 6, isWorkday: true, startTime: "08:00", endTime: "13:00", lateToleranceMinutes: 10 },
+          { dayOfWeek: 0, isWorkday: false, startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 20 },
+        ].map((day) => ({
+          ...day,
+          id: randomUUID(),
+        })),
+      },
     },
   });
-  await db.memberShift.create({
+  await db.workPatternAssignment.create({
     data: {
       id: randomUUID(),
       tenantId: tenant.tenantId,
       memberId: employee.memberId,
-      shiftId: shift.id,
-      workDate: null,
+      workPatternId: pattern.id,
     },
   });
   const year = new Date().getUTCFullYear();
@@ -85,26 +96,36 @@ after(async () => {
   await db.$disconnect();
 });
 
-test("jadwal mobile memakai shift karyawan dan kantor aktif", async () => {
+test("jadwal mobile memakai Pola Kerja aktif termasuk Sabtu pendek", async () => {
   const schedule = await getMobileSchedule({ ctx });
 
   assert.equal(schedule.office?.name, "HQ Jakarta");
   assert.equal(schedule.office?.timezone, "Asia/Jakarta");
-  assert.equal(schedule.shift?.name, "Reguler");
+  assert.equal(schedule.workPattern?.name, "Reguler Sabtu Pendek");
+  assert.equal(schedule.workPattern?.timezone, "Asia/Jakarta");
   assert.equal(schedule.weekly.length, 7);
   assert.deepEqual(
     schedule.weekly.map((day) => day.label),
     ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"],
   );
   assert.deepEqual(
-    schedule.weekly.map((day) => day.isWorkday),
-    [true, true, true, true, true, false, false],
+    schedule.weekly.map((day) => [day.dayOfWeek, day.isWorkday]),
+    [
+      [1, true],
+      [2, true],
+      [3, true],
+      [4, true],
+      [5, true],
+      [6, true],
+      [0, false],
+    ],
   );
-  for (const day of schedule.weekly) {
-    assert.equal(day.startTime, "09:00");
-    assert.equal(day.endTime, "17:00");
-    assert.equal(day.lateToleranceMinutes, 20);
-  }
+  const saturday = schedule.weekly.find((day) => day.dayOfWeek === 6);
+  assert.equal(saturday?.startTime, "08:00");
+  assert.equal(saturday?.endTime, "13:00");
+  assert.equal(saturday?.lateToleranceMinutes, 10);
+  const sunday = schedule.weekly.find((day) => day.dayOfWeek === 0);
+  assert.equal(sunday?.isWorkday, false);
 });
 
 test("hari libur tahun berjalan diberi jenis nasional atau perusahaan", async () => {
@@ -136,7 +157,11 @@ test("tidak ada kebocoran libur dari tenant lain", async () => {
   const schedule = await getMobileSchedule({ ctx: otherCtx });
   assert.equal(schedule.holidays.length, 1);
   assert.equal(schedule.holidays[0]?.name, "Libur tenant lain");
-  assert.equal(schedule.shift, null);
-  // Tanpa shift, jadwal memakai jam kantor sebagai fallback.
+  assert.equal(schedule.workPattern, null);
+  // Tanpa penugasan Pola Kerja, jadwal memakai jam kantor sebagai fallback.
   assert.equal(schedule.weekly[0]?.startTime, "09:00");
+  assert.deepEqual(
+    schedule.weekly.map((day) => day.isWorkday),
+    [true, true, true, true, true, false, false],
+  );
 });

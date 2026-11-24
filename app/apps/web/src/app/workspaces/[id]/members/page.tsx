@@ -4,7 +4,6 @@ import {
   listDivisions,
   listOffices,
   listPositions,
-  listShifts,
   listWorkspaceMembers,
 } from "@absensi/auth";
 
@@ -29,14 +28,6 @@ export default async function MembersPage({
         id: office.id,
         name: office.name,
       }))
-    : [];
-  const shifts = canAssignOffice
-    ? (await listShifts({ ctx, workspaceId: id }))
-        .filter((shift) => shift.isActive)
-        .map((shift) => ({
-          id: shift.id,
-          name: `${shift.name} (${shift.startTime}–${shift.endTime})`,
-        }))
     : [];
   const divisions = canManageOrganization
     ? (await listDivisions({ ctx, workspaceId: id }))
@@ -70,7 +61,6 @@ export default async function MembersPage({
         currentMemberId={ctx.memberId}
         members={result.members}
         offices={offices}
-        shifts={shifts}
         divisions={divisions}
         positions={positions}
         canInvite={ctx.permissions.includes("member.invite")}

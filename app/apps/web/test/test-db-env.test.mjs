@@ -10,6 +10,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 test("setup test DB memberi pesan jelas saat env admin tidak tersedia", () => {
   const env = { ...process.env, S1_TEST_DB_SKIP_DOTENV: "1", NODE_ENV: "test" };
+  delete env.S1_TEST_SETUP_URL;
   delete env.S1_TEST_ADMIN_URL;
   delete env.DATABASE_URL;
 

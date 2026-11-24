@@ -66,7 +66,7 @@ class WorkSchedule {
   const WorkSchedule({
     required this.officeName,
     required this.timezone,
-    required this.shiftName,
+    required this.workPatternName,
     required this.workStart,
     required this.workEnd,
     required this.lateToleranceMinutes,
@@ -76,7 +76,7 @@ class WorkSchedule {
 
   factory WorkSchedule.fromJson(Map<String, dynamic> json) {
     final office = json['office'] as Map<String, dynamic>?;
-    final shift = json['shift'] as Map<String, dynamic>?;
+    final pattern = json['workPattern'] as Map<String, dynamic>?;
     final weekly = (json['weekly'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(WeeklyScheduleDay.fromJson)
@@ -84,22 +84,22 @@ class WorkSchedule {
     final firstWorkday = weekly.where((day) => day.isWorkday).firstOrNull;
     return WorkSchedule(
       officeName: office?['name'] as String? ?? '',
-      timezone: office?['timezone'] as String? ?? 'Asia/Jakarta',
-      shiftName: shift?['name'] as String? ?? 'Shift kantor',
+      timezone:
+          pattern?['timezone'] as String? ??
+          office?['timezone'] as String? ??
+          'Asia/Jakarta',
+      workPatternName:
+          pattern?['name'] as String? ??
+          (firstWorkday == null ? 'Jam kantor' : 'Pola kerja aktif'),
       workStart:
-          shift?['startTime'] as String? ??
           firstWorkday?.startTime ??
           office?['workStart'] as String? ??
           '09:00',
       workEnd:
-          shift?['endTime'] as String? ??
           firstWorkday?.endTime ??
           office?['workEnd'] as String? ??
           '17:00',
-      lateToleranceMinutes:
-          (shift?['lateToleranceMinutes'] as num?)?.toInt() ??
-          firstWorkday?.lateToleranceMinutes ??
-          0,
+      lateToleranceMinutes: firstWorkday?.lateToleranceMinutes ?? 0,
       weekly: weekly,
       holidays: (json['holidays'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
@@ -110,7 +110,7 @@ class WorkSchedule {
 
   final String officeName;
   final String timezone;
-  final String shiftName;
+  final String workPatternName;
   final String workStart;
   final String workEnd;
   final int lateToleranceMinutes;
@@ -120,18 +120,31 @@ class WorkSchedule {
   String get hours => '$workStart–$workEnd';
 
   bool isHoliday(DateTime day) {
+    return holidayOn(day) != null;
+  }
+
+  WorkHoliday? holidayOn(DateTime day) {
     final key =
         '${day.year}-${day.month.toString().padLeft(2, '0')}-'
         '${day.day.toString().padLeft(2, '0')}';
-    return holidays.any((holiday) => holiday.dateKey == key);
-  }
-
-  WeeklyScheduleDay? dayFor(DateTime day) {
-    for (final entry in weekly) {
-      if (entry.dayOfWeek == day.weekday) return entry;
+    for (final holiday in holidays) {
+      if (holiday.dateKey == key) return holiday;
     }
     return null;
   }
+
+  WeeklyScheduleDay? dayFor(DateTime day) {
+    // Dart: Senin=1 ... Minggu=7. Pola Kerja/API: Minggu=0 ... Sabtu=6.
+    final patternDay = day.weekday % 7;
+    for (final entry in weekly) {
+      if (entry.dayOfWeek == patternDay) return entry;
+    }
+    return null;
+  }
+
+  WeeklyScheduleDay? today([DateTime? now]) => dayFor(now ?? DateTime.now());
+
+  bool isTodayHoliday([DateTime? now]) => isHoliday(now ?? DateTime.now());
 
   List<WorkHoliday> holidaysThisYear([DateTime? now]) {
     final year = (now ?? DateTime.now()).year;

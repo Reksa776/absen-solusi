@@ -3,11 +3,12 @@ import { withTenant, writeAudit, type TenantContext } from "@absensi/database";
 import { HttpError } from "./http.js";
 import { parseReportDay, startOfUtcDay } from "./reports.js";
 import {
-  createShiftRuleIndex,
-  lateMinutesForShift,
-  shiftRuleFor,
-  shiftMinutes,
-} from "./shifts.js";
+  createWorkPatternRuleIndex,
+  isScheduledWorkday,
+  lateMinutesForWorkPattern,
+  timeToMinutes,
+  workPatternRuleFor,
+} from "./work-pattern-schedule.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
 const DAY_MS = 86_400_000;
@@ -103,7 +104,7 @@ export async function getPayrollSummary(
   const today = startOfUtcDay(input.now ?? new Date());
 
   return withTenant(input.ctx, async (db) => {
-    const [members, logs, holidays, office, memberShiftRows, overtimeRows] =
+    const [members, logs, holidays, office, patternAssignments, overtimeRows] =
       await Promise.all([
         db.workspaceMember.findMany({
           where: {
@@ -128,24 +129,9 @@ export async function getPayrollSummary(
           where: { isActive: true },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         }),
-        db.memberShift.findMany({
-          where: {
-            OR: [
-              { workDate: { gte: from, lt: endExclusive } },
-              { workDate: null },
-            ],
-          },
-          include: {
-            shift: {
-              select: {
-                id: true,
-                name: true,
-                startTime: true,
-                endTime: true,
-                lateToleranceMinutes: true,
-              },
-            },
-          },
+        db.workPatternAssignment.findMany({
+          ...(input.memberId ? { where: { memberId: input.memberId } } : {}),
+          include: { workPattern: { include: { days: true } } },
         }),
         db.overtimeRequest.findMany({
           where: {
@@ -158,7 +144,7 @@ export async function getPayrollSummary(
       ]);
 
     const holidayDates = new Set(holidays.map((row) => dayKey(row.date)));
-    const shiftIndex = createShiftRuleIndex(memberShiftRows);
+    const patternIndex = createWorkPatternRuleIndex(patternAssignments);
     const overtimeByMember = new Map<string, number>();
     for (const row of overtimeRows) {
       overtimeByMember.set(
@@ -200,6 +186,7 @@ export async function getPayrollSummary(
         const entry = byMemberDay.get(`${member.id}:${dayKey(date)}`);
         const key = dayKey(date);
         const weekday = date.getUTCDay();
+        const rule = workPatternRuleFor(patternIndex, member.id, date);
         if (entry?.checkIn) {
           summary.presentDays += 1;
           if (entry.workMode === "WFH") summary.wfhDays += 1;
@@ -209,16 +196,18 @@ export async function getPayrollSummary(
               (entry.checkOut.getTime() - entry.checkIn.getTime()) / 60_000,
             );
           }
-          const rule = shiftRuleFor(shiftIndex, member.id, key);
-          if (office) {
+          if (office || rule) {
+            const timezone = rule?.timezone ?? office?.timezone ?? "UTC";
             const late = rule
-              ? lateMinutesForShift(entry.checkIn, rule, office.timezone)
-              : Math.max(
-                  0,
-                  localMinutes(entry.checkIn, office.timezone) -
-                    shiftMinutes(office.workStart) -
-                    15,
-                );
+              ? lateMinutesForWorkPattern(entry.checkIn, rule, timezone)
+              : office
+                ? Math.max(
+                    0,
+                    localMinutes(entry.checkIn, timezone) -
+                      timeToMinutes(office.workStart) -
+                      15,
+                  )
+                : 0;
             if (late > 0) {
               summary.lateIncidents += 1;
               summary.lateMinutes += late;
@@ -226,7 +215,7 @@ export async function getPayrollSummary(
           }
         } else if (holidayDates.has(key)) {
           summary.holidayDays += 1;
-        } else if (weekday === 0 || weekday === 6) {
+        } else if (!isScheduledWorkday(rule, weekday)) {
           summary.weekendDays += 1;
         } else {
           summary.absentDays += 1;

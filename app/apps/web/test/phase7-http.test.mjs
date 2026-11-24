@@ -90,6 +90,44 @@ async function checkIn(token, latitude, longitude) {
   return { response, body: await response.json().catch(() => ({})) };
 }
 
+function patternDays({
+  startTime = "09:00",
+  endTime = "17:00",
+  lateToleranceMinutes = 15,
+  workdays = [1, 2, 3, 4, 5],
+} = {}) {
+  return [1, 2, 3, 4, 5, 6, 0].map((dayOfWeek) => ({
+    dayOfWeek,
+    isWorkday: workdays.includes(dayOfWeek),
+    startTime,
+    endTime,
+    earliestCheckInMinutes: 120,
+    lateToleranceMinutes,
+  }));
+}
+
+async function createWorkPattern(name, options = {}) {
+  const created = await send(
+    `/api/workspaces/${tenantA.tenantId}/work-patterns`,
+    adminA.token,
+    "POST",
+    { name, timezone: "Asia/Jakarta", days: patternDays(options) },
+  );
+  assert.equal(created.response.status, 201);
+  return created.body;
+}
+
+async function assignWorkPattern(memberId, workPatternId) {
+  const assigned = await send(
+    `/api/workspaces/${tenantA.tenantId}/work-pattern-assignments`,
+    adminA.token,
+    "POST",
+    { memberId, workPatternId },
+  );
+  assert.equal(assigned.response.status, 201);
+  return assigned.body;
+}
+
 before(async () => {
   db = adminClient();
   await resetDatabase(db);
@@ -168,21 +206,12 @@ test("7.1: banyak kantor aktif dan check-in memilih kantor terdekat", async () =
   assert.equal(log.officeLocationId, branch.body.id);
 });
 
-test("7.2: shift default menentukan keterlambatan dashboard", async () => {
-  const shift = await send(
-    `/api/workspaces/${tenantA.tenantId}/shifts`,
-    adminA.token,
-    "POST",
-    { name: "Pagi", startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 5 },
-  );
-  assert.equal(shift.response.status, 201);
-  const assigned = await send(
-    `/api/workspaces/${tenantA.tenantId}/shift-assignments`,
-    adminA.token,
-    "POST",
-    { memberId: employeeA.memberId, shiftId: shift.body.id, workDate: null },
-  );
-  assert.equal(assigned.response.status, 201);
+test("7.2: pola kerja aktif menentukan keterlambatan dashboard", async () => {
+  const pattern = await createWorkPattern("Pola Pagi Dashboard", {
+    lateToleranceMinutes: 5,
+    workdays: [0, 1, 2, 3, 4, 5, 6],
+  });
+  await assignWorkPattern(employeeA.memberId, pattern.id);
 
   const date = dayKey();
   await db.attendanceLog.create({
@@ -213,7 +242,7 @@ test("7.2: shift default menentukan keterlambatan dashboard", async () => {
   assert.equal(row.lateMinutes, 25);
 
   const crossTenant = await send(
-    `/api/workspaces/${tenantA.tenantId}/shifts`,
+    `/api/workspaces/${tenantA.tenantId}/work-patterns`,
     tenantB.ownerToken,
   );
   assert.equal(crossTenant.response.status, 403);
@@ -284,21 +313,9 @@ test("7.3: karyawan mengajukan lembur dan Admin/HR approve dengan audit", async 
   assert.equal(foreign.response.status, 404);
 });
 
-test("7.6: payroll summary menghitung office/WFH, libur, alpha, telat, kerja, dan lembur approved", async () => {
-  const shift = await send(
-    `/api/workspaces/${tenantA.tenantId}/shifts`,
-    adminA.token,
-    "POST",
-    { name: "Payroll Pagi", startTime: "09:00", endTime: "17:00", lateToleranceMinutes: 15 },
-  );
-  assert.equal(shift.response.status, 201);
-  const assigned = await send(
-    `/api/workspaces/${tenantA.tenantId}/shift-assignments`,
-    adminA.token,
-    "POST",
-    { memberId: employeeD.memberId, shiftId: shift.body.id, workDate: null },
-  );
-  assert.equal(assigned.response.status, 201);
+test("7.6: payroll summary memakai hari aktif Pola Kerja dan lembur approved", async () => {
+  const pattern = await createWorkPattern("Payroll Pagi");
+  await assignWorkPattern(employeeD.memberId, pattern.id);
 
   const workDate = (value) => new Date(`${value}T00:00:00.000Z`);
   const log = (id, date, type, timestamp, workMode = "OFFICE") => ({

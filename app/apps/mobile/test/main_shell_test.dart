@@ -40,6 +40,42 @@ Map<String, dynamic> sessionJson() => {
   ],
 };
 
+Map<String, dynamic> scheduleJson() => {
+  'office': {
+    'id': 'o1',
+    'name': 'HQ',
+    'timezone': 'Asia/Jakarta',
+    'radiusMeters': 100,
+    'workStart': '09:00',
+    'workEnd': '17:00',
+  },
+  'workPattern': {
+    'id': 'p1',
+    'name': 'Pola kantor',
+    'timezone': 'Asia/Jakarta',
+  },
+  'weekly': [
+    for (final entry in const [
+      (1, 'Senin'),
+      (2, 'Selasa'),
+      (3, 'Rabu'),
+      (4, 'Kamis'),
+      (5, 'Jumat'),
+      (6, 'Sabtu'),
+      (0, 'Minggu'),
+    ])
+      {
+        'dayOfWeek': entry.$1,
+        'label': entry.$2,
+        'isWorkday': entry.$1 >= 1 && entry.$1 <= 5,
+        'startTime': '09:00',
+        'endTime': '17:00',
+        'lateToleranceMinutes': 15,
+      },
+  ],
+  'holidays': [],
+};
+
 Future<AuthService> buildAuth() async {
   final auth = AuthService(
     api: ApiClient(
@@ -65,8 +101,31 @@ Future<AuthService> buildAuth() async {
         if (path == '/api/overtime/me') {
           return http.Response(jsonEncode({'overtime': []}), 200);
         }
-        if (path == '/api/auth/logout') {
-          return http.Response(jsonEncode({'ok': true}), 200);
+        if (path == '/api/mobile/schedule') {
+          return http.Response(jsonEncode(scheduleJson()), 200);
+        }
+        if (path == '/api/notifications/me') {
+          return http.Response(
+            jsonEncode({'notifications': [], 'unreadCount': 2}),
+            200,
+          );
+        }
+        if (path == '/api/leave/balance') {
+          return http.Response(
+            jsonEncode({
+              'year': 2026,
+              'entitledDays': 12,
+              'usedDays': 3,
+              'remainingDays': 9,
+            }),
+            200,
+          );
+        }
+        if (path == '/api/mobile/device') {
+          return http.Response(jsonEncode({'device': null}), 200);
+        }
+        if (path == '/api/mobile/profile/photo') {
+          return http.Response(jsonEncode({'status': 'NONE'}), 200);
         }
         return http.Response(jsonEncode({'ok': true}), 200);
       }),
@@ -76,7 +135,8 @@ Future<AuthService> buildAuth() async {
   return auth;
 }
 
-Widget shell(AuthService auth) => MaterialApp(home: MainShellScreen(auth: auth));
+Widget shell(AuthService auth) =>
+    MaterialApp(home: MainShellScreen(auth: auth));
 
 /// Pump terbatas: shell memuat data asinkron sekaligus animasi indikator,
 /// jadi pumpAndSettle tidak dipakai agar tidak menunggu animasi tanpa akhir.
@@ -86,7 +146,7 @@ Future<void> settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('shell menampilkan empat tab dengan Absen sebagai awal', (
+  testWidgets('shell menampilkan empat tab dengan Beranda sebagai awal', (
     tester,
   ) async {
     final auth = await buildAuth();
@@ -94,35 +154,115 @@ void main() {
     await settle(tester);
 
     expect(find.byKey(const Key('main-nav')), findsOneWidget);
-    expect(find.byKey(const Key('nav-absen')), findsOneWidget);
-    expect(find.byKey(const Key('nav-riwayat')), findsOneWidget);
-    expect(find.byKey(const Key('nav-pengajuan')), findsOneWidget);
-    expect(find.byKey(const Key('nav-profil')), findsOneWidget);
-    expect(find.text('Status hari ini'), findsOneWidget);
+    expect(find.byKey(const Key('nav-beranda')), findsOneWidget);
+    expect(find.byKey(const Key('nav-jadwal')), findsOneWidget);
+    expect(find.byKey(const Key('nav-aktivitas')), findsOneWidget);
+    expect(find.byKey(const Key('nav-pesan')), findsOneWidget);
+    expect(find.byType(Badge), findsOneWidget);
+    expect(find.text('Jadwal Anda Hari Ini'), findsOneWidget);
+    expect(find.text('Ringkasan Kehadiran'), findsOneWidget);
     expect(find.byKey(const Key('attendance-submit')), findsOneWidget);
+    expect(find.byKey(const Key('home-leave-quota')), findsOneWidget);
+    expect(find.byKey(const Key('home-timezone')), findsOneWidget);
   });
 
-  testWidgets('berpindah tab memuat konten dan kembali tanpa kehilangan state', (
+  testWidgets(
+    'berpindah tab memuat konten dan kembali tanpa kehilangan state',
+    (tester) async {
+      final auth = await buildAuth();
+      await tester.pumpWidget(shell(auth));
+      await settle(tester);
+
+      await tester.tap(find.byKey(const Key('nav-jadwal')));
+      await settle(tester);
+      expect(find.byKey(const Key('schedule-segment-0')), findsOneWidget);
+      expect(find.byKey(const Key('schedule-today')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('nav-aktivitas')));
+      await settle(tester);
+      expect(find.byKey(const Key('history-empty')), findsOneWidget);
+      expect(find.byKey(const Key('activity-period-MONTH')), findsOneWidget);
+      expect(find.byKey(const Key('activity-stat-present')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('nav-pesan')));
+      await settle(tester);
+      expect(find.byKey(const Key('messages-segment-0')), findsOneWidget);
+      expect(find.byKey(const Key('messages-filter-ALL')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('messages-segment-1')));
+      await settle(tester);
+      expect(find.byKey(const Key('requests-empty')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('nav-beranda')));
+      await settle(tester);
+      expect(find.text('Jadwal Anda Hari Ini'), findsOneWidget);
+      expect(find.byKey(const Key('attendance-submit')), findsOneWidget);
+    },
+  );
+
+  testWidgets('menu layanan Beranda bisa dilipat dan dibuka', (tester) async {
+    final auth = await buildAuth();
+    await tester.pumpWidget(shell(auth));
+    await settle(tester);
+
+    expect(find.byKey(const Key('service-lembur')), findsOneWidget);
+    expect(find.byKey(const Key('service-profil')), findsNothing);
+
+    await tester.ensureVisible(find.byKey(const Key('home-services-toggle')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('home-services-toggle')));
+    await settle(tester);
+
+    expect(find.byKey(const Key('service-kunjungan')), findsOneWidget);
+    expect(find.byKey(const Key('service-profil')), findsOneWidget);
+    expect(find.text('Kunjungan Klien'), findsOneWidget);
+    expect(find.text('Tutup'), findsOneWidget);
+  });
+
+  testWidgets('layout empat tab aman pada lebar 360dp', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final auth = await buildAuth();
+    await tester.pumpWidget(shell(auth));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('attendance-submit')), findsOneWidget);
+
+    await tester.ensureVisible(find.byKey(const Key('home-services-toggle')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('home-services-toggle')));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('service-profil')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('nav-jadwal')));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('nav-aktivitas')));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('nav-pesan')));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('avatar membuka profil lengkap dan logout mengakhiri sesi', (
     tester,
   ) async {
     final auth = await buildAuth();
     await tester.pumpWidget(shell(auth));
     await settle(tester);
 
-    await tester.tap(find.byKey(const Key('nav-riwayat')));
+    await tester.tap(find.byKey(const Key('home-profile')));
     await settle(tester);
-    expect(find.byKey(const Key('history-empty')), findsOneWidget);
-    expect(find.byKey(const Key('history-month-CURRENT')), findsOneWidget);
-    expect(find.byKey(const Key('history-status-SUSPICIOUS')), findsOneWidget);
+    await settle(tester);
 
-    await tester.tap(find.byKey(const Key('nav-pengajuan')));
-    await settle(tester);
-    expect(find.byKey(const Key('requests-create')), findsOneWidget);
-    expect(find.byKey(const Key('requests-segment-CORRECTION')), findsOneWidget);
-    expect(find.byKey(const Key('requests-empty')), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('nav-profil')));
-    await settle(tester);
     expect(find.byKey(const Key('profile-app-version')), findsOneWidget);
     expect(find.byKey(const Key('profile-check-update')), findsOneWidget);
     expect(find.byKey(const Key('profile-logout')), findsOneWidget);
@@ -131,36 +271,6 @@ void main() {
     expect(find.text('Ayu'), findsOneWidget);
     expect(find.text('HQ'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('nav-absen')));
-    await settle(tester);
-    expect(find.text('Status hari ini'), findsOneWidget);
-    expect(find.byKey(const Key('attendance-submit')), findsOneWidget);
-  });
-
-  testWidgets('tombol buat pengajuan membuka pilihan jenis pengajuan', (
-    tester,
-  ) async {
-    final auth = await buildAuth();
-    await tester.pumpWidget(shell(auth));
-    await settle(tester);
-
-    await tester.tap(find.byKey(const Key('nav-pengajuan')));
-    await settle(tester);
-    await tester.tap(find.byKey(const Key('requests-create')));
-    await settle(tester);
-
-    expect(find.byKey(const Key('create-CORRECTION')), findsOneWidget);
-    expect(find.byKey(const Key('create-OVERTIME')), findsOneWidget);
-    expect(find.byKey(const Key('create-WFH')), findsOneWidget);
-  });
-
-  testWidgets('logout dari tab profil mengakhiri sesi', (tester) async {
-    final auth = await buildAuth();
-    await tester.pumpWidget(shell(auth));
-    await settle(tester);
-
-    await tester.tap(find.byKey(const Key('nav-profil')));
-    await settle(tester);
     await tester.ensureVisible(find.byKey(const Key('profile-logout')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('profile-logout')));

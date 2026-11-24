@@ -36,7 +36,6 @@ type Member = {
 };
 
 type OfficeOption = { id: string; name: string };
-type ShiftOption = { id: string; name: string };
 type DivisionOption = { id: string; name: string };
 type PositionOption = { id: string; name: string; divisionName: string | null };
 
@@ -45,7 +44,6 @@ export function MemberAdmin({
   currentMemberId,
   members,
   offices,
-  shifts,
   divisions,
   positions,
   canInvite,
@@ -58,7 +56,6 @@ export function MemberAdmin({
   currentMemberId: string | null;
   members: Member[];
   offices: OfficeOption[];
-  shifts: ShiftOption[];
   divisions: DivisionOption[];
   positions: PositionOption[];
   canInvite: boolean;
@@ -73,7 +70,6 @@ export function MemberAdmin({
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<RoleKey>("EMPLOYEE");
   const [officeId, setOfficeId] = useState("");
-  const [shiftId, setShiftId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -129,7 +125,6 @@ export function MemberAdmin({
         password,
         role,
         officeId: officeId || null,
-        shiftId: shiftId || null,
       },
     );
     if (ok) {
@@ -138,7 +133,6 @@ export function MemberAdmin({
       setPassword("");
       setRole("EMPLOYEE");
       setOfficeId("");
-      setShiftId("");
       setNotice("Karyawan berhasil ditambahkan dan dapat langsung login di aplikasi mobile.");
       router.refresh();
     }
@@ -264,19 +258,6 @@ export function MemberAdmin({
                   {offices.map((office) => (
                     <option key={office.id} value={office.id}>
                       {office.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {canAssignOffice ? (
-              <label className="field">
-                Shift
-                <select value={shiftId} onChange={(event) => setShiftId(event.target.value)}>
-                  <option value="">Tanpa shift default</option>
-                  {shifts.map((shift) => (
-                    <option key={shift.id} value={shift.id}>
-                      {shift.name}
                     </option>
                   ))}
                 </select>

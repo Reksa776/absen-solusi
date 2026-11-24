@@ -734,6 +734,19 @@ class ApiClient {
     return Payslip.fromJson(_decodeObject(response));
   }
 
+  Future<Uint8List?> attendancePhotoBytes(String path) async {
+    if (path.isEmpty) return null;
+    final response = await _client.get(
+      Uri.parse(photoUrl(path)),
+      headers: await _authHeaders(),
+    );
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _decodeObject(response);
+    }
+    return response.bodyBytes;
+  }
+
   String photoUrl(String path) {
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;

@@ -41,7 +41,10 @@ ApiClient mockApi({bool loginFails = false, int workspaces = 2}) {
           );
         }
         return http.Response(
-          jsonEncode({...profile(workspaces: workspaces), 'token': 'token-abc'}),
+          jsonEncode({
+            ...profile(workspaces: workspaces),
+            'token': 'token-abc',
+          }),
           200,
         );
       }
@@ -59,7 +62,9 @@ ApiClient mockApi({bool loginFails = false, int workspaces = 2}) {
         return http.Response(
           jsonEncode({
             ...profile(workspaces: workspaces),
-            'activeTenantId': request.headers['authorization'] == null ? 't1' : 't2',
+            'activeTenantId': request.headers['authorization'] == null
+                ? 't1'
+                : 't2',
           }),
           200,
         );
@@ -98,14 +103,15 @@ Widget wrap(Widget child) => MaterialApp(home: child);
 void main() {
   testWidgets('login merender field dan menampilkan error', (tester) async {
     final auth = AuthService(api: mockApi(loginFails: true));
-    await tester.pumpWidget(
-      wrap(LoginScreen(auth: auth, onLoggedIn: () {})),
-    );
+    await tester.pumpWidget(wrap(LoginScreen(auth: auth, onLoggedIn: () {})));
     expect(find.text('Masuk'), findsOneWidget);
     expect(find.byKey(const Key('login-email')), findsOneWidget);
     expect(find.byKey(const Key('login-password')), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('login-email')), 'a@example.com');
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'a@example.com',
+    );
     await tester.enterText(find.byKey(const Key('login-password')), 'salah');
     await tester.tap(find.byKey(const Key('login-submit')));
     await tester.pumpAndSettle();
@@ -121,7 +127,10 @@ void main() {
       wrap(LoginScreen(auth: auth, onLoggedIn: () => loggedIn = true)),
     );
 
-    await tester.enterText(find.byKey(const Key('login-email')), 'a@example.com');
+    await tester.enterText(
+      find.byKey(const Key('login-email')),
+      'a@example.com',
+    );
     await tester.enterText(find.byKey(const Key('login-password')), 'benar');
     await tester.tap(find.byKey(const Key('login-submit')));
     await tester.pumpAndSettle();
@@ -137,10 +146,7 @@ void main() {
 
     await tester.pumpWidget(
       wrap(
-        WorkspacePickerScreen(
-          auth: auth,
-          onSelected: () => selected = true,
-        ),
+        WorkspacePickerScreen(auth: auth, onSelected: () => selected = true),
       ),
     );
     expect(find.text('Tenant A'), findsOneWidget);
@@ -156,16 +162,22 @@ void main() {
     expect(auth.isAuthenticated, isFalse);
   });
 
-  testWidgets('home menampilkan workspace aktif dan logout', (tester) async {
+  testWidgets('home menampilkan workspace aktif dan logout lewat profil', (
+    tester,
+  ) async {
     final auth = AuthService(api: mockApi(workspaces: 1));
     await auth.login('a@example.com', 'benar');
     await tester.pumpWidget(wrap(HomeScreen(auth: auth)));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Ayu'), findsOneWidget);
-    expect(find.textContaining('Tenant A'), findsOneWidget);
+    expect(find.textContaining('Tenant A'), findsWidgets);
 
-    await tester.tap(find.byKey(const Key('home-logout')));
+    await tester.tap(find.byKey(const Key('home-profile')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('profile-logout')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('profile-logout')));
     await tester.pumpAndSettle();
     expect(auth.isAuthenticated, isFalse);
   });
