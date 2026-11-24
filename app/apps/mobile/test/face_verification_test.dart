@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -7,31 +6,50 @@ import 'package:absensi_mobile/services/face_verification_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// PNG 1x1 valid agar `Image.memory` punya data gambar nyata di widget test.
-final Uint8List _photo = base64Decode(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
-);
+class _FakeFaceVerification extends FaceVerificationService {
+  _FakeFaceVerification(this.result);
 
-Widget _review({
-  required FaceVerificationResult? verification,
-  bool verifying = false,
-  VoidCallback? onConfirm,
-  VoidCallback? onRetake,
+  final FaceVerificationResult result;
+
+  @override
+  Future<FaceVerificationResult> verifyFile(String path) async => result;
+}
+
+/// Membuka [CameraScreen] lewat Navigator nyata agar hasil `pop` bisa diuji.
+Widget _host({
+  required SelfieCapture capture,
+  required FaceVerificationResult verification,
+  required void Function(Uint8List?) onResult,
 }) {
   return MaterialApp(
-    home: Scaffold(
-      body: SelfieReviewView(
-        photo: _photo,
-        size: 240,
-        ringColor: const Color(0xFF15803D),
-        mirrored: true,
-        verifying: verifying,
-        verification: verification,
-        onRetake: onRetake ?? () {},
-        onConfirm: onConfirm,
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: Center(
+          child: FilledButton(
+            key: const Key('open-camera'),
+            onPressed: () async {
+              final bytes = await Navigator.of(context).push<Uint8List>(
+                MaterialPageRoute<Uint8List>(
+                  builder: (_) => CameraScreen(
+                    captureOverride: capture,
+                    faceVerification: _FakeFaceVerification(verification),
+                  ),
+                ),
+              );
+              onResult(bytes);
+            },
+            child: const Text('Buka kamera'),
+          ),
+        ),
       ),
     ),
   );
+}
+
+Future<void> _openCamera(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('open-camera')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 void main() {
@@ -103,93 +121,85 @@ void main() {
     });
   });
 
-  group('SelfieReviewView verifikasi wajah', () {
-    testWidgets('foto tanpa wajah menonaktifkan kirim absen', (tester) async {
-      var confirmed = false;
+  group('CameraScreen auto-submit selfie', () {
+    testWidgets('shutter langsung mengembalikan foto tanpa tombol konfirmasi', (
+      tester,
+    ) async {
+      final photo = Uint8List.fromList([1, 2, 3, 4]);
+      Uint8List? returned;
       await tester.pumpWidget(
-        _review(
-          verification: FaceVerificationResult.noFace,
-          onConfirm: () => confirmed = true,
+        _host(
+          capture: () async =>
+              CapturedSelfie(path: '/tmp/selfie.jpg', bytes: photo),
+          verification: FaceVerificationResult.verified,
+          onResult: (bytes) => returned = bytes,
         ),
       );
-      await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('camera-face-warning')), findsOneWidget);
+      await _openCamera(tester);
+      expect(find.byKey(const Key('camera-capture')), findsOneWidget);
+      expect(find.byKey(const Key('camera-scan-sweep')), findsOneWidget);
+      expect(find.text('Kirim Absen'), findsNothing);
+      expect(find.text('Foto Ulang'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('camera-capture')));
+      await tester.pump();
+      // Selama verifikasi: cincin progress + status pindai, tanpa tombol kirim.
+      expect(find.byKey(const Key('camera-scan-progress')), findsOneWidget);
+      expect(find.text('Memindai & mengirim absensi...'), findsOneWidget);
+      expect(find.text('Kirim Absen'), findsNothing);
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // Foto langsung dikembalikan ke pemanggil untuk auto-submit presensi.
+      expect(returned, photo);
+      expect(find.byKey(const Key('camera-capture')), findsNothing);
+      expect(find.text('Kirim Absen'), findsNothing);
+      expect(find.text('Gunakan Foto'), findsNothing);
+      expect(find.text('Foto Ulang'), findsNothing);
+      expect(find.text('Ambil Ulang'), findsNothing);
+    });
+
+    testWidgets('wajah tidak terdeteksi tetap di kamera tanpa foto ulang', (
+      tester,
+    ) async {
+      Uint8List? returned;
+      await tester.pumpWidget(
+        _host(
+          capture: () async => CapturedSelfie(
+            path: '/tmp/selfie.jpg',
+            bytes: Uint8List.fromList([9, 9, 9]),
+          ),
+          verification: FaceVerificationResult.noFace,
+          onResult: (bytes) => returned = bytes,
+        ),
+      );
+
+      await _openCamera(tester);
+      await tester.tap(find.byKey(const Key('camera-capture')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(returned, isNull);
+      expect(find.byKey(const Key('camera-warning')), findsOneWidget);
       expect(
         find.text(
-          'Tidak ada wajah terdeteksi. Pastikan wajah terlihat jelas di kamera.',
+          'Wajah tidak terdeteksi, posisikan wajah di lingkaran lalu ketuk kembali',
         ),
         findsOneWidget,
       );
-      expect(find.byKey(const Key('camera-confirm')), findsNothing);
-      expect(find.byKey(const Key('camera-retake')), findsOneWidget);
-      expect(confirmed, isFalse);
-    });
+      expect(find.text('Kirim Absen'), findsNothing);
+      expect(find.text('Foto Ulang'), findsNothing);
+      expect(find.text('Ambil Ulang'), findsNothing);
 
-    testWidgets('wajah terverifikasi mengaktifkan kirim absen', (tester) async {
-      var confirmed = false;
-      await tester.pumpWidget(
-        _review(
-          verification: FaceVerificationResult.verified,
-          onConfirm: () => confirmed = true,
-        ),
+      // Shutter hijau aktif lagi untuk jepret ulang langsung.
+      final shutter = tester.widget<GestureDetector>(
+        find.byKey(const Key('camera-capture')),
       );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('camera-face-verified')), findsOneWidget);
-      expect(find.text('Wajah terverifikasi'), findsOneWidget);
-      expect(find.byKey(const Key('camera-face-warning')), findsNothing);
-
-      final button = tester.widget<FilledButton>(
-        find.byKey(const Key('camera-confirm')),
-      );
-      expect(button.onPressed, isNotNull);
-
-      await tester.tap(find.byKey(const Key('camera-confirm')));
-      await tester.pump();
-      expect(confirmed, isTrue);
-    });
-
-    testWidgets('ML Kit tidak tersedia tetap mengizinkan kirim absen', (
-      tester,
-    ) async {
-      var confirmed = false;
-      await tester.pumpWidget(
-        _review(
-          verification: FaceVerificationResult.unavailable,
-          onConfirm: () => confirmed = true,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('camera-face-unavailable')), findsOneWidget);
-      expect(
-        find.text('Verifikasi wajah otomatis tidak tersedia di perangkat ini'),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('camera-face-warning')), findsNothing);
-
-      final button = tester.widget<FilledButton>(
-        find.byKey(const Key('camera-confirm')),
-      );
-      expect(button.onPressed, isNotNull);
-
-      await tester.tap(find.byKey(const Key('camera-confirm')));
-      await tester.pump();
-      expect(confirmed, isTrue);
-    });
-
-    testWidgets('indikator verifikasi tampil dan kirim masih tersembunyi', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _review(verification: null, verifying: true, onConfirm: () {}),
-      );
-      await tester.pump();
-
-      expect(find.text('Memverifikasi wajah...'), findsOneWidget);
-      expect(find.byKey(const Key('camera-face-verifying')), findsOneWidget);
-      expect(find.byKey(const Key('camera-confirm')), findsNothing);
+      expect(shutter.onTap, isNotNull);
+      expect(find.byKey(const Key('camera-scan-progress')), findsNothing);
     });
   });
 }

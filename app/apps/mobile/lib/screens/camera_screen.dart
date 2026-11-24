@@ -8,6 +8,23 @@ import '../services/face_verification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/selfie_frame.dart';
 
+/// Sumber foto selfie. Produksi memakai `takePicture()` dari kamera depan;
+/// widget test menyuntikkan foto palsu agar alur auto-submit bisa diuji.
+typedef SelfieCapture = Future<CapturedSelfie?> Function();
+
+/// Hasil jepretan: file JPEG untuk ML Kit dan byte asli untuk dikirim ke API.
+class CapturedSelfie {
+  const CapturedSelfie({required this.path, required this.bytes});
+
+  final String path;
+  final Uint8List bytes;
+}
+
+/// Kamera selfie absensi sekali-jepret.
+///
+/// Tidak ada layar konfirmasi: setelah shutter ditekan, foto diverifikasi wajah
+/// di latar belakang sambil menampilkan animasi pindai, lalu langsung
+/// dikembalikan lewat `Navigator.pop` agar pemanggil bisa submit presensi.
 class CameraScreen extends StatefulWidget {
   const CameraScreen({
     super.key,
@@ -16,6 +33,7 @@ class CameraScreen extends StatefulWidget {
     this.distanceMeters,
     this.wfh = false,
     this.faceVerification,
+    this.captureOverride,
   });
 
   /// True bila GPS berada dalam radius kantor (ring hijau), false untuk kuning.
@@ -33,18 +51,19 @@ class CameraScreen extends StatefulWidget {
   /// Service verifikasi wajah yang bisa diganti pada widget test.
   final FaceVerificationService? faceVerification;
 
+  /// Pengganti kamera native pada widget test. Bila diisi, plugin kamera tidak
+  /// diinisialisasi dan tombol shutter memakai sumber foto ini.
+  final SelfieCapture? captureOverride;
+
   @override
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
 class _CameraScreenState extends State<CameraScreen> {
   CameraController? _controller;
-  Uint8List? _captured;
-  FaceVerificationResult? _faceResult;
-  bool _verifying = false;
+  bool _processing = false;
+  String? _warning;
   String? _error;
-  bool _taking = false;
-  bool _isFront = true;
   late final FaceVerificationService _faceVerification;
   late final bool _ownsFaceVerification;
   int _captureToken = 0;
@@ -57,7 +76,7 @@ class _CameraScreenState extends State<CameraScreen> {
     // Kamera selfie selalu portrait agar preview tidak terpotong/gepeng saat
     // perangkat berputar.
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
-    _initialize();
+    if (widget.captureOverride == null) _initialize();
   }
 
   Future<void> _initialize() async {
@@ -85,10 +104,7 @@ class _CameraScreenState extends State<CameraScreen> {
         await controller.dispose();
         return;
       }
-      setState(() {
-        _controller = controller;
-        _isFront = selected.lensDirection == CameraLensDirection.front;
-      });
+      setState(() => _controller = controller);
     } catch (_) {
       if (mounted) {
         setState(
@@ -98,51 +114,54 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  /// Jepret, verifikasi wajah, lalu langsung kembalikan foto bila valid.
   Future<void> _capture() async {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _taking) {
-      return;
-    }
+    if (_processing) return;
     final token = ++_captureToken;
     setState(() {
-      _taking = true;
+      _processing = true;
+      _warning = null;
       _error = null;
     });
     try {
-      final photo = await controller.takePicture();
-      final bytes = await photo.readAsBytes();
+      final photo = await _takeSelfie();
       if (!mounted || token != _captureToken) return;
-      // Tampilkan pratinjau dulu, lalu verifikasi wajah dengan ML Kit.
-      setState(() {
-        _captured = bytes;
-        _faceResult = null;
-        _verifying = true;
-        _taking = false;
-      });
+      if (photo == null) {
+        setState(() {
+          _processing = false;
+          _warning = 'Foto gagal diambil. Coba lagi.';
+        });
+        return;
+      }
       final result = await _faceVerification.verifyFile(photo.path);
       if (!mounted || token != _captureToken) return;
+      if (result.allowsSubmission) {
+        // Wajah valid (atau ML Kit tidak tersedia): auto-submit tanpa tombol
+        // konfirmasi kedua.
+        Navigator.of(context).pop<Uint8List>(photo.bytes);
+        return;
+      }
       setState(() {
-        _faceResult = result;
-        _verifying = false;
+        _processing = false;
+        _warning =
+            'Wajah tidak terdeteksi, posisikan wajah di lingkaran lalu ketuk kembali';
       });
     } catch (_) {
-      if (mounted && token == _captureToken) {
-        setState(() {
-          _taking = false;
-          _verifying = false;
-          _error = 'Foto gagal diambil. Coba lagi.';
-        });
-      }
+      if (!mounted || token != _captureToken) return;
+      setState(() {
+        _processing = false;
+        _warning = 'Foto gagal diambil. Coba lagi.';
+      });
     }
   }
 
-  void _retake() {
-    _captureToken++;
-    setState(() {
-      _captured = null;
-      _faceResult = null;
-      _verifying = false;
-    });
+  Future<CapturedSelfie?> _takeSelfie() async {
+    final override = widget.captureOverride;
+    if (override != null) return override();
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return null;
+    final photo = await controller.takePicture();
+    return CapturedSelfie(path: photo.path, bytes: await photo.readAsBytes());
   }
 
   @override
@@ -202,52 +221,84 @@ class _CameraScreenState extends State<CameraScreen> {
                   ),
                 ),
               )
-            : controller == null
+            : controller == null && widget.captureOverride == null
             ? const Center(
                 child: CircularProgressIndicator(color: AppColors.yellow),
               )
-            : _captured != null
-            ? _reviewView()
             : _liveView(controller),
       ),
     );
   }
 
-  Widget _liveView(CameraController controller) {
+  Widget _liveView(CameraController? controller) {
     final size = _circleSize(context);
 
     return Column(
       children: [
-        const Spacer(),
-        _locationCard(),
-        const SizedBox(height: 18),
-        _CircularPreview(
-          controller: controller,
-          size: size,
-          ringColor: _ringColor,
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: (constraints.maxHeight - 24).clamp(
+                    0.0,
+                    double.infinity,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _locationCard(),
+                    const SizedBox(height: 18),
+                    _CircularPreview(
+                      controller: controller,
+                      size: size,
+                      ringColor: _ringColor,
+                      processing: _processing,
+                    ),
+                    const SizedBox(height: 16),
+                    if (_processing)
+                      const Text(
+                        'Memindai & mengirim absensi...',
+                        key: Key('camera-scan-status'),
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    else
+                      const Text(
+                        'Posisikan wajah di dalam lingkaran',
+                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
+                    if (_warning != null) _warningBanner(),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
-        const SizedBox(height: 18),
-        const Text(
-          'Posisikan wajah di dalam lingkaran',
-          style: TextStyle(color: Colors.white60, fontSize: 12),
-        ),
-        const Spacer(),
         GestureDetector(
           key: const Key('camera-capture'),
-          onTap: _taking ? null : _capture,
+          onTap: _processing ? null : _capture,
           child: Container(
             width: 76,
             height: 76,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _taking ? AppColors.tableHead : Colors.white,
+              color: _processing ? AppColors.tableHead : Colors.white,
               border: Border.all(color: _ringColor, width: 4),
             ),
             alignment: Alignment.center,
-            child: _taking
+            child: _processing
                 ? const SizedBox.square(
                     dimension: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.green,
+                    ),
                   )
                 : Container(
                     width: 54,
@@ -260,12 +311,45 @@ class _CameraScreenState extends State<CameraScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        const Text(
-          'Ketuk untuk mengambil foto',
-          style: TextStyle(color: Colors.white54, fontSize: 11),
+        Text(
+          _processing
+              ? 'Mohon tunggu, jangan tutup layar'
+              : 'Ketuk untuk mengambil foto',
+          style: const TextStyle(color: Colors.white54, fontSize: 11),
         ),
         const SizedBox(height: 26),
       ],
+    );
+  }
+
+  Widget _warningBanner() {
+    const foreground = Color(0xFFFCA5A5);
+    return Container(
+      key: const Key('camera-warning'),
+      margin: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.danger.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.face_retouching_off, size: 15, color: foreground),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _warning!,
+              style: const TextStyle(
+                fontSize: 11.5,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+                color: foreground,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -339,336 +423,59 @@ class _CameraScreenState extends State<CameraScreen> {
     );
   }
 
-  Widget _reviewView() {
-    // Kirim tetap diblokir selama verifikasi berjalan, atau saat ML Kit aktif
-    // dan menolak foto. Bila ML Kit tidak tersedia, kirim diizinkan.
-    final canSend = !_verifying && (_faceResult?.allowsSubmission ?? false);
-    return Column(
-      children: [
-        const SizedBox(height: 16),
-        _locationCard(),
-        const SizedBox(height: 16),
-        Expanded(
-          child: SelfieReviewView(
-            photo: _captured!,
-            size: _circleSize(context),
-            ringColor: _ringColor,
-            mirrored: _isFront,
-            verifying: _verifying,
-            verification: _faceResult,
-            onRetake: _retake,
-            onConfirm: canSend
-                ? () => Navigator.of(context).pop<Uint8List>(_captured)
-                : null,
-          ),
-        ),
-      ],
-    );
-  }
-
   double _circleSize(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     return (width - 88).clamp(200.0, 280.0);
   }
 }
 
-/// Pratinjau foto selfie beserta status verifikasi wajah.
-///
-/// Dipisahkan dari [CameraScreen] supaya skenario "wajah tidak terdeteksi"
-/// dan "wajah terverifikasi" bisa diuji tanpa native kamera/ML Kit.
-class SelfieReviewView extends StatelessWidget {
-  const SelfieReviewView({
-    super.key,
-    required this.photo,
-    required this.size,
-    required this.ringColor,
-    required this.mirrored,
-    required this.onRetake,
-    this.verifying = false,
-    this.verification,
-    this.onConfirm,
-  });
-
-  final Uint8List photo;
-  final double size;
-  final Color ringColor;
-
-  /// True untuk kamera depan: foto ditampilkan seperti cermin, byte JPEG asli
-  /// yang dikirim ke API tetap tanpa mirror.
-  final bool mirrored;
-  final bool verifying;
-  final FaceVerificationResult? verification;
-  final VoidCallback onRetake;
-  final VoidCallback? onConfirm;
-
-  @override
-  Widget build(BuildContext context) {
-    final verified = !verifying && verification?.isVerified == true;
-    final canConfirm =
-        !verifying &&
-        verification?.allowsSubmission == true &&
-        onConfirm != null;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'Pratinjau foto',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: verified ? AppColors.green : ringColor,
-                width: 3,
-              ),
-            ),
-            child: ClipOval(
-              child: Transform.flip(
-                flipX: mirrored,
-                child: Image.memory(
-                  photo,
-                  width: size,
-                  height: size,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  filterQuality: FilterQuality.medium,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: AppColors.tableHead,
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white54,
-                      size: 32,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Tampilan cermin. File asli dikirim tanpa perubahan.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white38, fontSize: 11),
-          ),
-          const SizedBox(height: 14),
-          _statusBanner(),
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    key: const Key('camera-retake'),
-                    onPressed: onRetake,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Color(0x33FFFFFF)),
-                    ),
-                    child: const Text('Ambil ulang'),
-                  ),
-                ),
-                if (canConfirm) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton(
-                      key: const Key('camera-confirm'),
-                      onPressed: onConfirm,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.green,
-                      ),
-                      child: const Text('Kirim Absen'),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statusBanner() {
-    if (verifying) {
-      return _banner(
-        key: const Key('camera-face-verifying'),
-        background: AppColors.yellowSoft,
-        border: AppColors.yellowLine,
-        leading: const SizedBox.square(
-          dimension: 13,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: AppColors.yellowInk,
-          ),
-        ),
-        text: const Text(
-          'Memverifikasi wajah...',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppColors.yellowInk,
-          ),
-        ),
-      );
-    }
-
-    final result = verification;
-    if (result == null) return const SizedBox.shrink();
-
-    if (result.isUnavailable) {
-      final detail = result.detail;
-      return _banner(
-        key: const Key('camera-face-unavailable'),
-        background: AppColors.yellowSoft,
-        border: AppColors.yellowLine,
-        leading: const Icon(
-          Icons.info_outline,
-          size: 15,
-          color: AppColors.yellowInk,
-        ),
-        text: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              result.message,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.yellowInk,
-              ),
-            ),
-            if (detail != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  detail,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    color: AppColors.yellowInk,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-    }
-
-    if (result.isVerified) {
-      return _banner(
-        key: const Key('camera-face-verified'),
-        background: AppColors.greenSoft,
-        border: AppColors.greenLine,
-        leading: const Icon(
-          Icons.verified_user,
-          size: 15,
-          color: AppColors.green,
-        ),
-        text: const Text(
-          'Wajah terverifikasi',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: AppColors.greenDark,
-          ),
-        ),
-      );
-    }
-
-    return _banner(
-      key: const Key('camera-face-warning'),
-      background: AppColors.dangerSoft,
-      border: AppColors.danger.withValues(alpha: 0.35),
-      leading: const Icon(
-        Icons.face_retouching_off,
-        size: 15,
-        color: AppColors.danger,
-      ),
-      text: Text(
-        result.message,
-        style: const TextStyle(
-          fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: AppColors.danger,
-        ),
-      ),
-    );
-  }
-
-  Widget _banner({
-    required Key key,
-    required Color background,
-    required Color border,
-    required Widget leading,
-    required Widget text,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Container(
-        key: key,
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: border),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            leading,
-            const SizedBox(width: 8),
-            Expanded(child: text),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+/// Lingkaran kamera depan dengan garis pemindai saat siaga dan cincin progress
+/// saat foto sedang diverifikasi/dikirim.
 class _CircularPreview extends StatelessWidget {
   const _CircularPreview({
     required this.controller,
     required this.size,
     required this.ringColor,
+    required this.processing,
   });
 
-  final CameraController controller;
+  final CameraController? controller;
   final double size;
   final Color ringColor;
+  final bool processing;
 
   @override
   Widget build(BuildContext context) {
-    // Di portrait, CameraPreview memakai 1 / aspectRatio sebagai rasio
-    // lebar:tinggi. Kotak preview harus memakai rasio yang sama persis agar
-    // wajah tidak melebar; FittedBox(cover) yang memotong tepinya ke lingkaran.
-    //
-    // Preview TIDAK di-flip: CameraPreview Android untuk kamera depan sudah
-    // dimirroring oleh platform (gerak kiri tampil kiri seperti cermin).
-    final portraitAspectRatio = 1 / controller.value.aspectRatio;
-    final preview = FittedBox(
-      fit: BoxFit.cover,
-      clipBehavior: Clip.hardEdge,
-      child: SizedBox(
-        width: size,
-        height: size / portraitAspectRatio,
-        child: CameraPreview(controller),
-      ),
-    );
+    final controller = this.controller;
+    final Widget preview;
+    if (controller == null) {
+      preview = Container(
+        color: AppColors.tableHead,
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.camera_front_rounded,
+          color: Colors.white54,
+          size: 40,
+        ),
+      );
+    } else {
+      // Di portrait, CameraPreview memakai 1 / aspectRatio sebagai rasio
+      // lebar:tinggi. Kotak preview harus memakai rasio yang sama persis agar
+      // wajah tidak melebar; FittedBox(cover) yang memotong tepinya ke lingkaran.
+      //
+      // Preview TIDAK di-flip: CameraPreview Android untuk kamera depan sudah
+      // dimirroring oleh platform (gerak kiri tampil kiri seperti cermin).
+      final portraitAspectRatio = 1 / controller.value.aspectRatio;
+      preview = FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: size,
+          height: size / portraitAspectRatio,
+          child: CameraPreview(controller),
+        ),
+      );
+    }
 
     return SizedBox(
       width: size,
@@ -688,7 +495,25 @@ class _CircularPreview extends StatelessWidget {
             ),
           ),
           ClipOval(
-            child: SizedBox(width: size, height: size, child: preview),
+            child: SizedBox(
+              width: size,
+              height: size,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  preview,
+                  if (!processing)
+                    const Positioned.fill(
+                      child: IgnorePointer(
+                        child: _ScanSweep(
+                          key: Key('camera-scan-sweep'),
+                          color: AppColors.green,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
           Container(
             width: size,
@@ -707,7 +532,78 @@ class _CircularPreview extends StatelessWidget {
               ),
             ),
           ),
+          if (processing) ...[
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ClipOval(
+                  child: Container(color: const Color(0x990B1220)),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: size - 6,
+              height: size - 6,
+              child: CircularProgressIndicator(
+                key: const Key('camera-scan-progress'),
+                strokeWidth: 3,
+                color: AppColors.green,
+                backgroundColor: AppColors.amber.withValues(alpha: 0.3),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Garis pemindai horizontal tipis yang bergerak naik-turun di dalam lingkaran.
+class _ScanSweep extends StatefulWidget {
+  const _ScanSweep({super.key, required this.color});
+
+  final Color color;
+
+  @override
+  State<_ScanSweep> createState() => _ScanSweepState();
+}
+
+class _ScanSweepState extends State<_ScanSweep>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1700),
+      )..repeat(reverse: true);
+  late final Animation<double> _position = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeInOut,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _position,
+      builder: (context, _) => Align(
+        alignment: Alignment(0, _position.value * 1.8 - 0.9),
+        child: Container(
+          height: 1.6,
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                widget.color.withValues(alpha: 0),
+                widget.color.withValues(alpha: 0.9),
+                widget.color.withValues(alpha: 0),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
