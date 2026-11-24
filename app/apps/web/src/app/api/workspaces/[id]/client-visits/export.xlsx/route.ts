@@ -1,7 +1,12 @@
+import { readFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
+
 import ExcelJS from "exceljs";
 
 import {
+  clientVisitPhotoDirectory,
   listWorkspaceClientVisitExportRows,
+  readCompanyLogo,
   requirePermission,
 } from "@absensi/auth";
 
@@ -11,8 +16,32 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const JAKARTA = "Asia/Jakarta";
+const HEADERS = [
+  "Nama Karyawan",
+  "Jabatan",
+  "Nama Klien",
+  "Waktu Datang",
+  "Waktu Pulang",
+  "Durasi",
+  "Foto Datang",
+  "Foto Pulang",
+  "Catatan Datang",
+  "Catatan Pulang",
+  "Alamat Datang",
+  "Alamat Pulang",
+] as const;
+const WIDTHS = [
+  24.5, 23.7, 44.0, 15.6, 13.0, 15.0, 11.6, 11.4, 33.3, 14.3, 113.1, 103.3,
+] as const;
+const PHOTO_FILE_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|jpeg|png|webp)$/i;
 
-function parts(value: string): Record<string, string> {
+type EmbeddedImage = {
+  base64: string;
+  extension: "jpeg" | "png";
+};
+
+function dateParts(value: string): Record<string, string> {
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: JAKARTA,
     year: "numeric",
@@ -27,14 +56,67 @@ function parts(value: string): Record<string, string> {
   );
 }
 
-function reportDate(value: string): string {
-  const p = parts(value);
-  return `${p.year}-${p.month}-${p.day}`;
+function dateTimeLabel(value: string): string {
+  const p = dateParts(value);
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
-function reportTime(value: string): string {
-  const p = parts(value);
-  return `${p.hour}:${p.minute}`;
+function headerDay(value: Date, withYear: boolean): string {
+  const formatter = new Intl.DateTimeFormat("id-ID", {
+    timeZone: JAKARTA,
+    day: "numeric",
+    month: "short",
+    ...(withYear ? { year: "numeric" } : {}),
+  });
+  return formatter.format(value).replace(/\./g, "");
+}
+
+function durationLabel(checkInAt: string | null, checkOutAt: string | null): string {
+  if (!checkInAt || !checkOutAt) return "";
+  const minutes = Math.max(
+    0,
+    Math.round((new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 60_000),
+  );
+  if (minutes < 60) return `${minutes} menit`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours} jam` : `${hours} jam ${rest} menit`;
+}
+
+function locationLabel(latitude: number | null, longitude: number | null): string {
+  if (latitude === null || longitude === null) return "";
+  const coordinates = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+  return `${coordinates}\nhttps://www.google.com/maps?q=${latitude},${longitude}`;
+}
+
+function reportRangeDate(value: string | null, fallback: Date): Date {
+  if (!value) return fallback;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function thinBorder(argb: string): Partial<ExcelJS.Borders> {
+  const side: Partial<ExcelJS.Border> = { style: "thin", color: { argb } };
+  return { top: side, left: side, bottom: side, right: side };
+}
+
+async function readPhotoImage(fileName: string | null): Promise<EmbeddedImage | null> {
+  if (!fileName || !PHOTO_FILE_PATTERN.test(basename(fileName))) return null;
+  const lower = fileName.toLowerCase();
+  const extension = lower.endsWith(".png")
+    ? "png"
+    : lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+      ? "jpeg"
+      : null;
+  if (!extension) return null;
+  const directory = resolve(clientVisitPhotoDirectory());
+  const path = resolve(join(directory, basename(fileName)));
+  if (!path.startsWith(`${directory}/`)) return null;
+  try {
+    return { base64: (await readFile(path)).toString("base64"), extension };
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(
@@ -45,91 +127,153 @@ export async function GET(
     const { ctx } = await requirePermission(request, "attendance.read");
     const { id } = await context.params;
     const url = new URL(request.url);
-    const from = url.searchParams.get("from") ?? undefined;
-    const to = url.searchParams.get("to") ?? undefined;
-    const rows = await listWorkspaceClientVisitExportRows({
+    const from = url.searchParams.get("from");
+    const to = url.searchParams.get("to");
+    const data = await listWorkspaceClientVisitExportRows({
       ctx,
       workspaceId: id,
-      from,
-      to,
+      from: from ?? undefined,
+      to: to ?? undefined,
       memberId: url.searchParams.get("memberId") ?? undefined,
     });
+    const rows = data.rows;
+
+    let logo: EmbeddedImage | null = null;
+    try {
+      const file = await readCompanyLogo({ ctx, workspaceId: id });
+      const extension =
+        file.contentType === "image/png"
+          ? "png"
+          : file.contentType === "image/jpeg"
+            ? "jpeg"
+            : null;
+      if (extension) {
+        logo = { base64: Buffer.from(file.bytes).toString("base64"), extension };
+      }
+    } catch {
+      logo = null;
+    }
+
+    const now = new Date();
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const startDate = reportRangeDate(
+      from,
+      first ? new Date(first.checkInAt ?? first.checkOutAt ?? now) : now,
+    );
+    const endDate = reportRangeDate(
+      to,
+      last ? new Date(last.checkInAt ?? last.checkOutAt ?? now) : startDate,
+    );
+    const title = `Kunjungan Klien - ${headerDay(startDate, false)} - ${headerDay(endDate, true)}`;
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Absensi";
     workbook.title = "Laporan Kunjungan Client";
     const sheet = workbook.addWorksheet("Kunjungan Client", {
-      views: [{ state: "frozen", ySplit: 1 }],
+      views: [{ state: "frozen", ySplit: 3 }],
     });
-    sheet.columns = [
-      { header: "No", key: "no", width: 6 },
-      { header: "Tanggal", key: "date", width: 13 },
-      { header: "Jam Kunjungan", key: "time", width: 14 },
-      { header: "Nama Karyawan", key: "member", width: 24 },
-      { header: "Divisi", key: "division", width: 20 },
-      { header: "Nama Client", key: "client", width: 28 },
-      { header: "Koordinat GPS (Lat, Lng)", key: "coordinates", width: 28 },
-      { header: "Link Google Maps", key: "maps", width: 34 },
-      { header: "Keterangan", key: "notes", width: 36 },
-      { header: "URL Lampiran Foto", key: "photo", width: 42 },
-    ];
-    sheet.getRow(1).height = 25;
-    sheet.getRow(1).eachCell((cell) => {
-      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    sheet.columns = WIDTHS.map((width) => ({ width }));
+
+    sheet.mergeCells("A1:L1");
+    sheet.getCell("A1").value = title;
+    sheet.getCell("A1").font = { name: "Calibri", size: 14, bold: true };
+    sheet.getCell("A1").alignment = { horizontal: "left", vertical: "middle" };
+    sheet.getRow(1).height = 30;
+
+    sheet.mergeCells("A2:L2");
+    sheet.getCell("A2").value = data.companyName;
+    sheet.getCell("A2").font = {
+      name: "Calibri",
+      size: 14,
+      bold: true,
+      color: { argb: "FF333333" },
+    };
+    sheet.getCell("A2").alignment = { horizontal: "left", vertical: "middle" };
+    sheet.getRow(2).height = 24;
+
+    if (logo) {
+      const imageId = workbook.addImage({
+        base64: logo.base64,
+        extension: logo.extension,
+      });
+      sheet.addImage(imageId, {
+        tl: { col: 9, row: 1 },
+        ext: { width: 145, height: 37 },
+      });
+    }
+
+    const headerRow = sheet.getRow(3);
+    headerRow.height = 28;
+    HEADERS.forEach((label, index) => {
+      const cell = headerRow.getCell(index + 1);
+      cell.value = label;
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+        color: { argb: "FFFFFFFF" },
+      };
       cell.fill = {
         type: "pattern",
         pattern: "solid",
-        fgColor: { argb: "FF15803D" },
+        fgColor: { argb: "FF25A091" },
       };
-      cell.alignment = { vertical: "middle", horizontal: "left" };
-      cell.border = {
-        bottom: { style: "thin", color: { argb: "FFE2E8E4" } },
-      };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      cell.border = thinBorder("FF000000");
     });
 
-    const origin = new URL(request.url).origin;
-    rows.forEach((row, index) => {
-      const mapsUrl = `https://www.google.com/maps?q=${row.latitude},${row.longitude}`;
-      const photoUrl = row.hasPhoto
-        ? `${origin}/api/workspaces/${id}/client-visits/logs/${row.id}/photo`
-        : "";
+    for (const [index, row] of rows.entries()) {
+      const rowNumber = index + 4;
+      const excelRow = sheet.getRow(rowNumber);
+      excelRow.height = 24;
       const values = [
-        index + 1,
-        reportDate(row.timestampServer),
-        reportTime(row.timestampServer),
         row.memberName,
-        row.divisionName ?? "Tanpa divisi",
+        row.positionName ?? "-",
         row.clientName,
-        `${row.latitude.toFixed(6)}, ${row.longitude.toFixed(6)}`,
+        row.checkInAt ? dateTimeLabel(row.checkInAt) : "",
+        row.checkOutAt ? dateTimeLabel(row.checkOutAt) : "",
+        durationLabel(row.checkInAt, row.checkOutAt),
         "",
-        row.notes ?? "",
         "",
+        row.checkInNotes ?? "",
+        row.checkOutNotes ?? "",
+        locationLabel(row.checkInLatitude, row.checkInLongitude),
+        locationLabel(row.checkOutLatitude, row.checkOutLongitude),
       ];
-      const excelRow = sheet.addRow(values);
-      excelRow.getCell(8).value = {
-        text: mapsUrl,
-        hyperlink: mapsUrl,
-      };
-      excelRow.getCell(8).font = { color: { argb: "FF15803D" }, underline: true };
-      if (photoUrl) {
-        excelRow.getCell(10).value = {
-          text: photoUrl,
-          hyperlink: photoUrl,
-        };
-        excelRow.getCell(10).font = { color: { argb: "FF15803D" }, underline: true };
-      }
-      excelRow.eachCell((cell) => {
-        cell.alignment = { vertical: "top", wrapText: true };
-        cell.border = {
-          bottom: { style: "hair", color: { argb: "FFE2E8E4" } },
-        };
+      values.forEach((value, cellIndex) => {
+        const cell = excelRow.getCell(cellIndex + 1);
+        cell.value = value;
+        cell.font = { name: "Calibri", size: 11, bold: false };
+        cell.alignment = { vertical: "middle", wrapText: true };
+        cell.border = thinBorder("FFD1D5DB");
       });
-    });
 
-    sheet.autoFilter = {
-      from: { row: 1, column: 1 },
-      to: { row: 1, column: 10 },
-    };
+      const checkInPhoto = await readPhotoImage(row.checkInPhotoFileName);
+      const checkOutPhoto = await readPhotoImage(row.checkOutPhotoFileName);
+      if (checkInPhoto) {
+        const imageId = workbook.addImage({
+          base64: checkInPhoto.base64,
+          extension: checkInPhoto.extension,
+        });
+        sheet.addImage(imageId, {
+          tl: { col: 6, row: rowNumber - 1 },
+          ext: { width: 80, height: 140 },
+        });
+      }
+      if (checkOutPhoto) {
+        const imageId = workbook.addImage({
+          base64: checkOutPhoto.base64,
+          extension: checkOutPhoto.extension,
+        });
+        sheet.addImage(imageId, {
+          tl: { col: 7, row: rowNumber - 1 },
+          ext: { width: 80, height: 140 },
+        });
+      }
+      if (checkInPhoto || checkOutPhoto) excelRow.height = 150;
+    }
+
     const buffer = await workbook.xlsx.writeBuffer();
     const filename = `kunjungan-client-${from ?? "awal"}-${to ?? "akhir"}.xlsx`;
     return new Response(buffer as ArrayBuffer, {

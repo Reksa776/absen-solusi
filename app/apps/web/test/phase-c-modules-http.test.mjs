@@ -16,6 +16,9 @@ import {
 
 const root = new URL("../../../", import.meta.url).pathname;
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7, 0xff, 0xd9]);
+const PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+]);
 const now = new Date();
 const YEAR = now.getUTCFullYear();
 const MONTH = now.getUTCMonth() + 1;
@@ -26,6 +29,7 @@ let db;
 let server;
 let baseUrl;
 let photoDir;
+let logoDir;
 let tenantA;
 let tenantB;
 let employee;
@@ -74,6 +78,20 @@ async function sendPhoto(path, token, fields, fileField = "photo") {
   return { response, body: await response.json().catch(() => ({})) };
 }
 
+async function uploadLogo(token, bytes, filename, type) {
+  const form = new FormData();
+  form.append("logo", new Blob([bytes], { type }), filename);
+  const response = await fetch(
+    `${baseUrl}/api/workspaces/${tenantA.tenantId}/settings/company/logo`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, connection: "close" },
+      body: form,
+    },
+  );
+  return { response, body: await response.json().catch(() => ({})) };
+}
+
 before(async () => {
   db = adminClient();
   await resetDatabase(db);
@@ -82,6 +100,7 @@ before(async () => {
   employee = await seedMember(db, tenantA.tenantId, tenantA.roles.EMPLOYEE);
   otherEmployee = await seedMember(db, tenantA.tenantId, tenantA.roles.EMPLOYEE);
   photoDir = await mkdtemp(join(tmpdir(), "absensi-phase-c-photo-"));
+  logoDir = await mkdtemp(join(tmpdir(), "absensi-phase-c-logo-"));
 
   const officeId = randomUUID();
   await db.officeLocation.create({
@@ -189,6 +208,7 @@ before(async () => {
       NODE_ENV: "production",
       S1_RATE_LIMITER: "memory",
       CLIENT_VISIT_PHOTO_DIR: photoDir,
+      COMPANY_LOGO_DIR: logoDir,
     },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -216,6 +236,7 @@ after(async () => {
   }
   if (db) await db.$disconnect();
   if (photoDir) await rm(photoDir, { recursive: true, force: true });
+  if (logoDir) await rm(logoDir, { recursive: true, force: true });
 });
 
 test("C-1: client visit terjadwal, check-in/out GPS + foto, ringkasan, RBAC, isolasi tenant", async () => {
@@ -378,6 +399,9 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
   assert.equal(logList.response.status, 200);
   assert.ok(logList.body.logs.some((row) => row.id === created.body.id && row.clientName === clientName));
 
+  const logo = await uploadLogo(tenantA.ownerToken, PNG, "logo.png", "image/png");
+  assert.equal(logo.response.status, 201, JSON.stringify(logo.body));
+
   const exportResponse = await fetch(
     `${baseUrl}/api/workspaces/${tenantA.tenantId}/client-visits/export.xlsx?from=${now.toISOString().slice(0, 10)}&to=${now.toISOString().slice(0, 10)}`,
     { headers: { authorization: `Bearer ${tenantA.ownerToken}`, connection: "close" } },
@@ -391,19 +415,126 @@ test("C-1B: kunjungan ad-hoc GPS + nama client + foto dan export XLSX", async ()
   await workbook.xlsx.load(Buffer.from(await exportResponse.arrayBuffer()));
   const sheet = workbook.getWorksheet("Kunjungan Client");
   assert.ok(sheet);
-  assert.equal(sheet.getRow(1).getCell(1).value, "No");
-  assert.equal(sheet.getRow(1).getCell(6).value, "Nama Client");
-  const rows = [];
-  sheet.eachRow((row, rowNumber) => {
-    if (rowNumber > 1) rows.push(row.values);
+
+  assert.ok(sheet.model.merges.includes("A1:L1"));
+  assert.ok(sheet.model.merges.includes("A2:L2"));
+  assert.match(
+    String(sheet.getCell("A1").value),
+    /^Kunjungan Klien - \d{1,2} [A-Za-z]+ - \d{1,2} [A-Za-z]+ \d{4}$/,
+  );
+  const workspace = await db.workspace.findUnique({ where: { id: tenantA.tenantId } });
+  assert.equal(sheet.getCell("A2").value, workspace.name);
+  assert.equal(sheet.getRow(1).height, 30);
+  assert.equal(sheet.getRow(2).height, 24);
+  assert.equal(sheet.getRow(3).height, 28);
+
+  const headers = [
+    "Nama Karyawan",
+    "Jabatan",
+    "Nama Klien",
+    "Waktu Datang",
+    "Waktu Pulang",
+    "Durasi",
+    "Foto Datang",
+    "Foto Pulang",
+    "Catatan Datang",
+    "Catatan Pulang",
+    "Alamat Datang",
+    "Alamat Pulang",
+  ];
+  headers.forEach((label, index) => {
+    const cell = sheet.getRow(3).getCell(index + 1);
+    assert.equal(cell.value, label);
+    assert.equal(cell.fill?.fgColor?.argb, "FF25A091");
+    assert.equal(cell.font?.name, "Calibri");
+    assert.equal(cell.font?.size, 11);
+    assert.equal(cell.font?.bold, true);
+    assert.equal(cell.font?.color?.argb, "FFFFFFFF");
+    assert.equal(cell.alignment?.horizontal, "center");
+    assert.equal(cell.alignment?.vertical, "middle");
+    assert.equal(cell.alignment?.wrapText, true);
+    assert.equal(cell.border?.top?.style, "thin");
+    assert.equal(cell.border?.right?.style, "thin");
+    assert.equal(cell.border?.bottom?.style, "thin");
+    assert.equal(cell.border?.left?.style, "thin");
+    assert.equal(cell.border?.top?.color?.argb, "FF000000");
   });
-  const reportRow = rows.find((row) => row[6] === clientName);
-  assert.ok(reportRow, "baris kunjungan ad-hoc harus ada di XLSX");
-  assert.equal(reportRow[4], "Member");
-  assert.equal(reportRow[5], "Tanpa divisi");
-  assert.equal(reportRow[7], "-6.210000, 106.820000");
-  assert.equal(reportRow[8].text, "https://www.google.com/maps?q=-6.21,106.82");
-  assert.match(reportRow[10].text, /\/client-visits\/logs\/.+\/photo$/);
+
+  const widths = [24.5, 23.7, 44, 15.6, 13, 15, 11.6, 11.4, 33.3, 14.3, 113.1, 103.3];
+  widths.forEach((width, index) => {
+    assert.ok(Math.abs((sheet.getColumn(index + 1).width ?? 0) - width) < 0.01);
+  });
+
+  const images = sheet.getImages().map((image) => ({
+    col: Math.round(Number(image.range.tl.col)),
+    row: Math.round(Number(image.range.tl.row)),
+    width: Number(image.range.ext?.width),
+    height: Number(image.range.ext?.height),
+  }));
+  const logoImage = images.find((image) => image.row === 1 && image.col === 9);
+  assert.ok(logoImage, "logo perusahaan harus disematkan pada baris 2");
+  assert.equal(logoImage.width, 145);
+  assert.equal(logoImage.height, 37);
+
+  const checkInPhoto = images.find((image) => image.col === 6 && image.row >= 3);
+  assert.ok(checkInPhoto, "foto datang harus disematkan di kolom G");
+  assert.equal(checkInPhoto.width, 80);
+  assert.equal(checkInPhoto.height, 140);
+  assert.equal(sheet.getRow(checkInPhoto.row + 1).height, 150);
+  assert.ok(
+    images.some((image) => image.col === 7 && image.row >= 3),
+    "foto pulang harus disematkan di kolom H",
+  );
+
+  const dataRows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber >= 4) dataRows.push(row);
+  });
+  const scheduledRow = dataRows.find(
+    (row) => row.getCell(3).value === "PT Klien Nusantara",
+  );
+  assert.ok(scheduledRow, "baris kunjungan terjadwal harus ada di XLSX");
+  assert.equal(scheduledRow.getCell(1).value, "Member");
+  assert.equal(scheduledRow.getCell(2).value, "-");
+  assert.match(String(scheduledRow.getCell(4).value), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  assert.match(String(scheduledRow.getCell(5).value), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  assert.equal(scheduledRow.getCell(6).value, "0 menit");
+  assert.equal(scheduledRow.getCell(7).value, "");
+  assert.equal(scheduledRow.getCell(8).value, "");
+  assert.equal(scheduledRow.getCell(9).value, "Bertemu PIC dan memulai presentasi.");
+  assert.equal(
+    scheduledRow.getCell(10).value,
+    "Kontrak ditandatangani, tindak lanjut minggu depan.",
+  );
+  assert.match(
+    String(scheduledRow.getCell(11).value),
+    /^-6\.200000, 106\.816666\nhttps:\/\/www\.google\.com\/maps\?q=-6\.2,106\.816666$/,
+  );
+  assert.match(
+    String(scheduledRow.getCell(12).value),
+    /^-6\.200000, 106\.816666\nhttps:\/\/www\.google\.com\/maps\?q=-6\.2,106\.816666$/,
+  );
+  assert.equal(scheduledRow.getCell(12).alignment?.vertical, "middle");
+  assert.equal(scheduledRow.getCell(12).alignment?.wrapText, true);
+  assert.equal(scheduledRow.getCell(12).border?.bottom?.color?.argb, "FFD1D5DB");
+  assert.equal(scheduledRow.height, 150);
+
+  const adHocRow = dataRows.find((row) => row.getCell(3).value === clientName);
+  assert.ok(adHocRow, "baris kunjungan ad-hoc harus ada di XLSX");
+  assert.match(String(adHocRow.getCell(4).value), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  assert.equal(adHocRow.getCell(5).value, "");
+  assert.equal(adHocRow.getCell(6).value, "");
+  assert.equal(adHocRow.getCell(9).value, "Bertemu PIC untuk membahas renewal kontrak.");
+  assert.equal(adHocRow.getCell(12).value, "");
+  assert.match(
+    String(adHocRow.getCell(11).value),
+    /^-6\.210000, 106\.820000\nhttps:\/\/www\.google\.com\/maps\?q=-6\.21,106\.82$/,
+  );
+  assert.equal(adHocRow.height, 150);
+
+  // Logo uji membuat company profile; bersihkan agar test profil berikutnya
+  // tetap dapat membuat profilnya sendiri.
+  await db.companyProfile.deleteMany({ where: { tenantId: tenantA.tenantId } });
 
   const foreignExport = await fetch(
     `${baseUrl}/api/workspaces/${tenantA.tenantId}/client-visits/export.xlsx`,

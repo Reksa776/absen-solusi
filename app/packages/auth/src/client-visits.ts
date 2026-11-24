@@ -64,14 +64,24 @@ export type ClientVisitLogSummary = {
 
 export type ClientVisitExportRow = {
   id: string;
-  timestampServer: string;
   memberName: string;
-  divisionName: string | null;
+  positionName: string | null;
   clientName: string;
-  latitude: number;
-  longitude: number;
-  notes: string | null;
-  hasPhoto: boolean;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  checkInPhotoFileName: string | null;
+  checkOutPhotoFileName: string | null;
+  checkInNotes: string | null;
+  checkOutNotes: string | null;
+  checkInLatitude: number | null;
+  checkInLongitude: number | null;
+  checkOutLatitude: number | null;
+  checkOutLongitude: number | null;
+};
+
+export type ClientVisitExportData = {
+  companyName: string;
+  rows: ClientVisitExportRow[];
 };
 
 export type ClientVisitScheduleSummary = {
@@ -1039,7 +1049,7 @@ export async function listWorkspaceClientVisitExportRows(input: {
   from?: string | undefined;
   to?: string | undefined;
   memberId?: string | undefined;
-}): Promise<ClientVisitExportRow[]> {
+}): Promise<ClientVisitExportData> {
   assertAttendanceRead(input.ctx);
   assertWorkspaceReadClaim(input.ctx, input.workspaceId);
   const from = input.from ? parseReportDay(input.from, "from") : undefined;
@@ -1047,43 +1057,91 @@ export async function listWorkspaceClientVisitExportRows(input: {
   if (from && to && from.getTime() > to.getTime()) {
     throw new HttpError(400, "INVALID_DATE_RANGE", "Rentang tanggal tidak valid");
   }
-  const rows = await withTenant(input.ctx, (db) =>
-    db.clientVisitLog.findMany({
-      where: {
-        ...(from || to
-          ? {
-              timestampServer: {
-                ...(from ? { gte: from } : {}),
-                ...(to ? { lt: addDays(to, 1) } : {}),
-              },
-            }
-          : {}),
-        ...(input.memberId ? { memberId: input.memberId } : {}),
-      },
-      include: {
-        client: { select: { name: true } },
-        member: {
-          select: {
-            user: { select: { name: true } },
-            division: { select: { name: true } },
+  const [logs, profile, workspace] = await withTenant(input.ctx, (db) =>
+    Promise.all([
+      db.clientVisitLog.findMany({
+        where: {
+          ...(from || to
+            ? {
+                timestampServer: {
+                  ...(from ? { gte: from } : {}),
+                  ...(to ? { lt: addDays(to, 1) } : {}),
+                },
+              }
+            : {}),
+          ...(input.memberId ? { memberId: input.memberId } : {}),
+        },
+        include: {
+          client: { select: { name: true } },
+          member: {
+            select: {
+              user: { select: { name: true } },
+              position: { select: { name: true } },
+            },
           },
         },
-      },
-      orderBy: [{ timestampServer: "asc" }, { id: "asc" }],
-      take: 5000,
-    }),
+        orderBy: [{ timestampServer: "asc" }, { id: "asc" }],
+        take: 5000,
+      }),
+      db.companyProfile.findFirst({ select: { legalName: true } }),
+      db.workspace.findFirst({ select: { name: true } }),
+    ]),
   );
-  return rows.map((row) => ({
-    id: row.id,
-    timestampServer: row.timestampServer.toISOString(),
-    memberName: row.member.user.name,
-    divisionName: row.member.division?.name ?? null,
-    clientName: row.client?.name ?? row.clientName ?? "Kunjungan client",
-    latitude: row.latitude,
-    longitude: row.longitude,
-    notes: row.notes,
-    hasPhoto: Boolean(row.photoFileName),
-  }));
+
+  type ExportLog = (typeof logs)[number];
+  const scheduled = new Map<
+    string,
+    { checkIn?: ExportLog; checkOut?: ExportLog }
+  >();
+  const adHoc: ExportLog[] = [];
+  for (const log of logs) {
+    if (!log.scheduleId) {
+      adHoc.push(log);
+      continue;
+    }
+    const entry = scheduled.get(log.scheduleId) ?? {};
+    if (log.type === "CHECK_IN") entry.checkIn = log;
+    else if (log.type === "CHECK_OUT") entry.checkOut = log;
+    scheduled.set(log.scheduleId, entry);
+  }
+
+  const toExportRow = (
+    checkIn: ExportLog | undefined,
+    checkOut: ExportLog | undefined,
+    anchor: ExportLog,
+  ): ClientVisitExportRow => ({
+    id: anchor.scheduleId ?? anchor.id,
+    memberName: anchor.member.user.name,
+    positionName: anchor.member.position?.name ?? null,
+    clientName: anchor.client?.name ?? anchor.clientName ?? "Kunjungan client",
+    checkInAt: checkIn ? checkIn.timestampServer.toISOString() : null,
+    checkOutAt: checkOut ? checkOut.timestampServer.toISOString() : null,
+    checkInPhotoFileName: checkIn?.photoFileName ?? null,
+    checkOutPhotoFileName: checkOut?.photoFileName ?? null,
+    checkInNotes: checkIn?.notes ?? null,
+    checkOutNotes: checkOut?.notes ?? null,
+    checkInLatitude: checkIn?.latitude ?? null,
+    checkInLongitude: checkIn?.longitude ?? null,
+    checkOutLatitude: checkOut?.latitude ?? null,
+    checkOutLongitude: checkOut?.longitude ?? null,
+  });
+
+  const rows: ClientVisitExportRow[] = [];
+  for (const entry of scheduled.values()) {
+    const anchor = entry.checkIn ?? entry.checkOut;
+    if (anchor) rows.push(toExportRow(entry.checkIn, entry.checkOut, anchor));
+  }
+  for (const log of adHoc) rows.push(toExportRow(log, undefined, log));
+  rows.sort((left, right) =>
+    (left.checkInAt ?? left.checkOutAt ?? "").localeCompare(
+      right.checkInAt ?? right.checkOutAt ?? "",
+    ),
+  );
+
+  return {
+    companyName: profile?.legalName ?? workspace?.name ?? "Perusahaan",
+    rows,
+  };
 }
 
 export async function reviewClientVisitLog(input: {
