@@ -216,11 +216,13 @@ export function WorkspaceBreadcrumb({ workspaceId }: { workspaceId: string }) {
 export function WorkspaceSidebar({
   workspaceId,
   workspaceName,
+  logoUrl,
   permissions,
   userEmail,
 }: {
   workspaceId: string;
   workspaceName: string;
+  logoUrl?: string | null;
   permissions: readonly string[];
   userEmail: string;
 }) {
@@ -272,9 +274,13 @@ export function WorkspaceSidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="brand-mark" aria-hidden="true">
-          A
-        </span>
+        {logoUrl ? (
+          <img className="brand-logo" src={logoUrl} alt={`Logo ${workspaceName}`} />
+        ) : (
+          <span className="brand-mark" aria-hidden="true">
+            A
+          </span>
+        )}
         <div style={{ minWidth: 0 }}>
           <div className="brand-title">Absensi Admin</div>
           <div className="brand-sub" title={workspaceName}>

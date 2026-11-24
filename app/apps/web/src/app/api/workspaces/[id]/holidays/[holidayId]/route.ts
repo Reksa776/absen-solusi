@@ -2,12 +2,37 @@ import {
   deleteHoliday,
   getClientIp,
   jsonResponse,
+  readJsonBody,
   requirePermission,
+  updateHoliday,
 } from "@absensi/auth";
 
 import { handleRouteError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string; holidayId: string }> },
+): Promise<Response> {
+  try {
+    const { ctx } = await requirePermission(request, "workspace.manage");
+    const { id, holidayId } = await context.params;
+    const body = await readJsonBody(request);
+    const updated = await updateHoliday({
+      ctx,
+      workspaceId: id,
+      holidayId,
+      ...(typeof body.date === "string" ? { date: body.date } : {}),
+      ...(typeof body.name === "string" ? { name: body.name } : {}),
+      ip: getClientIp(request),
+      userAgent: request.headers.get("user-agent"),
+    });
+    return jsonResponse(updated);
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}
 
 export async function DELETE(
   request: Request,

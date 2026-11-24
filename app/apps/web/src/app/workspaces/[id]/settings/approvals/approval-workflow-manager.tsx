@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { ROLE_KEYS, ROLE_LABELS, type RoleKey } from "@absensi/permissions";
+import { ROLE_LABELS, type RoleKey } from "@absensi/permissions";
 
 const CSRF_COOKIE = "aos_csrf";
 
@@ -15,13 +15,21 @@ const REQUEST_TYPES = [
   ["OUT_OF_TOWN", "Dinas luar kota"],
 ] as const;
 
-type Step = { level: number; approverRoleKey: string };
+type Candidate = { memberId: string; name: string; email: string };
+type Step = {
+  id: string;
+  level: number;
+  approverRoleKey: string;
+  approverMemberIds: string[];
+  approvers: Candidate[];
+};
 type Workflow = {
   id: string;
   requestType: string;
   isActive: boolean;
   steps: Step[];
 };
+type DraftStep = { memberIds: string[]; approverRoleKey: string };
 
 function readCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -37,26 +45,36 @@ async function csrfToken(): Promise<string> {
   return body.csrfToken;
 }
 
-function initialSteps(workflow: Workflow | undefined): string[] {
+function initialSteps(workflow: Workflow | undefined): DraftStep[] {
   if (workflow && workflow.steps.length > 0) {
-    return workflow.steps.map((step) => step.approverRoleKey);
+    return workflow.steps.map((step) => ({
+      memberIds: step.approverMemberIds,
+      approverRoleKey: step.approverRoleKey,
+    }));
   }
-  return ["WORKSPACE_ADMIN"];
+  return [{ memberIds: [], approverRoleKey: "WORKSPACE_ADMIN" }];
 }
 
 export function ApprovalWorkflowManager({
   workspaceId,
   workflows,
+  candidates,
   canManage,
 }: {
   workspaceId: string;
   workflows: Workflow[];
+  candidates: Candidate[];
   canManage: boolean;
 }) {
   const router = useRouter();
   const [requestType, setRequestType] = useState("CORRECTION");
-  const [roles, setRoles] = useState<string[]>(() =>
+  const [steps, setSteps] = useState<DraftStep[]>(() =>
     initialSteps(workflows.find((row) => row.requestType === "CORRECTION")),
+  );
+  const [queries, setQueries] = useState<string[]>(() =>
+    initialSteps(workflows.find((row) => row.requestType === "CORRECTION")).map(
+      () => "",
+    ),
   );
   const [isActive, setIsActive] = useState(
     workflows.find((row) => row.requestType === "CORRECTION")?.isActive ?? true,
@@ -65,30 +83,63 @@ export function ApprovalWorkflowManager({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const byId = new Map(candidates.map((row) => [row.memberId, row]));
+
   function selectType(next: string) {
-    setRequestType(next);
     const workflow = workflows.find((row) => row.requestType === next);
-    setRoles(initialSteps(workflow));
+    const nextSteps = initialSteps(workflow);
+    setRequestType(next);
+    setSteps(nextSteps);
+    setQueries(nextSteps.map(() => ""));
     setIsActive(workflow?.isActive ?? true);
     setError(null);
     setNotice(null);
   }
 
-  function setLevel(index: number, roleKey: string) {
-    setRoles((current) => current.map((role, i) => (i === index ? roleKey : role)));
+  function addMember(index: number, memberId: string) {
+    setSteps((current) =>
+      current.map((step, i) =>
+        i === index && !step.memberIds.includes(memberId)
+          ? { ...step, memberIds: [...step.memberIds, memberId] }
+          : step,
+      ),
+    );
+    setQueries((current) => current.map((value, i) => (i === index ? "" : value)));
+  }
+
+  function removeMember(index: number, memberId: string) {
+    setSteps((current) =>
+      current.map((step, i) =>
+        i === index
+          ? {
+              ...step,
+              memberIds: step.memberIds.filter((id) => id !== memberId),
+            }
+          : step,
+      ),
+    );
   }
 
   function addLevel() {
-    if (roles.length >= 5) return;
-    setRoles((current) => [...current, "WORKSPACE_ADMIN"]);
+    if (steps.length >= 5) return;
+    setSteps((current) => [
+      ...current,
+      { memberIds: [], approverRoleKey: "WORKSPACE_ADMIN" },
+    ]);
+    setQueries((current) => [...current, ""]);
   }
 
   function removeLevel(index: number) {
-    if (roles.length <= 1) return;
-    setRoles((current) => current.filter((_, i) => i !== index));
+    if (steps.length <= 1) return;
+    setSteps((current) => current.filter((_, i) => i !== index));
+    setQueries((current) => current.filter((_, i) => i !== index));
   }
 
   async function save() {
+    if (steps.some((step) => step.memberIds.length === 0)) {
+      setError("Pilih minimal satu karyawan pada setiap level approver.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -103,7 +154,9 @@ export function ApprovalWorkflowManager({
           body: JSON.stringify({
             requestType,
             isActive,
-            steps: roles.map((approverRoleKey) => ({ approverRoleKey })),
+            steps: steps.map((step) => ({
+              approverMemberIds: step.memberIds,
+            })),
           }),
         },
       );
@@ -127,7 +180,7 @@ export function ApprovalWorkflowManager({
     if (!workflows.some((row) => row.requestType === requestType)) return;
     if (
       !window.confirm(
-        "Hapus alur ini? Review akan kembali memakai perilaku fallback HR Admin/Owner.",
+        "Hapus alur ini? Review akan kembali memakai fallback HR Admin/Owner.",
       )
     ) {
       return;
@@ -153,7 +206,8 @@ export function ApprovalWorkflowManager({
         return;
       }
       setNotice("Alur dihapus. Fallback HR Admin/Owner kembali aktif.");
-      setRoles(["WORKSPACE_ADMIN"]);
+      setSteps([{ memberIds: [], approverRoleKey: "WORKSPACE_ADMIN" }]);
+      setQueries([""]);
       setIsActive(true);
       router.refresh();
     } catch {
@@ -161,6 +215,21 @@ export function ApprovalWorkflowManager({
     } finally {
       setBusy(false);
     }
+  }
+
+  function matches(index: number): Candidate[] {
+    const query = (queries[index] ?? "").trim().toLowerCase();
+    const selected = new Set(steps[index]?.memberIds ?? []);
+    return candidates
+      .filter((row) => !selected.has(row.memberId))
+      .filter((row) => {
+        if (!query) return true;
+        return (
+          row.name.toLowerCase().includes(query) ||
+          row.email.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 6);
   }
 
   const configured = workflows.find((row) => row.requestType === requestType);
@@ -186,14 +255,11 @@ export function ApprovalWorkflowManager({
               {REQUEST_TYPES.find(([value]) => value === requestType)?.[1]}
             </h2>
             <p className="section-note">
-              Level 1 disetujui lebih dulu, lalu berlanjut ke level berikutnya.
+              Level 1 disetujui lebih dulu. Salah satu karyawan pada level aktif
+              dapat menyetujui atau menolak.
             </p>
           </div>
-          <span
-            className={
-              configured ? "badge badge--green" : "badge badge--neutral"
-            }
-          >
+          <span className={configured ? "badge badge--green" : "badge badge--neutral"}>
             {configured ? "Terpasang" : "Fallback"}
           </span>
         </div>
@@ -221,68 +287,107 @@ export function ApprovalWorkflowManager({
         </div>
 
         <div className="stack" style={{ marginTop: "0.9rem" }}>
-          {roles.map((role, index) => (
-            <div
-              key={`${requestType}-${index}`}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "3.5rem 1fr auto",
-                gap: "0.6rem",
-                alignItems: "end",
-              }}
-            >
-              <span className="badge badge--neutral">L{index + 1}</span>
-              <label className="field">
-                Approver level {index + 1}
-                <select
-                  value={role}
-                  onChange={(event) => setLevel(index, event.target.value)}
-                  disabled={!canManage}
-                >
-                  {ROLE_KEYS.map((key: RoleKey) => (
-                    <option key={key} value={key}>
-                      {ROLE_LABELS[key]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="btn btn--danger btn--sm"
-                onClick={() => removeLevel(index)}
-                disabled={!canManage || roles.length <= 1 || busy}
-              >
-                Hapus
-              </button>
-            </div>
-          ))}
+          {steps.map((step, index) => {
+            const options = matches(index);
+            return (
+              <div className="approver-step" key={`${requestType}-${index}`}>
+                <div className="approver-step-head">
+                  <span className="badge badge--neutral">L{index + 1}</span>
+                  <strong>Approver level {index + 1}</strong>
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--sm"
+                    onClick={() => removeLevel(index)}
+                    disabled={!canManage || steps.length <= 1 || busy}
+                  >
+                    Hapus level
+                  </button>
+                </div>
+                <div className="approver-chips">
+                  {step.memberIds.length === 0 ? (
+                    <span className="section-note">
+                      Belum ada karyawan.{" "}
+                      {step.approverRoleKey
+                        ? `Alur lama memakai role ${ROLE_LABELS[step.approverRoleKey as RoleKey] ?? step.approverRoleKey}.`
+                        : "Pilih karyawan di bawah."}
+                    </span>
+                  ) : null}
+                  {step.memberIds.map((memberId) => {
+                    const member = byId.get(memberId);
+                    return (
+                      <span className="approver-chip" key={memberId}>
+                        <span>
+                          <strong>{member?.name ?? "Karyawan"}</strong>
+                          <small>{member?.email ?? memberId}</small>
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Hapus ${member?.name ?? "approver"}`}
+                          onClick={() => removeMember(index, memberId)}
+                          disabled={!canManage || busy}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+                {canManage ? (
+                  <div className="autocomplete">
+                    <label className="field">
+                      Cari karyawan
+                      <input
+                        value={queries[index] ?? ""}
+                        onChange={(event) =>
+                          setQueries((current) =>
+                            current.map((value, i) =>
+                              i === index ? event.target.value : value,
+                            ),
+                          )
+                        }
+                        placeholder="Ketik nama atau email karyawan"
+                        disabled={busy}
+                      />
+                    </label>
+                    {options.length > 0 ? (
+                      <ul className="autocomplete-list">
+                        {options.map((row) => (
+                          <li key={row.memberId}>
+                            <button
+                              type="button"
+                              onClick={() => addMember(index, row.memberId)}
+                            >
+                              <strong>{row.name}</strong>
+                              <span>{row.email}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="section-note">Tidak ada karyawan yang cocok.</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
 
         {canManage ? (
           <div className="btn-row" style={{ marginTop: "0.9rem" }}>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={save}
-              disabled={busy}
-            >
+            <button type="button" className="btn btn--primary" onClick={save} disabled={busy}>
               {busy ? "Menyimpan…" : "Simpan alur"}
             </button>
             <button
               type="button"
               className="btn btn--secondary"
               onClick={addLevel}
-              disabled={busy || roles.length >= 5}
+              disabled={busy || steps.length >= 5}
             >
               Tambah level
             </button>
             {configured ? (
-              <button
-                type="button"
-                className="btn btn--danger"
-                onClick={remove}
-                disabled={busy}
-              >
+              <button type="button" className="btn btn--danger" onClick={remove} disabled={busy}>
                 Hapus alur
               </button>
             ) : null}
@@ -330,10 +435,14 @@ export function ApprovalWorkflowManager({
                   </td>
                   <td>
                     {workflow.steps
-                      .map(
-                        (step) =>
-                          `L${step.level} ${ROLE_LABELS[step.approverRoleKey as RoleKey] ?? step.approverRoleKey}`,
-                      )
+                      .map((step) => {
+                        const names =
+                          step.approvers.length > 0
+                            ? step.approvers.map((entry) => entry.name).join(", ")
+                            : ROLE_LABELS[step.approverRoleKey as RoleKey] ??
+                              step.approverRoleKey;
+                        return `L${step.level} ${names}`;
+                      })
                       .join(" → ")}
                   </td>
                   <td>

@@ -569,7 +569,6 @@ export async function reviewLeaveRequest(input: {
   userAgent?: string | null;
   now?: Date;
 }): Promise<LeaveRequestSummary> {
-  assertReview(input.ctx);
   if (input.workspaceId) assertWorkspaceReadClaim(input.ctx, input.workspaceId);
   if (!isUuid(input.leaveId)) {
     throw new HttpError(400, "INVALID_LEAVE", "Pengajuan cuti tidak valid");
@@ -598,23 +597,25 @@ export async function reviewLeaveRequest(input: {
         throw new HttpError(409, "ALREADY_REVIEWED", "Pengajuan cuti sudah direview");
       }
 
+      const resolved = await resolveApprovalStep(
+        tx,
+        input.ctx.tenantId,
+        "LEAVE",
+        existing.currentApprovalLevel,
+      );
+      if (resolved?.step) {
+        assertApprovalActor({ ctx: input.ctx, step: resolved.step });
+      } else {
+        assertReview(input.ctx);
+      }
       let status: LeaveStatus = "APPROVED";
       let nextLevel = existing.currentApprovalLevel;
       if (action === "APPROVE") {
-        const resolved = await resolveApprovalStep(
-          tx,
-          input.ctx.tenantId,
-          "LEAVE",
-          existing.currentApprovalLevel,
-        );
         if (resolved?.step) {
-          assertApprovalActor({ ctx: input.ctx, step: resolved.step });
           nextLevel = resolved.step.level;
           if (resolved.step.level < resolved.totalSteps) status = "PENDING";
-        } else if (resolved) {
-          nextLevel = resolved.totalSteps;
         } else {
-          assertReview(input.ctx);
+          nextLevel = resolved?.totalSteps ?? existing.currentApprovalLevel;
         }
       } else {
         status = "REJECTED";

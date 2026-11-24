@@ -22,9 +22,9 @@ export default async function HolidaysPage({
       <div className="page-head">
         <div>
           <p className="eyebrow">Kalender kerja</p>
-          <h1 className="page-title">Hari libur workspace</h1>
+          <h1 className="page-title">Kalender libur</h1>
           <p className="page-subtitle">
-            Tanggal libur tidak dihitung sebagai alpha pada rekap bulanan.
+            Tandai tanggal, muat libur nasional, dan lihat sebaran libur setahun.
           </p>
         </div>
         <span className="badge badge--yellow">{holidays.length} tanggal</span>

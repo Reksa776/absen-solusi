@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { listMyNotifications } from "@absensi/auth";
+import { getCompanyProfile, listMyNotifications } from "@absensi/auth";
 
 import { requirePagePermission } from "@/lib/page-auth";
 import { WorkspaceBreadcrumb, WorkspaceSidebar } from "./workspace-sidebar";
@@ -26,7 +26,10 @@ export default async function WorkspaceLayout({
   const { id } = await params;
   const { ctx, user, workspaces } = await requirePagePermission();
   if (!ctx || ctx.tenantId !== id) redirect("/workspaces?error=forbidden");
-  const inbox = await listMyNotifications({ ctx, limit: 1 });
+  const [inbox, company] = await Promise.all([
+    listMyNotifications({ ctx, limit: 1 }),
+    getCompanyProfile({ ctx, workspaceId: id }),
+  ]);
   const workspaceName =
     workspaces.find((workspace) => workspace.id === id)?.name ?? "Workspace";
 
@@ -35,6 +38,7 @@ export default async function WorkspaceLayout({
       <WorkspaceSidebar
         workspaceId={id}
         workspaceName={workspaceName}
+        logoUrl={company.logoUrl}
         permissions={ctx.permissions}
         userEmail={user.email}
       />

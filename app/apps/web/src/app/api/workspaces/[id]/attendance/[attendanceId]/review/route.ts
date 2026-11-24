@@ -16,7 +16,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string; attendanceId: string }> },
 ): Promise<Response> {
   try {
-    const { ctx } = await requirePermission(request, "correction.review");
+    const { ctx } = await requirePermission(request, "workspace.read");
     const { id, attendanceId } = await context.params;
     const body = await readJsonBody(request);
     return jsonResponse(

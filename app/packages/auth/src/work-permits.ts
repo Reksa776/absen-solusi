@@ -289,7 +289,6 @@ export async function reviewWorkPermit(input: {
   userAgent?: string | null;
   now?: Date;
 }): Promise<WorkPermitSummary> {
-  assertReview(input.ctx);
   if (input.workspaceId) assertWorkspaceReadClaim(input.ctx, input.workspaceId);
   if (!isUuid(input.permitId)) {
     throw new HttpError(400, "INVALID_PERMIT", "Izin kerja tidak valid");
@@ -318,23 +317,25 @@ export async function reviewWorkPermit(input: {
         throw new HttpError(409, "ALREADY_REVIEWED", "Izin kerja sudah direview");
       }
 
+      const resolved = await resolveApprovalStep(
+        tx,
+        input.ctx.tenantId,
+        "PERMIT",
+        existing.currentApprovalLevel,
+      );
+      if (resolved?.step) {
+        assertApprovalActor({ ctx: input.ctx, step: resolved.step });
+      } else {
+        assertFallbackApprover(input.ctx);
+      }
       let status: WorkPermitStatus = "APPROVED";
       let nextLevel = existing.currentApprovalLevel;
       if (action === "APPROVE") {
-        const resolved = await resolveApprovalStep(
-          tx,
-          input.ctx.tenantId,
-          "PERMIT",
-          existing.currentApprovalLevel,
-        );
         if (resolved?.step) {
-          assertApprovalActor({ ctx: input.ctx, step: resolved.step });
           nextLevel = resolved.step.level;
           if (resolved.step.level < resolved.totalSteps) status = "PENDING";
-        } else if (resolved) {
-          nextLevel = resolved.totalSteps;
         } else {
-          assertFallbackApprover(input.ctx);
+          nextLevel = resolved?.totalSteps ?? existing.currentApprovalLevel;
         }
       } else {
         status = "REJECTED";

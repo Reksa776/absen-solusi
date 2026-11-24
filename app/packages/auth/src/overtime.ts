@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/database";
 
+import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
 import { parseReportDay, startOfUtcDay } from "./reports.js";
@@ -207,7 +208,6 @@ export async function reviewOvertime(input: {
   userAgent?: string | null;
   now?: Date;
 }): Promise<OvertimeSummary> {
-  assertReview(input.ctx);
   if (!isUuid(input.overtimeId)) {
     throw new HttpError(400, "INVALID_REQUEST", "Pengajuan lembur tidak valid");
   }
@@ -233,10 +233,35 @@ export async function reviewOvertime(input: {
       if (existing.status !== "PENDING") {
         throw new HttpError(409, "ALREADY_REVIEWED", "Pengajuan sudah direview");
       }
+      const resolved = await resolveApprovalStep(
+        tx,
+        input.ctx.tenantId,
+        "OVERTIME",
+        existing.currentApprovalLevel,
+      );
+      if (resolved?.step) {
+        assertApprovalActor({ ctx: input.ctx, step: resolved.step });
+      } else {
+        assertReview(input.ctx);
+      }
+      const nextLevel = resolved?.step
+        ? resolved.step.level
+        : resolved?.totalSteps ?? existing.currentApprovalLevel;
+      const intermediate =
+        action === "APPROVE" &&
+        resolved?.step !== undefined &&
+        resolved?.step !== null &&
+        resolved.step.level < resolved.totalSteps;
       const row = await tx.overtimeRequest.update({
         where: { tenantId_id: { tenantId: input.ctx.tenantId, id: existing.id } },
         data: {
-          status: action === "APPROVE" ? "APPROVED" : "REJECTED",
+          status:
+            action === "APPROVE"
+              ? intermediate
+                ? "PENDING"
+                : "APPROVED"
+              : "REJECTED",
+          currentApprovalLevel: nextLevel,
           reviewedByMemberId: input.ctx.memberId,
           reviewedAt: input.now ?? new Date(),
           rejectionReason: action === "REJECT" ? rejectionReason : null,
@@ -246,11 +271,23 @@ export async function reviewOvertime(input: {
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: existing.memberId,
-        type: action === "APPROVE" ? "OVERTIME_APPROVED" : "OVERTIME_REJECTED",
-        title: action === "APPROVE" ? "Lembur disetujui" : "Lembur ditolak",
+        type:
+          action === "APPROVE"
+            ? intermediate
+              ? "OVERTIME_NEXT_APPROVAL"
+              : "OVERTIME_APPROVED"
+            : "OVERTIME_REJECTED",
+        title:
+          action === "APPROVE"
+            ? intermediate
+              ? "Lembur menunggu level berikutnya"
+              : "Lembur disetujui"
+            : "Lembur ditolak",
         body:
           action === "APPROVE"
-            ? "Pengajuan lembur Anda sudah disetujui."
+            ? intermediate
+              ? "Pengajuan lembur Anda diteruskan ke approver berikutnya."
+              : "Pengajuan lembur Anda sudah disetujui."
             : "Pengajuan lembur Anda ditolak. Buka detail untuk alasannya.",
         linkUrl: `/workspaces/${input.ctx.tenantId}/overtime`,
       });
@@ -267,6 +304,8 @@ export async function reviewOvertime(input: {
           metadata: {
             memberId: existing.memberId,
             status: row.status,
+            approvalLevel: nextLevel,
+            finalApproval: !intermediate,
             ...(action === "REJECT" ? { rejectionReason } : {}),
           },
           ip: input.ip ?? null,

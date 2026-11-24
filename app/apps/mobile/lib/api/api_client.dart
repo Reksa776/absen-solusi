@@ -71,7 +71,11 @@ class ApiClient {
     final json = _decodeObject(response);
     final result = AuthResult.fromJson(json);
     if (result.token.isEmpty) {
-      throw const ApiException(500, 'INVALID_RESPONSE', 'Token login tidak diterima');
+      throw const ApiException(
+        500,
+        'INVALID_RESPONSE',
+        'Token login tidak diterima',
+      );
     }
     await _tokenStore.write(result.token);
     return result;
@@ -256,9 +260,8 @@ class ApiClient {
       if (from != null) 'from': _dateOnly(from),
       if (to != null) 'to': _dateOnly(to),
     };
-    final uri = Uri.parse(
-      '$baseUrl/api/attendance/me',
-    ).replace(queryParameters: query.isEmpty ? null : query);
+    final uri = Uri.parse('$baseUrl/api/attendance/me')
+        .replace(queryParameters: query.isEmpty ? null : query);
     final response = await _client.get(uri, headers: await _authHeaders());
     final json = _decodeObject(response);
     return (json['attendance'] as List<dynamic>? ?? const [])
@@ -310,9 +313,8 @@ class ApiClient {
   }
 
   Future<List<CorrectionRequest>> myCorrections({String? status}) async {
-    final uri = Uri.parse('$baseUrl/api/corrections/me').replace(
-      queryParameters: status == null ? null : {'status': status},
-    );
+    final uri = Uri.parse('$baseUrl/api/corrections/me')
+        .replace(queryParameters: status == null ? null : {'status': status});
     final response = await _client.get(uri, headers: await _authHeaders());
     final json = _decodeObject(response);
     return (json['corrections'] as List<dynamic>? ?? const [])
@@ -353,9 +355,8 @@ class ApiClient {
   }
 
   Future<List<OvertimeRequest>> myOvertime({String? status}) async {
-    final uri = Uri.parse('$baseUrl/api/overtime/me').replace(
-      queryParameters: status == null ? null : {'status': status},
-    );
+    final uri = Uri.parse('$baseUrl/api/overtime/me')
+        .replace(queryParameters: status == null ? null : {'status': status});
     final response = await _client.get(uri, headers: await _authHeaders());
     final json = _decodeObject(response);
     return (json['overtime'] as List<dynamic>? ?? const [])
@@ -389,9 +390,8 @@ class ApiClient {
   }
 
   Future<List<WfhRequest>> myWfh({String? status}) async {
-    final uri = Uri.parse('$baseUrl/api/wfh/me').replace(
-      queryParameters: status == null ? null : {'status': status},
-    );
+    final uri = Uri.parse('$baseUrl/api/wfh/me')
+        .replace(queryParameters: status == null ? null : {'status': status});
     final response = await _client.get(uri, headers: await _authHeaders());
     final json = _decodeObject(response);
     return (json['wfh'] as List<dynamic>? ?? const [])
@@ -443,9 +443,8 @@ class ApiClient {
   }
 
   Future<List<WorkPermitRequest>> myWorkPermits({String? status}) async {
-    final uri = Uri.parse('$baseUrl/api/permits/me').replace(
-      queryParameters: status == null ? null : {'status': status},
-    );
+    final uri = Uri.parse('$baseUrl/api/permits/me')
+        .replace(queryParameters: status == null ? null : {'status': status});
     final response = await _client.get(uri, headers: await _authHeaders());
     final json = _decodeObject(response);
     return (json['permits'] as List<dynamic>? ?? const [])
@@ -474,9 +473,8 @@ class ApiClient {
   }
 
   Future<List<LeaveRequest>> myLeave({String? status}) async {
-    final uri = Uri.parse('$baseUrl/api/leave/me').replace(
-      queryParameters: status == null ? null : {'status': status},
-    );
+    final uri = Uri.parse('$baseUrl/api/leave/me')
+        .replace(queryParameters: status == null ? null : {'status': status});
     final response = await _client.get(uri, headers: await _authHeaders());
     final json = _decodeObject(response);
     return (json['leave'] as List<dynamic>? ?? const [])
@@ -486,9 +484,8 @@ class ApiClient {
   }
 
   Future<LeaveBalance> myLeaveBalance({int? year}) async {
-    final uri = Uri.parse('$baseUrl/api/leave/balance').replace(
-      queryParameters: year == null ? null : {'year': '$year'},
-    );
+    final uri = Uri.parse('$baseUrl/api/leave/balance')
+        .replace(queryParameters: year == null ? null : {'year': '$year'});
     final response = await _client.get(uri, headers: await _authHeaders());
     return LeaveBalance.fromJson(_decodeObject(response));
   }
@@ -556,6 +553,22 @@ class ApiClient {
     return response.bodyBytes;
   }
 
+  Future<Uint8List?> companyLogoBytes() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/mobile/company/logo'),
+      headers: await _authHeaders(),
+    );
+    if (response.statusCode == 404) return null;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      _decodeObject(response);
+    }
+    final contentType = response.headers['content-type'] ?? '';
+    if (!contentType.startsWith('image/') || response.bodyBytes.isEmpty) {
+      return null;
+    }
+    return response.bodyBytes;
+  }
+
   Future<ProfilePhotoStatus> uploadProfilePhoto(Uint8List bytes) async {
     final request = http.MultipartRequest(
       'POST',
@@ -596,10 +609,7 @@ class ApiClient {
     bool unreadOnly = false,
   }) async {
     final uri = Uri.parse('$baseUrl/api/notifications/me').replace(
-      queryParameters: {
-        'limit': '$limit',
-        if (unreadOnly) 'unread': 'true',
-      },
+      queryParameters: {'limit': '$limit', if (unreadOnly) 'unread': 'true'},
     );
     final response = await _client.get(uri, headers: await _authHeaders());
     return InboxPage.fromJson(_decodeObject(response));
@@ -622,9 +632,9 @@ class ApiClient {
   }
 
   Future<ClientVisitDay> myClientVisits({DateTime? date}) async {
-    final uri = Uri.parse('$baseUrl/api/mobile/client-visits').replace(
-      queryParameters: date == null ? null : {'date': _dateOnly(date)},
-    );
+    final uri = Uri.parse(
+      '$baseUrl/api/mobile/client-visits',
+    ).replace(queryParameters: date == null ? null : {'date': _dateOnly(date)});
     final response = await _client.get(uri, headers: await _authHeaders());
     return ClientVisitDay.fromJson(_decodeObject(response));
   }
@@ -777,12 +787,18 @@ class ApiClient {
     }
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (json == null) {
-        throw const ApiException(500, 'INVALID_RESPONSE', 'Respons server tidak valid');
+        throw const ApiException(
+          500,
+          'INVALID_RESPONSE',
+          'Respons server tidak valid',
+        );
       }
       return json;
     }
     final error = json?['error'];
-    final errorMap = error is Map<String, dynamic> ? error : const <String, dynamic>{};
+    final errorMap = error is Map<String, dynamic>
+        ? error
+        : const <String, dynamic>{};
     throw ApiException(
       response.statusCode,
       errorMap['code'] as String? ?? 'REQUEST_FAILED',

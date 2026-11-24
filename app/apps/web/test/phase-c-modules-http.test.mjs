@@ -587,6 +587,15 @@ test("C-3: payroll otomatis menarik hadir, telat, lembur, cuti/izin, SP, lalu fi
 });
 
 test("C-4: profil perusahaan tersimpan dan hanya admin yang dapat mengubah", async () => {
+  await db.companyProfile.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      legalName: "PT Lama",
+      taxNumber: "01.234.567.8-901.000",
+      operatingHours: "Senin–Jumat 08.00–17.00 WIB",
+    },
+  });
   const initial = await send(
     `/api/workspaces/${tenantA.tenantId}/settings/company`,
     tenantA.ownerToken,
@@ -600,15 +609,15 @@ test("C-4: profil perusahaan tersimpan dan hanya admin yang dapat mengubah", asy
     {
       legalName: "PT Solusi Absensi Nusantara",
       address: "Jl. Gatot Subroto No. 88, Jakarta",
-      taxNumber: "01.234.567.8-901.000",
       contactEmail: "hr@solusiabsensi.test",
       contactPhone: "021-555-0199",
-      operatingHours: "Senin–Jumat 08.00–17.00 WIB",
     },
   );
   assert.equal(updated.response.status, 200, JSON.stringify(updated.body));
   assert.equal(updated.body.legalName, "PT Solusi Absensi Nusantara");
+  // Kolom lama tetap nullable dan tidak ikut ditimpa oleh payload baru.
   assert.equal(updated.body.taxNumber, "01.234.567.8-901.000");
+  assert.equal(updated.body.operatingHours, "Senin–Jumat 08.00–17.00 WIB");
 
   const employeeUpdate = await send(
     `/api/workspaces/${tenantA.tenantId}/settings/company`,

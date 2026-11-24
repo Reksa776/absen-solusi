@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 
 const CSRF_COOKIE = "aos_csrf";
 
@@ -810,18 +810,18 @@ export function CompanyProfileForm({
   initial,
 }: {
   workspaceId: string;
-  initial: { legalName: string; address: string | null; taxNumber: string | null; contactEmail: string | null; contactPhone: string | null; operatingHours: string | null };
+  initial: { legalName: string; address: string | null; contactEmail: string | null; contactPhone: string | null; logoUrl: string | null };
 }) {
   const router = useRouter();
   const [form, setForm] = useState({
     legalName: initial.legalName,
     address: initial.address ?? "",
-    taxNumber: initial.taxNumber ?? "",
     contactEmail: initial.contactEmail ?? "",
     contactPhone: initial.contactPhone ?? "",
-    operatingHours: initial.operatingHours ?? "",
   });
+  const [logoUrl, setLogoUrl] = useState(initial.logoUrl);
   const [busy, setBusy] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -841,17 +841,121 @@ export function CompanyProfileForm({
     }
   }
 
+  async function uploadLogo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError("Logo maksimal 2 MB.");
+      return;
+    }
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setError("Logo harus berupa PNG, JPG, atau WebP.");
+      return;
+    }
+    setLogoBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const token = await csrfToken();
+      const data = new FormData();
+      data.append("logo", file);
+      const response = await fetch(
+        `/api/workspaces/${workspaceId}/settings/company/logo`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "x-csrf-token": token },
+          body: data,
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        logoUrl?: string;
+        error?: { message?: string };
+      };
+      if (!response.ok || !body.logoUrl) {
+        setError(body.error?.message ?? "Logo gagal diunggah.");
+        return;
+      }
+      setLogoUrl(`${body.logoUrl}?v=${Date.now()}`);
+      setNotice("Logo perusahaan diperbarui.");
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Logo gagal diunggah.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removeLogo() {
+    if (!logoUrl || !window.confirm("Hapus logo perusahaan?")) return;
+    setLogoBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const token = await csrfToken();
+      const response = await fetch(
+        `/api/workspaces/${workspaceId}/settings/company/logo`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: { "x-csrf-token": token },
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        setError(body.error?.message ?? "Logo gagal dihapus.");
+        return;
+      }
+      setLogoUrl(null);
+      setNotice("Logo perusahaan dihapus.");
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Logo gagal dihapus.");
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
   return (
     <form onSubmit={submit} className="form-card">
       {error ? <p role="alert" className="alert">{error}</p> : null}
       {notice ? <p role="status" className="notice">{notice}</p> : null}
+      <div className="company-logo-row">
+        <div className="company-logo-preview">
+          {logoUrl ? <img src={logoUrl} alt="Logo perusahaan" /> : <span>Logo</span>}
+        </div>
+        <div className="stack">
+          <div>
+            <p className="section-title">Logo perusahaan</p>
+            <p className="section-note">PNG, JPG, atau WebP maksimal 2 MB.</p>
+          </div>
+          <div className="btn-row">
+            <label className="btn btn--secondary btn--sm" aria-disabled={logoBusy}>
+              {logoBusy ? "Memproses…" : "Upload Logo"}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={uploadLogo}
+                disabled={logoBusy}
+                style={{ display: "none" }}
+              />
+            </label>
+            {logoUrl ? (
+              <button type="button" className="btn btn--danger btn--sm" onClick={removeLogo} disabled={logoBusy}>
+                Hapus Logo
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
       <div className="form-grid">
         <label className="field field--wide">Nama resmi<input required minLength={2} value={form.legalName} onChange={(e) => setForm({ ...form, legalName: e.target.value })} /></label>
         <label className="field field--wide">Alamat<textarea value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
-        <label className="field">NPWP<input value={form.taxNumber} onChange={(e) => setForm({ ...form, taxNumber: e.target.value })} /></label>
         <label className="field">Email kontak<input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} /></label>
         <label className="field">Telepon<input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} /></label>
-        <label className="field">Jam operasional<input value={form.operatingHours} onChange={(e) => setForm({ ...form, operatingHours: e.target.value })} placeholder="Senin–Jumat 08.00–17.00" /></label>
       </div>
       <div className="btn-row" style={{ marginTop: "0.9rem" }}><button className="btn btn--primary" disabled={busy}>{busy ? "Menyimpan…" : "Simpan profil"}</button></div>
     </form>

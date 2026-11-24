@@ -10,6 +10,7 @@ import {
   type TenantContext,
 } from "@absensi/database";
 
+import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
@@ -580,14 +581,21 @@ async function createCorrectionAttendanceLog(
  * Approve/reject hanya untuk status PENDING. Approve memperbarui attendance_logs
  * dan menulis audit {from, to} dalam transaksi yang sama.
  */
-export async function reviewCorrection(input: ReviewCorrectionInput): Promise<CorrectionSummary> {
-  const canReview =
-    input.ctx.permissions.includes("correction.review") ||
-    input.ctx.roleKeys.includes("WORKSPACE_OWNER") ||
-    input.ctx.roleKeys.includes("WORKSPACE_ADMIN");
-  if (!canReview) {
+function canFallbackReview(ctx: TenantContext): boolean {
+  return (
+    ctx.permissions.includes("correction.review") ||
+    ctx.roleKeys.includes("WORKSPACE_OWNER") ||
+    ctx.roleKeys.includes("WORKSPACE_ADMIN")
+  );
+}
+
+function assertFallbackReview(ctx: TenantContext): void {
+  if (!canFallbackReview(ctx)) {
     throw new HttpError(403, "FORBIDDEN", "Permission tidak mencukupi");
   }
+}
+
+export async function reviewCorrection(input: ReviewCorrectionInput): Promise<CorrectionSummary> {
   if (input.action !== "approve" && input.action !== "reject") {
     throw new HttpError(400, "INVALID_ACTION", "Action harus approve atau reject");
   }
@@ -615,7 +623,11 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
         where: { id: input.correctionId, tenantId: input.ctx.tenantId },
       });
       if (!correction) {
-        // Identik dengan tenant asing: keberadaan revisi tenant lain tidak bocor.
+        // Karyawan tanpa hak review tidak boleh bisa membedakan revisi asing
+        // dari revisi yang tidak ada. Admin/HR tetap mendapat kode yang identik.
+        if (!canFallbackReview(input.ctx)) {
+          throw new HttpError(403, "FORBIDDEN", "Permission tidak mencukupi");
+        }
         throw new HttpError(403, "CORRECTION_FORBIDDEN", "Revisi tidak dapat diproses");
       }
       if (correction.status !== "PENDING") {
@@ -624,9 +636,26 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
 
       const requestType = correction.requestType as CorrectionType;
       const reviewedAt = now;
+      const resolved = await resolveApprovalStep(
+        tx,
+        input.ctx.tenantId,
+        "CORRECTION",
+        correction.currentApprovalLevel,
+      );
+      if (resolved?.step) {
+        assertApprovalActor({ ctx: input.ctx, step: resolved.step });
+      } else {
+        assertFallbackReview(input.ctx);
+      }
+      const finalApproval =
+        input.action === "approve" &&
+        (!resolved?.step || resolved.step.level === resolved.totalSteps);
+      const nextLevel = resolved?.step
+        ? resolved.step.level
+        : correction.currentApprovalLevel;
       let attendanceLogId = correction.attendanceLogId;
 
-      if (input.action === "approve") {
+      if (finalApproval) {
         if (correction.attendanceLogId) {
           const existing = await tx.attendanceLog.findFirst({
             where: { id: correction.attendanceLogId, tenantId: input.ctx.tenantId },
@@ -677,13 +706,15 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
         data:
           input.action === "approve"
             ? {
-                status: "APPROVED",
+                status: finalApproval ? "APPROVED" : "PENDING",
+                currentApprovalLevel: nextLevel,
                 reviewedByMemberId: input.ctx.memberId,
                 reviewedAt,
                 rejectionReason: null,
               }
             : {
                 status: "REJECTED",
+                currentApprovalLevel: nextLevel,
                 reviewedByMemberId: input.ctx.memberId,
                 reviewedAt,
                 rejectionReason: rejectReason,
@@ -696,11 +727,23 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: correction.memberId,
-        type: input.action === "approve" ? "CORRECTION_APPROVED" : "CORRECTION_REJECTED",
-        title: input.action === "approve" ? "Revisi disetujui" : "Revisi ditolak",
+        type:
+          input.action === "approve"
+            ? finalApproval
+              ? "CORRECTION_APPROVED"
+              : "CORRECTION_NEXT_APPROVAL"
+            : "CORRECTION_REJECTED",
+        title:
+          input.action === "approve"
+            ? finalApproval
+              ? "Revisi disetujui"
+              : "Revisi menunggu level berikutnya"
+            : "Revisi ditolak",
         body:
           input.action === "approve"
-            ? "Data kehadiran Anda sudah diperbarui."
+            ? finalApproval
+              ? "Data kehadiran Anda sudah diperbarui."
+              : "Pengajuan Anda diteruskan ke approver berikutnya."
             : "Buka aplikasi untuk melihat alasan penolakan.",
         linkUrl: `/workspaces/${input.ctx.tenantId}/corrections/${correction.id}`,
       });

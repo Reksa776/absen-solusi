@@ -291,6 +291,7 @@ export {
   assertApprovalActor,
   APPROVAL_REQUEST_TYPES,
   deleteApprovalWorkflow,
+  listApprovalCandidates,
   listApprovalWorkflows,
   resolveApprovalStep,
   saveApprovalWorkflow,
@@ -361,9 +362,12 @@ export {
   createHoliday,
   deleteHoliday,
   HOLIDAY_NAME_MAX_LENGTH,
+  importNationalHolidays,
   listHolidays,
+  updateHoliday,
   type CreateHolidayInput,
   type HolidaySummary,
+  type NationalHolidayImport,
 } from "./holidays.js";
 export {
   getPayrollSummary,
@@ -657,6 +661,15 @@ export {
   type PayrollRunDetail,
   type MyPayslip,
 } from "./payroll-runs.js";
+export {
+  companyLogoDirectory,
+  deleteCompanyLogo,
+  MAX_COMPANY_LOGO_BYTES,
+  readCompanyLogo,
+  saveCompanyLogo,
+  type CompanyLogoFile,
+  type CompanyLogoInput,
+} from "./company-logo.js";
 export {
   getCompanyProfile,
   updateCompanyProfile,

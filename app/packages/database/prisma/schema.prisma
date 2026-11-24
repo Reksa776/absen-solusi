@@ -75,6 +75,7 @@ model Workspace {
   deviceTokens           DeviceToken[]
   memberDevices          MemberDevice[]
   approvalWorkflows      ApprovalWorkflow[]
+  approvalStepApprovers  ApprovalStepApprover[]
   inAppNotifications     InAppNotification[]
   workPermits            WorkPermit[]
   leavePolicy            LeavePolicy?
@@ -126,6 +127,7 @@ model WorkspaceMember {
   division                    Division?              @relation("MemberDivision", fields: [tenantId, divisionId], references: [tenantId, id], onDelete: Restrict)
   position                    Position?              @relation("MemberPosition", fields: [tenantId, positionId], references: [tenantId, id], onDelete: Restrict)
   roles                       MemberRole[]
+  approvalStepAssignments     ApprovalStepApprover[]
   attendanceLogs              AttendanceLog[]
   corrections                 CorrectionRequest[]    @relation("CorrectionMember")
   correctionsReviewed         CorrectionRequest[]    @relation("CorrectionReviewer")
@@ -393,10 +395,27 @@ model ApprovalStep {
   createdAt       DateTime @default(now()) @map("created_at") @db.DateTime(3)
 
   workflow ApprovalWorkflow @relation(fields: [tenantId, workflowId], references: [tenantId, id], onDelete: Cascade)
+  approvers ApprovalStepApprover[]
 
   @@unique([tenantId, workflowId, level])
   @@index([tenantId, workflowId])
   @@map("approval_steps")
+}
+
+model ApprovalStepApprover {
+  id        String   @id @db.Char(36)
+  tenantId  String   @map("tenant_id") @db.Char(36)
+  stepId    String   @map("step_id") @db.Char(36)
+  memberId  String   @map("member_id") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  workspace Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  step      ApprovalStep    @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, stepId, memberId])
+  @@index([tenantId, memberId])
+  @@map("approval_step_approvers")
 }
 
 model DeviceToken {
@@ -487,6 +506,7 @@ model CorrectionRequest {
   proofUrl           String?   @map("proof_url") @db.VarChar(512)
   proofHash          String?   @map("proof_hash") @db.Char(64)
   status             String    @default("PENDING") @db.VarChar(20)
+  currentApprovalLevel Int     @default(0) @map("current_approval_level")
   reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
   reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
   rejectionReason    String?   @map("rejection_reason") @db.VarChar(1000)
@@ -670,6 +690,7 @@ model OvertimeRequest {
   durationMinutes    Int       @map("duration_minutes")
   reason             String    @db.VarChar(1000)
   status             String    @default("PENDING") @db.VarChar(20)
+  currentApprovalLevel Int     @default(0) @map("current_approval_level")
   reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
   reviewedAt         DateTime? @map("reviewed_at") @db.DateTime(3)
   rejectionReason    String?   @map("rejection_reason") @db.VarChar(1000)
@@ -857,6 +878,8 @@ model CompanyProfile {
   contactEmail   String?  @map("contact_email") @db.VarChar(255)
   contactPhone   String?  @map("contact_phone") @db.VarChar(40)
   operatingHours String?  @map("operating_hours") @db.VarChar(160)
+  logoUrl        String?  @map("logo_url") @db.VarChar(512)
+  logoStorageKey String?  @map("logo_storage_key") @db.VarChar(512)
   createdAt      DateTime @default(now()) @map("created_at") @db.DateTime(3)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.DateTime(3)
 

@@ -118,6 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<WarningLetter> _warnings = const [];
   LeaveBalance? _leaveBalance;
   Uint8List? _avatarBytes;
+  Uint8List? _companyLogoBytes;
   bool _showMoreServices = false;
   bool _outOfTown = false;
   String _outOfTownReason = '';
@@ -145,6 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     unawaited(_loadAvatar());
+    unawaited(_loadCompanyLogo());
     _load();
   }
 
@@ -225,6 +227,16 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _avatarBytes = bytes);
     } catch (_) {
       // Avatar jatuh ke inisial bila foto belum tersedia.
+    }
+  }
+
+  Future<void> _loadCompanyLogo() async {
+    try {
+      final bytes = await widget.auth.api.companyLogoBytes();
+      if (!mounted) return;
+      setState(() => _companyLogoBytes = bytes);
+    } catch (_) {
+      // Logo opsional; header memakai ikon perusahaan bila belum diunggah.
     }
   }
 
@@ -635,6 +647,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+    if (!mounted) return;
+    await _loadCompanyLogo();
+    await _load();
   }
 
   void _openProfile() {
@@ -912,23 +927,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.teal,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: const Text(
-                  'A',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              _companyLogo(size: 36, onDark: false),
               const SizedBox(width: 9),
               Expanded(
                 child: InkWell(
@@ -1039,6 +1038,48 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _companyLogo({required double size, required bool onDark}) {
+    final bytes = _companyLogoBytes;
+    if (bytes == null) {
+      return Container(
+        key: const Key('home-company-logo'),
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: onDark ? Colors.white.withValues(alpha: 0.16) : AppColors.teal,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.business_outlined,
+          size: size * 0.5,
+          color: Colors.white,
+        ),
+      );
+    }
+    return Container(
+      key: const Key('home-company-logo'),
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size * 0.1),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: onDark ? Colors.white : AppColors.line),
+      ),
+      alignment: Alignment.center,
+      child: Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => Icon(
+          Icons.business_outlined,
+          size: size * 0.5,
+          color: AppColors.teal,
+        ),
+      ),
+    );
+  }
+
   Widget _topBadge({
     required Key key,
     required IconData icon,
@@ -1107,21 +1148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.all(14),
                 child: Row(
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        broadcast == null
-                            ? Icons.business_outlined
-                            : Icons.campaign_outlined,
-                        size: 19,
-                        color: Colors.white,
-                      ),
-                    ),
+                    _companyLogo(size: 38, onDark: true),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(

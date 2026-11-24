@@ -15,6 +15,7 @@ export type CompanyProfileSummary = {
   contactEmail: string | null;
   contactPhone: string | null;
   operatingHours: string | null;
+  logoUrl: string | null;
   updatedAt: string | null;
 };
 
@@ -61,6 +62,7 @@ export async function getCompanyProfile(input: {
       contactEmail: profile?.contactEmail ?? null,
       contactPhone: profile?.contactPhone ?? null,
       operatingHours: profile?.operatingHours ?? null,
+      logoUrl: profile?.logoUrl ?? null,
       updatedAt: profile?.updatedAt.toISOString() ?? null,
     };
   });
@@ -71,10 +73,8 @@ export async function updateCompanyProfile(input: {
   workspaceId: string;
   legalName: unknown;
   address?: unknown;
-  taxNumber?: unknown;
   contactEmail?: unknown;
   contactPhone?: unknown;
-  operatingHours?: unknown;
   ip?: string | null;
   userAgent?: string | null;
 }): Promise<CompanyProfileSummary> {
@@ -96,10 +96,8 @@ export async function updateCompanyProfile(input: {
     "Alamat",
     COMPANY_ADDRESS_MAX_LENGTH,
   );
-  const taxNumber = optionalString(input.taxNumber, "NPWP", 80);
   const contactEmail = optionalString(input.contactEmail, "Email", 255);
   const contactPhone = optionalString(input.contactPhone, "Telepon", 40);
-  const operatingHours = optionalString(input.operatingHours, "Jam operasional", 160);
   if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
     throw new HttpError(400, "INVALID_COMPANY_PROFILE", "Email perusahaan tidak valid");
   }
@@ -108,16 +106,14 @@ export async function updateCompanyProfile(input: {
     db.$transaction(async (tx) => {
       const saved = await tx.companyProfile.upsert({
         where: { tenantId: input.ctx.tenantId },
-        update: { legalName, address, taxNumber, contactEmail, contactPhone, operatingHours },
+        update: { legalName, address, contactEmail, contactPhone },
         create: {
           id: randomUUID(),
           tenantId: input.ctx.tenantId,
           legalName,
           address,
-          taxNumber,
           contactEmail,
           contactPhone,
-          operatingHours,
         },
       });
       await writeAudit(
@@ -129,7 +125,7 @@ export async function updateCompanyProfile(input: {
           action: "company.profile_update",
           resourceType: "company_profile",
           resourceId: saved.id,
-          metadata: { legalName, hasTaxNumber: Boolean(taxNumber) },
+          metadata: { legalName },
           ip: input.ip ?? null,
           userAgent: input.userAgent ?? null,
         },
@@ -145,6 +141,7 @@ export async function updateCompanyProfile(input: {
     contactEmail: row.contactEmail,
     contactPhone: row.contactPhone,
     operatingHours: row.operatingHours,
+    logoUrl: row.logoUrl,
     updatedAt: row.updatedAt.toISOString(),
   };
 }

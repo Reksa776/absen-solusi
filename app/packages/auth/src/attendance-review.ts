@@ -120,7 +120,6 @@ export async function reviewOutOfTownAttendance(input: {
   userAgent?: string | null;
   now?: Date;
 }): Promise<OutOfTownAttendanceSummary> {
-  assertReview(input.ctx);
   assertWorkspaceReadClaim(input.ctx, input.workspaceId);
   const action = input.action.trim().toUpperCase();
   if (action !== "APPROVE" && action !== "REJECT") {
@@ -145,21 +144,27 @@ export async function reviewOutOfTownAttendance(input: {
         throw new HttpError(409, "ALREADY_REVIEWED", "Presensi sudah direview");
       }
 
+      const resolved = await resolveApprovalStep(
+        tx,
+        input.ctx.tenantId,
+        "OUT_OF_TOWN",
+        log.currentApprovalLevel,
+      );
+      if (resolved?.step) {
+        assertApprovalActor({ ctx: input.ctx, step: resolved.step });
+      } else {
+        assertReview(input.ctx);
+      }
       let nextLevel = log.currentApprovalLevel;
       let approvalStatus = "APPROVED";
       if (action === "APPROVE") {
-        const resolved = await resolveApprovalStep(
-          tx,
-          input.ctx.tenantId,
-          "OUT_OF_TOWN",
-          log.currentApprovalLevel,
-        );
         if (resolved?.step) {
-          assertApprovalActor({ ctx: input.ctx, step: resolved.step });
+          nextLevel = resolved.step.level;
           if (resolved.step.level < resolved.totalSteps) {
-            nextLevel = resolved.step.level;
             approvalStatus = "PENDING";
           }
+        } else {
+          nextLevel = resolved?.totalSteps ?? log.currentApprovalLevel;
         }
       } else {
         approvalStatus = "REJECTED";

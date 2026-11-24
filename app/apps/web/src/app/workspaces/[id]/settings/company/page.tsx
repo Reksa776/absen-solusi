@@ -13,8 +13,8 @@ export default async function CompanySettingsPage({ params }: { params: Promise<
   const canManage = ctx.permissions.includes("workspace.manage");
   return (
     <main className="page page--narrow">
-      <div className="page-head"><div><p className="eyebrow">Pengaturan</p><h1 className="page-title">Perusahaan</h1><p className="page-subtitle">Identitas resmi, NPWP, kontak, dan jam operasional.</p></div><span className="badge badge--neutral">{profile.updatedAt ? "Tersimpan" : "Belum diatur"}</span></div>
-      {canManage ? <CompanyProfileForm workspaceId={id} initial={profile} /> : <div className="card card-pad"><p className="section-title">{profile.legalName}</p><p className="section-note">{profile.address ?? "Alamat belum diisi"} · {profile.contactEmail ?? "Email belum diisi"} · {profile.operatingHours ?? "Jam operasional belum diisi"}</p></div>}
+      <div className="page-head"><div><p className="eyebrow">Pengaturan</p><h1 className="page-title">Perusahaan</h1><p className="page-subtitle">Identitas resmi, logo, dan kontak perusahaan.</p></div><span className="badge badge--neutral">{profile.updatedAt ? "Tersimpan" : "Belum diatur"}</span></div>
+      {canManage ? <CompanyProfileForm workspaceId={id} initial={profile} /> : <div className="card card-pad"><div className="company-logo-row"><div className="company-logo-preview">{profile.logoUrl ? <img src={profile.logoUrl} alt={`Logo ${profile.legalName}`} /> : <span>Logo</span>}</div><div><p className="section-title">{profile.legalName}</p><p className="section-note">{profile.address ?? "Alamat belum diisi"} · {profile.contactEmail ?? "Email belum diisi"}</p></div></div></div>}
     </main>
   );
 }

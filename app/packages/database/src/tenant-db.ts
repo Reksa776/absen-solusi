@@ -88,6 +88,7 @@ const TENANT_MODELS = new Set([
   "MemberDevice",
   "ApprovalWorkflow",
   "ApprovalStep",
+  "ApprovalStepApprover",
   "WorkShift",
   "MemberShift",
   "OvertimeRequest",

@@ -1,6 +1,7 @@
 import {
   getClientIp,
   jsonResponse,
+  listApprovalCandidates,
   listApprovalWorkflows,
   readJsonBody,
   requirePermission,
@@ -19,9 +20,11 @@ export async function GET(
   try {
     const { ctx } = await requirePermission(request, "member.read");
     const { id } = await context.params;
-    return jsonResponse({
-      workflows: await listApprovalWorkflows({ ctx, workspaceId: id }),
-    });
+    const [workflows, candidates] = await Promise.all([
+      listApprovalWorkflows({ ctx, workspaceId: id }),
+      listApprovalCandidates({ ctx, workspaceId: id }),
+    ]);
+    return jsonResponse({ workflows, candidates });
   } catch (error) {
     return handleRouteError(error);
   }

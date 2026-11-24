@@ -334,6 +334,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "workspace.manage",
   },
+  "/api/workspaces/:id/holidays/import-national": {
+    kind: "permission",
+    permission: "workspace.manage",
+  },
   "/api/workspaces/:id/divisions": {
     kind: "methods",
     methods: {
@@ -369,6 +373,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     permission: "workspace.read",
   },
   "/api/mobile/profile/photo": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/company/logo": {
     kind: "permission",
     permission: "workspace.read",
   },
@@ -495,6 +503,14 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     methods: {
       GET: { kind: "permission", permission: "workspace.read" },
       PATCH: { kind: "permission", permission: "workspace.manage" },
+    },
+  },
+  "/api/workspaces/:id/settings/company/logo": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "workspace.read" },
+      POST: { kind: "permission", permission: "workspace.manage" },
+      DELETE: { kind: "permission", permission: "workspace.manage" },
     },
   },
   "/api/workspaces/:id/payroll/settings": {
