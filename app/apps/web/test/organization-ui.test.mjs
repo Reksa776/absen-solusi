@@ -110,6 +110,14 @@ test("organisasi: penugasan karyawan dan filter laporan memakai divisi", () => {
   assert.match(reports, /Semua divisi/);
 });
 
+test("ringkasan kehadiran: tombol unduh memakai Excel XLSX, bukan CSV", () => {
+  const page = read("workspaces/[id]/attendance/summary/page.tsx");
+  assert.match(page, /attendance\/summary\/export\.xlsx\?\$\{currentQuery\}/);
+  assert.match(page, /Download Excel \(\.xlsx\)/);
+  assert.doesNotMatch(page, /Export CSV/);
+  assert.doesNotMatch(page, /summary\/export\?/);
+});
+
 test("pola kerja: form tujuh hari memakai Minggu=0 dan toggle kerja/libur", () => {
   const manager = readFileSync(
     new URL("../src/components/work-pattern-manager.tsx", import.meta.url),

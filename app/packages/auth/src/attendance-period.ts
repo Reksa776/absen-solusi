@@ -17,6 +17,9 @@ export type AttendancePeriodMember = {
   memberId: string;
   name: string;
   divisionName: string | null;
+  positionName: string | null;
+  workPatternLabel: string | null;
+  scheduledDays: number;
   presentDays: number;
   onTimeDays: number;
   lateMinutes: number;
@@ -29,13 +32,19 @@ export type AttendancePeriodMember = {
 
 export type AttendancePeriodTotals = Omit<
   AttendancePeriodMember,
-  "memberId" | "name" | "divisionName"
+  | "memberId"
+  | "name"
+  | "divisionName"
+  | "positionName"
+  | "workPatternLabel"
+  | "scheduledDays"
 >;
 
 export type AttendancePeriodSummary = {
   startDate: string;
   endDate: string;
   timezone: string | null;
+  companyName: string;
   members: AttendancePeriodMember[];
   totals: AttendancePeriodTotals;
 };
@@ -118,8 +127,16 @@ export async function getAttendancePeriodSummary(
   const today = startOfUtcDay(input.now ?? new Date());
 
   return withTenant(input.ctx, async (db) => {
-    const [members, logs, holidays, office, patternAssignments, leaves, permits] =
-      await Promise.all([
+    const [
+      members,
+      logs,
+      holidays,
+      office,
+      patternAssignments,
+      leaves,
+      permits,
+      workspace,
+    ] = await Promise.all([
         db.workspaceMember.findMany({
           where: {
             status: "ACTIVE",
@@ -128,6 +145,7 @@ export async function getAttendancePeriodSummary(
           include: {
             user: { select: { name: true } },
             division: { select: { name: true } },
+            position: { select: { name: true } },
           },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         }),
@@ -167,6 +185,12 @@ export async function getAttendancePeriodSummary(
             ...(input.memberId ? { memberId: input.memberId } : {}),
           },
           select: { memberId: true, startDate: true, endDate: true },
+        }),
+        db.workspace.findFirst({
+          select: {
+            name: true,
+            companyProfile: { select: { legalName: true } },
+          },
         }),
       ]);
 
@@ -210,10 +234,19 @@ export async function getAttendancePeriodSummary(
     }
 
     const result = members.map((member) => {
+      const pattern = patternIndex.get(member.id);
+      const workdays = pattern
+        ? [...pattern.days.values()].filter((day) => day.isWorkday).length
+        : 0;
       const summary: AttendancePeriodMember = {
         memberId: member.id,
         name: member.user.name,
         divisionName: member.division?.name ?? null,
+        positionName: member.position?.name ?? null,
+        workPatternLabel: pattern
+          ? `${pattern.workPatternName} (${workdays} hari kerja, ${7 - workdays} jadwal libur)`
+          : null,
+        scheduledDays: 0,
         ...emptyTotals(),
       };
       const leaveDates = leaveByMember.get(member.id) ?? new Set<string>();
@@ -225,6 +258,8 @@ export async function getAttendancePeriodSummary(
         const entry = byMemberDay.get(`${member.id}:${key}`);
         const rule = workPatternRuleFor(patternIndex, member.id, date);
         const scheduled = isScheduledWorkday(rule, date.getUTCDay());
+        const holiday = holidayDates.has(key);
+        if (scheduled && !holiday) summary.scheduledDays += 1;
 
         if (entry?.checkIn) {
           summary.presentDays += 1;
@@ -257,7 +292,7 @@ export async function getAttendancePeriodSummary(
           continue;
         }
 
-        if (!scheduled || holidayDates.has(key)) continue;
+        if (!scheduled || holiday) continue;
         if (leaveDates.has(key)) {
           summary.leaveDays += 1;
         } else if (permitDates.has(key)) {
@@ -285,6 +320,7 @@ export async function getAttendancePeriodSummary(
       startDate: dayKey(start),
       endDate: dayKey(end),
       timezone: office?.timezone ?? null,
+      companyName: workspace?.companyProfile?.legalName ?? workspace?.name ?? "Perusahaan",
       members: result,
       totals,
     };
@@ -362,4 +398,39 @@ export async function exportAttendancePeriodCsv(
     csv,
     rowCount,
   };
+}
+
+export async function recordAttendancePeriodXlsxExport(input: {
+  ctx: TenantContext;
+  workspaceId: string;
+  startDate: string;
+  endDate: string;
+  rowCount: number;
+  ip?: string | null;
+  userAgent?: string | null;
+}): Promise<void> {
+  await withTenant(input.ctx, async (db) => {
+    await writeAudit(
+      {
+        tenantId: input.ctx.tenantId,
+        actorType: "USER",
+        actorUserId: input.ctx.userId,
+        actorMemberId: input.ctx.memberId,
+        action: "report.export",
+        resourceType: "report",
+        resourceId: input.workspaceId,
+        metadata: {
+          report: "attendance_period",
+          startDate: input.startDate,
+          endDate: input.endDate,
+          format: "xlsx",
+          rowCount: input.rowCount,
+          resourceId: input.workspaceId,
+        },
+        ip: input.ip ?? null,
+        userAgent: input.userAgent ?? null,
+      },
+      db as never,
+    );
+  });
 }

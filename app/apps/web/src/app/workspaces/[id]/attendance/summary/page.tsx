@@ -69,10 +69,10 @@ export default async function AttendanceSummaryPage({
         </div>
         <div className="btn-row">
           <a
-            href={`/api/workspaces/${id}/attendance/summary/export?${currentQuery}`}
+            href={`/api/workspaces/${id}/attendance/summary/export.xlsx?${currentQuery}`}
             className="btn btn--secondary"
           >
-            Export CSV
+            Download Excel (.xlsx)
           </a>
           <PrintButton />
         </div>

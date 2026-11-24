@@ -745,6 +745,7 @@ export {
   attendancePeriodToCsv,
   exportAttendancePeriodCsv,
   getAttendancePeriodSummary,
+  recordAttendancePeriodXlsxExport,
   type AttendancePeriodInput,
   type AttendancePeriodMember,
   type AttendancePeriodSummary,

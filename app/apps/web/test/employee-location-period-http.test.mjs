@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after, before } from "node:test";
+import ExcelJS from "exceljs";
 
 import {
   adminClient,
@@ -13,6 +16,9 @@ import {
 
 const root = new URL("../../../", import.meta.url).pathname;
 const PASSWORD = "KaryawanBaru#2026";
+const PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+]);
 
 let db;
 let server;
@@ -22,6 +28,7 @@ let admin;
 let summaryEmployee;
 let divisionId;
 let positionId;
+let logoDir;
 
 async function waitForReady() {
   const deadline = Date.now() + 40_000;
@@ -78,6 +85,7 @@ before(async () => {
   tenant = await seedTenant(db, { name: "Employee Period" });
   admin = await seedMember(db, tenant.tenantId, tenant.roles.WORKSPACE_ADMIN);
   summaryEmployee = await seedMember(db, tenant.tenantId, tenant.roles.EMPLOYEE);
+  logoDir = await mkdtemp(join(tmpdir(), "absensi-period-logo-"));
 
   divisionId = randomUUID();
   await db.division.create({
@@ -96,7 +104,7 @@ before(async () => {
     where: {
       tenantId_id: { tenantId: tenant.tenantId, id: summaryEmployee.memberId },
     },
-    data: { divisionId },
+    data: { divisionId, positionId },
   });
 
   const patternId = randomUUID();
@@ -162,7 +170,12 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   server = spawn(join(root, "node_modules", ".bin", "next"), ["start", "-p", String(port)], {
     cwd: join(root, "apps", "web"),
-    env: { ...process.env, NODE_ENV: "production", S1_RATE_LIMITER: "memory" },
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      S1_RATE_LIMITER: "memory",
+      COMPANY_LOGO_DIR: logoDir,
+    },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
@@ -187,6 +200,7 @@ after(async () => {
     server.stdout?.destroy();
     server.stderr?.destroy();
   }
+  if (logoDir) await rm(logoDir, { recursive: true, force: true });
   if (db) await db.$disconnect();
 });
 
@@ -322,6 +336,110 @@ test("PERIOD-1: ringkasan rentang tanggal, status, CSV, dan audit", async () => 
   );
   assert.equal(invalid.response.status, 400);
   assert.equal(invalid.body.error.code, "INVALID_DATE_RANGE");
+});
+
+test("PERIOD-2: export XLSX ringkasan kehadiran menyematkan logo perusahaan", async () => {
+  const form = new FormData();
+  form.append("logo", new Blob([PNG], { type: "image/png" }), "logo.png");
+  const uploaded = await fetch(
+    `${baseUrl}/api/workspaces/${tenant.tenantId}/settings/company/logo`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${tenant.ownerToken}`, connection: "close" },
+      body: form,
+    },
+  );
+  assert.equal(uploaded.status, 201, await uploaded.text());
+
+  const response = await fetch(
+    `${baseUrl}/api/workspaces/${tenant.tenantId}/attendance/summary/export.xlsx?startDate=2026-10-26&endDate=2026-11-01`,
+    { headers: { authorization: `Bearer ${admin.token}`, connection: "close" } },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("content-type"),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  assert.match(
+    response.headers.get("content-disposition") ?? "",
+    /Ringkasan-Kehadiran-2026-10-26-sd-2026-11-01\.xlsx/,
+  );
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()));
+  const sheet = workbook.getWorksheet("Ringkasan Kehadiran");
+  assert.ok(sheet);
+
+  assert.ok(sheet.model.merges.includes("A1:G1"));
+  assert.ok(sheet.model.merges.includes("A2:G2"));
+  assert.equal(
+    sheet.getCell("A1").value,
+    "Ringkasan Kehadiran - 26 Okt 2026 - 1 Nov 2026",
+  );
+  assert.equal(sheet.getCell("A2").value, "Employee Period");
+  assert.equal(sheet.getRow(1).height, 28);
+  assert.equal(sheet.getRow(2).height, 34);
+  assert.equal(sheet.getRow(3).height, 28);
+
+  const headers = [
+    "Nama Karyawan",
+    "Jabatan",
+    "Pola Kerja",
+    "Total Hari Jadwal Kerja",
+    "Total Hari Kehadiran",
+    "Total Hari Tidak Masuk",
+    "Persentase Kehadiran",
+  ];
+  const widths = [28, 26, 42, 22, 22, 22, 22];
+  headers.forEach((label, index) => {
+    const cell = sheet.getRow(3).getCell(index + 1);
+    assert.equal(cell.value, label);
+    assert.equal(cell.fill?.fgColor?.argb, "FF1F8E8B");
+    assert.equal(cell.font?.name, "Calibri");
+    assert.equal(cell.font?.size, 10);
+    assert.equal(cell.font?.bold, true);
+    assert.equal(cell.font?.color?.argb, "FFFFFFFF");
+    assert.equal(cell.alignment?.horizontal, "center");
+    assert.equal(cell.alignment?.vertical, "middle");
+    assert.equal(cell.alignment?.wrapText, true);
+    assert.equal(cell.border?.top?.style, "thin");
+    assert.equal(cell.border?.top?.color?.argb, "FF166F6D");
+    assert.ok(Math.abs((sheet.getColumn(index + 1).width ?? 0) - widths[index]) < 0.01);
+  });
+
+  assert.ok(workbook.model.media.length >= 1);
+  const logo = sheet.getImages()[0];
+  assert.ok(logo);
+  assert.equal(Number(logo.range.ext.width), 130);
+  assert.equal(Number(logo.range.ext.height), 32);
+
+  let dataRow;
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber >= 4 && row.getCell(1).value === "Member") dataRow = row;
+  });
+  assert.ok(dataRow, "baris karyawan harus ada di XLSX");
+  assert.equal(dataRow.getCell(2).value, "Staf Lapangan");
+  assert.equal(dataRow.getCell(3).value, "Reguler (7 hari kerja, 0 jadwal libur)");
+  assert.equal(dataRow.getCell(4).value, 7);
+  assert.equal(dataRow.getCell(5).value, 2);
+  assert.equal(dataRow.getCell(6).value, 5);
+  assert.ok(Math.abs(Number(dataRow.getCell(7).value) - 2 / 7) < 0.0001);
+  assert.equal(dataRow.getCell(7).numFmt, "0%");
+  assert.equal(dataRow.height, 21);
+  assert.equal(dataRow.getCell(1).font?.name, "Calibri");
+  assert.equal(dataRow.getCell(1).font?.size, 10);
+  ["left", "left", "left", "right", "right", "right", "right"].forEach(
+    (alignment, index) => {
+      assert.equal(dataRow.getCell(index + 1).alignment?.horizontal, alignment);
+    },
+  );
+  assert.equal(dataRow.getCell(4).border?.bottom?.color?.argb, "FFD1D5DB");
+
+  const audit = await db.auditLog.findFirst({
+    where: { action: "report.export" },
+    orderBy: { createdAt: "desc" },
+  });
+  assert.equal(audit.metadata.format, "xlsx");
 });
 
 test("NOTIF-1: approve/reject revisi membuat notifikasi dengan tanggal dan catatan", async () => {
