@@ -6,7 +6,6 @@ import '../services/app_update_service.dart';
 import '../services/auth_service.dart';
 import '../services/live_sync.dart';
 import '../services/location_service.dart';
-import '../services/submission_notification_service.dart';
 import '../theme/app_theme.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
@@ -22,7 +21,6 @@ class MainShellScreen extends StatefulWidget {
     this.updateService,
     this.locationService,
     this.photoTaker,
-    this.notificationService,
     this.syncInterval = const Duration(seconds: 12),
   });
 
@@ -30,7 +28,6 @@ class MainShellScreen extends StatefulWidget {
   final AppUpdateService? updateService;
   final LocationService? locationService;
   final PhotoTaker? photoTaker;
-  final SubmissionNotificationService? notificationService;
 
   /// Interval sinkronisasi diam-diam saat aplikasi di foreground.
   final Duration syncInterval;
@@ -42,8 +39,6 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen>
     with WidgetsBindingObserver {
   final List<Widget?> _tabs = List<Widget?>.filled(4, null);
-  late final SubmissionNotificationService _submissionNotifications =
-      widget.notificationService ?? SubmissionNotificationService();
   int _index = 0;
   int _unread = 0;
   Timer? _syncTimer;
@@ -82,8 +77,9 @@ class _MainShellScreenState extends State<MainShellScreen>
     _syncTimer = Timer.periodic(widget.syncInterval, (_) => _syncNow());
   }
 
-  /// Menyegarkan badge pesan, menampilkan notifikasi lokal baru, dan
-  /// memancarkan detak agar tab yang terbuka memuat ulang datanya diam-diam.
+  /// Menyegarkan badge pesan dan memancarkan detak agar tab yang terbuka
+  /// memuat ulang datanya diam-diam. Notifikasi alert baru ditangani
+  /// poller latar agar tidak muncul ganda.
   void _syncNow() {
     if (!mounted) return;
     LiveSync.instance.pulse();
@@ -92,9 +88,7 @@ class _MainShellScreenState extends State<MainShellScreen>
 
   Future<void> _loadUnread() async {
     try {
-      final page =
-          await _submissionNotifications.sync(widget.auth.api) ??
-          await widget.auth.api.myNotifications(limit: 1);
+      final page = await widget.auth.api.myNotifications(limit: 20);
       if (!mounted) return;
       setState(() => _unread = page.unreadCount);
     } catch (_) {

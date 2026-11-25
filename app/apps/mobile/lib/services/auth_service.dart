@@ -4,11 +4,17 @@ import '../api/api_client.dart';
 import '../models/session.dart';
 import '../models/user.dart';
 import '../models/workspace.dart';
+import 'background_sync_service.dart';
 
 class AuthService extends ChangeNotifier {
-  AuthService({required this.api});
+  AuthService({required this.api, BackgroundSessionSync? backgroundSync})
+    : backgroundSync = backgroundSync ?? const NoopBackgroundSessionSync();
 
   final ApiClient api;
+
+  /// Menyalin kredensial ke SharedPreferences polos dan menyalakan
+  /// foreground service sinkronisasi selama sesi aktif.
+  final BackgroundSessionSync backgroundSync;
   SessionProfile? _profile;
   bool _loading = false;
   bool _busy = false;
@@ -41,6 +47,7 @@ class AuthService extends ChangeNotifier {
         return false;
       }
       _profile = await api.me();
+      await _startBackgroundSync();
       return true;
     } on ApiException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
@@ -66,6 +73,7 @@ class AuthService extends ChangeNotifier {
     try {
       final result = await api.login(email.trim(), password);
       _profile = result;
+      await _startBackgroundSync();
       return true;
     } on ApiException catch (error) {
       _error = messageForApiError(error);
@@ -108,6 +116,7 @@ class AuthService extends ChangeNotifier {
       // Token tetap dihapus lokal walau server tidak dapat dihubungi.
     } finally {
       await api.clearToken();
+      await backgroundSync.stop();
       _profile = null;
       _error = null;
       _busy = false;
@@ -118,6 +127,14 @@ class AuthService extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  Future<void> _startBackgroundSync() async {
+    try {
+      await backgroundSync.start(api);
+    } catch (error) {
+      debugPrint('Sinkronisasi latar gagal dimulai: $error');
+    }
   }
 }
 
