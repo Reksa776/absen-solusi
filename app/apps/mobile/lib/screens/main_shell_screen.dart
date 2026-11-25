@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../services/app_update_service.dart';
 import '../services/auth_service.dart';
+import '../services/background_sync_service.dart';
 import '../services/live_sync.dart';
 import '../services/location_service.dart';
 import '../theme/app_theme.dart';
@@ -21,6 +22,7 @@ class MainShellScreen extends StatefulWidget {
     this.updateService,
     this.locationService,
     this.photoTaker,
+    this.readiness,
     this.syncInterval = const Duration(seconds: 12),
   });
 
@@ -28,6 +30,10 @@ class MainShellScreen extends StatefulWidget {
   final AppUpdateService? updateService;
   final LocationService? locationService;
   final PhotoTaker? photoTaker;
+
+  /// Izin notifikasi & pengecualian baterai yang diminta otomatis setelah
+  /// masuk. Bisa diinjeksi agar widget test tidak memicu dialog sistem.
+  final BackgroundReadinessController? readiness;
 
   /// Interval sinkronisasi diam-diam saat aplikasi di foreground.
   final Duration syncInterval;
@@ -42,6 +48,8 @@ class _MainShellScreenState extends State<MainShellScreen>
   int _index = 0;
   int _unread = 0;
   Timer? _syncTimer;
+  late final BackgroundReadinessController _readiness =
+      widget.readiness ?? BackgroundReadinessController();
 
   @override
   void initState() {
@@ -50,6 +58,11 @@ class _MainShellScreenState extends State<MainShellScreen>
     _tabs[0] = _buildTab(0);
     _startAutoSync();
     _syncNow();
+    // Setelah login / sesi aktif: minta izin notifikasi dan pengecualian
+    // optimasi baterai sekali agar pengguna cukup menekan "Izinkan".
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_readiness.ensureReady());
+    });
   }
 
   @override
@@ -65,6 +78,8 @@ class _MainShellScreenState extends State<MainShellScreen>
     if (state == AppLifecycleState.resumed) {
       _startAutoSync();
       _syncNow();
+      // Dialog izin baterai baru ditutup: baca ulang statusnya.
+      unawaited(_readiness.refresh());
     } else {
       // Hemat baterai: hentikan timer saat aplikasi tidak terlihat.
       _syncTimer?.cancel();
@@ -105,6 +120,7 @@ class _MainShellScreenState extends State<MainShellScreen>
       case 3:
         return MessagesTab(
           auth: widget.auth,
+          readiness: _readiness,
           onUnreadChanged: (count) {
             if (mounted && count != _unread) setState(() => _unread = count);
           },

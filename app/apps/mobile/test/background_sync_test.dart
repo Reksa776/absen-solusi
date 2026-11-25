@@ -6,14 +6,33 @@ import 'package:absensi_mobile/screens/login_screen.dart';
 import 'package:absensi_mobile/services/auth_service.dart';
 import 'package:absensi_mobile/services/background_sync_platform.dart';
 import 'package:absensi_mobile/services/background_sync_service.dart';
+import 'package:absensi_mobile/services/permission_onboarding_service.dart';
 import 'package:absensi_mobile/services/token_store.dart';
 import 'package:flutter/services.dart';
+import 'package:absensi_mobile/screens/messages_tab.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
 
 const baseUrl = 'http://103.93.132.214:3013';
+
+class FakeNotificationPermission implements NotificationPermissionGateway {
+  FakeNotificationPermission({this.granted = false});
+
+  bool granted;
+  int requests = 0;
+
+  @override
+  Future<bool> isNotificationGranted() async => granted;
+
+  @override
+  Future<bool> requestNotification() async {
+    requests++;
+    granted = true;
+    return true;
+  }
+}
 
 Map<String, dynamic> profileJson() => {
   'user': {'id': 'u1', 'email': 'a@example.com', 'name': 'A', 'status': 'ACTIVE'},
@@ -271,6 +290,8 @@ void main() {
           return switch (call.method) {
             'readSeenIds' => <String>['notif-1'],
             'startService' => true,
+            'isBatteryOptimizationIgnored' => true,
+            'requestBatteryExemption' => false,
             _ => null,
           };
         });
@@ -286,6 +307,8 @@ void main() {
     await platform.writeSeenIds(['notif-1', 'notif-2']);
     await platform.stopService();
     await platform.clearCredentials();
+    expect(await platform.isBatteryOptimizationIgnored(), isTrue);
+    expect(await platform.requestBatteryExemption(), isFalse);
 
     expect(calls.map((call) => call.method), [
       'syncCredentials',
@@ -294,11 +317,123 @@ void main() {
       'writeSeenIds',
       'stopService',
       'clearCredentials',
+      'isBatteryOptimizationIgnored',
+      'requestBatteryExemption',
     ]);
     expect(calls.first.arguments, {'token': 'token-abc', 'baseUrl': baseUrl});
     expect(calls[3].arguments, {
       'ids': ['notif-1', 'notif-2'],
     });
+  });
+
+  test('setelah login pengecualian baterai diminta otomatis sekali bila '
+      'belum diizinkan', () async {
+    final platform = MemoryBackgroundSyncPlatform()..batteryIgnored = false;
+    final notifications = FakeNotificationPermission();
+    final readiness = BackgroundReadinessController(
+      platform: platform,
+      notifications: notifications,
+    );
+
+    await readiness.ensureReady();
+
+    expect(platform.batteryExemptionRequests, 1);
+    expect(notifications.requests, 1);
+    expect(readiness.isChecked, isTrue);
+    expect(readiness.batteryOptimizationIgnored, isFalse);
+    expect(readiness.needsManualEnable, isTrue);
+
+    // Sesi yang sama tidak memunculkan dialog sistem berulang kali.
+    await readiness.ensureReady();
+    expect(platform.batteryExemptionRequests, 1);
+  });
+
+  test('pengecualian baterai dilewati bila pengguna sudah mengizinkannya',
+      () async {
+    final platform = MemoryBackgroundSyncPlatform()..batteryIgnored = true;
+    final notifications = FakeNotificationPermission(granted: true);
+    final readiness = BackgroundReadinessController(
+      platform: platform,
+      notifications: notifications,
+    );
+
+    await readiness.ensureReady();
+
+    expect(platform.batteryExemptionRequests, 0);
+    expect(notifications.requests, 0);
+    expect(readiness.batteryOptimizationIgnored, isTrue);
+    expect(readiness.needsManualEnable, isFalse);
+  });
+
+  test('status baterai dibaca ulang saat aplikasi kembali aktif', () async {
+    final platform = MemoryBackgroundSyncPlatform()..batteryIgnored = false;
+    final readiness = BackgroundReadinessController(
+      platform: platform,
+      notifications: FakeNotificationPermission(),
+    );
+
+    await readiness.ensureReady();
+    expect(readiness.batteryOptimizationIgnored, isFalse);
+
+    // Pengguna mengetuk "Izinkan" pada dialog sistem yang tadi tampil.
+    platform.batteryIgnored = true;
+    await readiness.refresh();
+
+    expect(readiness.batteryOptimizationIgnored, isTrue);
+    expect(readiness.needsManualEnable, isFalse);
+  });
+
+  test('platform tanpa pengaturan baterai tidak menampilkan tombol manual',
+      () async {
+    final platform = MemoryBackgroundSyncPlatform()..batteryIgnored = null;
+    final readiness = BackgroundReadinessController(
+      platform: platform,
+      notifications: FakeNotificationPermission(granted: true),
+    );
+
+    await readiness.ensureReady();
+
+    expect(readiness.isSupported, isFalse);
+    expect(readiness.needsManualEnable, isFalse);
+    expect(platform.batteryExemptionRequests, 0);
+  });
+
+  testWidgets('strip pesan menampilkan tombol Aktifkan Sekarang hanya setelah '
+      'pengguna menolak', (tester) async {
+    final platform = MemoryBackgroundSyncPlatform()..batteryIgnored = false;
+    final readiness = BackgroundReadinessController(
+      platform: platform,
+      notifications: FakeNotificationPermission(),
+    );
+    await readiness.ensureReady();
+    final auth = AuthService(api: buildApi(MemoryTokenStore()));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessagesTab(auth: auth, readiness: readiness),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byKey(const Key('messages-background-status')), findsOneWidget);
+    expect(find.text('Notifikasi Latar Belakang: Nonaktif'), findsOneWidget);
+    expect(
+      find.byKey(const Key('messages-background-enable')),
+      findsOneWidget,
+    );
+
+    platform.batteryIgnored = true;
+    await readiness.refresh();
+    await tester.pump();
+
+    expect(find.text('Notifikasi Latar Belakang: Aktif'), findsOneWidget);
+    expect(
+      find.byKey(const Key('messages-background-enable')),
+      findsNothing,
+    );
   });
 
   testWidgets('login dari layar masuk menyalakan service dan menyimpan '

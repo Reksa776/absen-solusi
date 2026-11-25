@@ -6,6 +6,7 @@ import '../api/api_client.dart';
 import '../models/broadcast.dart';
 import '../models/in_app_notification.dart';
 import '../services/auth_service.dart';
+import '../services/background_sync_service.dart';
 import '../services/live_sync.dart';
 import '../theme/app_theme.dart';
 import 'broadcasts_screen.dart';
@@ -15,9 +16,19 @@ String _two(int value) => value.toString().padLeft(2, '0');
 
 /// Tab Pesan: pengingat/broadcast dan seluruh status submisi karyawan.
 class MessagesTab extends StatefulWidget {
-  const MessagesTab({super.key, required this.auth, this.onUnreadChanged});
+  const MessagesTab({
+    super.key,
+    required this.auth,
+    this.readiness,
+    this.onUnreadChanged,
+  });
 
   final AuthService auth;
+
+  /// Status izin notifikasi latar; ditampilkan sebagai strip singkat di atas
+  /// daftar pesan.
+  final BackgroundReadinessController? readiness;
+
   final ValueChanged<int>? onUnreadChanged;
 
   @override
@@ -159,6 +170,7 @@ class _MessagesTabState extends State<MessagesTab> {
               ],
             ),
           ),
+          _backgroundStatus(),
           _segmented(),
           Expanded(
             child: _segment == 0
@@ -167,6 +179,73 @@ class _MessagesTabState extends State<MessagesTab> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Strip status singkat: hijau "Aktif" saat pengecualian baterai sudah ada,
+  /// kuning dengan tombol "Aktifkan Sekarang" hanya bila pengguna menolak.
+  Widget _backgroundStatus() {
+    final readiness = widget.readiness;
+    if (readiness == null) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: readiness,
+      builder: (context, _) {
+        if (!readiness.isChecked || !readiness.isSupported) {
+          return const SizedBox.shrink();
+        }
+        final active = readiness.batteryOptimizationIgnored;
+        return Container(
+          key: const Key('messages-background-status'),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+          decoration: BoxDecoration(
+            color: active ? AppColors.greenSoft : AppColors.yellowSoft,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active ? AppColors.greenLine : AppColors.yellowLine,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                active
+                    ? Icons.notifications_active_outlined
+                    : Icons.notifications_off_outlined,
+                size: 16,
+                color: active ? AppColors.greenDark : AppColors.yellowInk,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Notifikasi Latar Belakang: ${active ? 'Aktif' : 'Nonaktif'}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: active ? AppColors.greenDark : AppColors.yellowInk,
+                  ),
+                ),
+              ),
+              if (!active)
+                TextButton(
+                  key: const Key('messages-background-enable'),
+                  onPressed: readiness.isBusy ? null : readiness.enableNow,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.yellowInk,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  child: Text(
+                    readiness.isBusy ? 'Membuka…' : 'Aktifkan Sekarang',
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 

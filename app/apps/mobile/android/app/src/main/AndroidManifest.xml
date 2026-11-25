@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Pengingat absensi lokal (check-in / check-out). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Menampilkan dialog sistem pengecualian optimasi baterai sekali ketuk
+         agar sinkronisasi latar tidak dibunuh oleh penghemat daya. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

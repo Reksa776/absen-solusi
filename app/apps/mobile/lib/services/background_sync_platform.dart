@@ -26,6 +26,14 @@ abstract class BackgroundSyncPlatform {
   Future<List<String>> readSeenIds();
 
   Future<void> writeSeenIds(List<String> ids);
+
+  /// True bila aplikasi sudah dikecualikan dari optimasi baterai. Null berarti
+  /// platform ini tidak memiliki pengaturan tersebut (iOS / widget test).
+  Future<bool?> isBatteryOptimizationIgnored();
+
+  /// Menampilkan dialog sistem "Izinkan / Tolak" pengecualian baterai.
+  /// Mengembalikan status terkini; false berarti dialog baru saja diminta.
+  Future<bool?> requestBatteryExemption();
 }
 
 /// Implementasi produksi lewat MethodChannel yang ditangani MainActivity.
@@ -85,6 +93,14 @@ class MethodChannelBackgroundSyncPlatform implements BackgroundSyncPlatform {
   Future<void> writeSeenIds(List<String> ids) async {
     await _invoke<void>('writeSeenIds', {'ids': ids});
   }
+
+  @override
+  Future<bool?> isBatteryOptimizationIgnored() =>
+      _invoke<bool>('isBatteryOptimizationIgnored');
+
+  @override
+  Future<bool?> requestBatteryExemption() =>
+      _invoke<bool>('requestBatteryExemption');
 }
 
 /// Penyimpanan in-memory untuk unit test tanpa platform channel.
@@ -129,5 +145,18 @@ class MemoryBackgroundSyncPlatform implements BackgroundSyncPlatform {
   @override
   Future<void> writeSeenIds(List<String> ids) async {
     seenIds = List<String>.of(ids);
+  }
+
+  /// Null mensimulasikan platform tanpa pengaturan optimasi baterai.
+  bool? batteryIgnored = false;
+  int batteryExemptionRequests = 0;
+
+  @override
+  Future<bool?> isBatteryOptimizationIgnored() async => batteryIgnored;
+
+  @override
+  Future<bool?> requestBatteryExemption() async {
+    batteryExemptionRequests++;
+    return batteryIgnored;
   }
 }

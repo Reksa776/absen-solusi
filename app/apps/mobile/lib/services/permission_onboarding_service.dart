@@ -24,10 +24,45 @@ class PermissionSnapshot {
   ];
 }
 
+/// Kontrak sempit izin notifikasi agar layar utama dapat meminta izin tanpa
+/// bergantung pada plugin OS saat widget test.
+abstract class NotificationPermissionGateway {
+  Future<bool> isNotificationGranted();
+
+  Future<bool> requestNotification();
+}
+
 /// Permission handler dipakai agar tombol onboarding meminta izin OS secara
 /// berurutan, bukan memicu kamera/GPS diam-diam untuk memancing dialog.
-class PermissionOnboardingService {
+class PermissionOnboardingService implements NotificationPermissionGateway {
   const PermissionOnboardingService();
+
+  bool get _supported =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  @override
+  Future<bool> isNotificationGranted() async {
+    if (!_supported) return true;
+    try {
+      return (await Permission.notification.status).isGranted;
+    } catch (error) {
+      debugPrint('Status izin notifikasi tidak tersedia: $error');
+      return true;
+    }
+  }
+
+  @override
+  Future<bool> requestNotification() async {
+    if (!_supported) return true;
+    try {
+      return (await Permission.notification.request()).isGranted;
+    } catch (error) {
+      debugPrint('Permintaan izin notifikasi tidak tersedia: $error');
+      return false;
+    }
+  }
 
   Future<PermissionSnapshot> status() async {
     if (kIsWeb ||

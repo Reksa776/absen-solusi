@@ -10,6 +10,12 @@ class FakeOnboardingService implements PermissionOnboardingService {
   bool requested = false;
 
   @override
+  Future<bool> isNotificationGranted() async => true;
+
+  @override
+  Future<bool> requestNotification() async => true;
+
+  @override
   Future<PermissionSnapshot> status() async => const PermissionSnapshot(
     location: true,
     camera: true,
