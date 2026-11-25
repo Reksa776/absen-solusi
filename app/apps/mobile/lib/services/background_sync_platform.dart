@@ -13,7 +13,7 @@ class BackgroundSyncKeys {
   static const String seenNotificationIds = 'seen_notification_ids';
 }
 
-/// Jembatan ke Android SharedPreferences dan foreground service native.
+/// Jembatan ke Android SharedPreferences dan penjadwal alarm native.
 abstract class BackgroundSyncPlatform {
   Future<void> syncCredentials({required String token, required String baseUrl});
 
@@ -49,10 +49,10 @@ class MethodChannelBackgroundSyncPlatform implements BackgroundSyncPlatform {
     try {
       return await _channel.invokeMethod<T>(method, arguments);
     } on MissingPluginException {
-      debugPrint('Foreground service latar tidak tersedia di platform ini.');
+      debugPrint('Penjadwal sinkronisasi latar tidak tersedia di platform ini.');
       return null;
     } on PlatformException catch (error) {
-      debugPrint('Foreground service latar gagal ($method): ${error.message}');
+      debugPrint('Sinkronisasi latar gagal ($method): ${error.message}');
       return null;
     }
   }

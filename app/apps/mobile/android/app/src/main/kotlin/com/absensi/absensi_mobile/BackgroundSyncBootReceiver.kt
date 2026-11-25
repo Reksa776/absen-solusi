@@ -6,12 +6,11 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * Menyalakan kembali [BackgroundSyncService] setelah perangkat menyala atau
+ * Menjadwalkan ulang rantai alarm sinkronisasi setelah perangkat menyala atau
  * aplikasi diperbarui, selama pengguna masih memiliki token login tersimpan.
  *
- * Android 15 melarang peluncuran foreground service bertipe `dataSync` dari
- * `BOOT_COMPLETED`, jadi kegagalan peluncuran langsung dialihkan ke alarm
- * penjadwalan ulang.
+ * Tidak ada foreground service yang dinyalakan di sini, sehingga tidak ada
+ * notifikasi status yang muncul setelah boot.
  */
 class BackgroundSyncBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -25,9 +24,7 @@ class BackgroundSyncBootReceiver : BroadcastReceiver() {
             else -> return
         }
         if (!BackgroundSyncService.hasCredentials(context)) return
-        if (!BackgroundSyncService.startSafely(context)) {
-            Log.i("BackgroundSync", "Peluncuran saat boot ditolak; memakai alarm.")
-            BackgroundSyncService.scheduleRestart(context)
-        }
+        BackgroundSyncService.start(context)
+        Log.i("BackgroundSync", "Alarm sinkronisasi dijadwalkan ulang setelah boot.")
     }
 }

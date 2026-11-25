@@ -5,13 +5,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -20,257 +18,175 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Foreground service mandiri yang memegang seluruh loop sinkronisasi notifikasi.
+ * Penjadwal dan inti sinkronisasi notifikasi latar tanpa notifikasi status.
  *
- * Polling HTTP `GET /api/notifications/me` dijalankan setiap 10 detik dari
- * background thread native, lalu notifikasi baru ditampilkan langsung lewat
- * [NotificationManagerCompat]. Karena tidak lagi bergantung pada Dart Engine,
- * sinkronisasi tetap berjalan ketika Activity dihancurkan (aplikasi di-swipe
- * dari Recent Apps) selama service ini hidup; [onTaskRemoved] menjadwalkan
- * ulang service lewat [AlarmManager] sebagai jaring pengaman.
+ * Tidak ada foreground service di sini: Android tidak pernah diminta
+ * menampilkan notifikasi permanen. Rantai sinkronisasi dijaga oleh
+ * [AlarmManager] yang membangunkan [BackgroundSyncAlarmReceiver] setiap 15
+ * detik, lalu receiver tersebut menjadwalkan alarm berikutnya sebelum
+ * melakukan `GET /api/notifications/me`.
+ *
+ * Hanya channel [CHANNEL_ALERTS] (`IMPORTANCE_HIGH`) yang dipakai, dan hanya
+ * ketika benar-benar ada notifikasi baru (approve / reject / broadcast).
  */
-class BackgroundSyncService : Service() {
+object BackgroundSyncService {
 
-    companion object {
-        const val PREFS_NAME = "absensi_background"
-        const val KEY_TOKEN = "bg_access_token"
-        const val KEY_BASE_URL = "bg_api_base_url"
-        const val KEY_SEEN_IDS = "seen_notification_ids"
+    const val PREFS_NAME = "absensi_background"
+    const val KEY_TOKEN = "bg_access_token"
+    const val KEY_BASE_URL = "bg_api_base_url"
+    const val KEY_SEEN_IDS = "seen_notification_ids"
 
-        const val EXTRA_NOTIFICATION_ID = "notification_id"
-        const val EXTRA_LINK_URL = "notification_link"
+    const val EXTRA_NOTIFICATION_ID = "notification_id"
+    const val EXTRA_LINK_URL = "notification_link"
 
-        private const val CHANNEL_STATUS = "background_sync_status"
-        private const val CHANNEL_ALERTS = "approval_alerts_high"
-        private const val NOTIFICATION_ID_STATUS = 8610
-        private const val RESTART_REQUEST_CODE = 8611
-        private const val RESTART_DELAY_MS = 1_500L
-        private const val POLL_INTERVAL_SECONDS = 10L
-        private const val CONNECT_TIMEOUT_MS = 8_000
-        private const val READ_TIMEOUT_MS = 8_000
-        private const val MAX_SEEN_IDS = 200
-        private const val LIST_LIMIT = 20
-        private const val TAG = "BackgroundSync"
+    const val TAG = "BackgroundSync"
 
-        fun prefs(context: Context): SharedPreferences =
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private const val CHANNEL_ALERTS = "approval_alerts_high"
+    private const val ALARM_REQUEST_CODE = 8611
+    private const val POLL_INTERVAL_MS = 15_000L
+    private const val WAKE_LOCK_TIMEOUT_MS = 10_000L
+    private const val CONNECT_TIMEOUT_MS = 5_000
+    private const val READ_TIMEOUT_MS = 5_000
+    private const val MAX_SEEN_IDS = 200
+    private const val LIST_LIMIT = 20
 
-        fun hasCredentials(context: Context): Boolean =
-            !prefs(context).getString(KEY_TOKEN, null).isNullOrBlank()
+    private val polling = AtomicBoolean(false)
 
-        /** Menjalankan service; melempar bila platform menolak. */
-        fun start(context: Context) {
-            val intent = Intent(context, BackgroundSyncService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
+    fun prefs(context: Context): SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun hasCredentials(context: Context): Boolean =
+        !prefs(context).getString(KEY_TOKEN, null).isNullOrBlank()
+
+    /**
+     * Memulai rantai alarm sinkronisasi. Mengembalikan false bila pengguna
+     * belum login sehingga tidak ada yang perlu dijadwalkan.
+     */
+    fun start(context: Context): Boolean {
+        if (!hasCredentials(context)) {
+            cancelAlarm(context)
+            return false
+        }
+        scheduleNext(context)
+        return true
+    }
+
+    /** Menghentikan rantai alarm, misalnya saat logout. */
+    fun stop(context: Context) {
+        cancelAlarm(context)
+    }
+
+    /**
+     * Menjadwalkan satu alarm berikutnya. Dipanggil saat login, saat boot,
+     * dan dari [BackgroundSyncAlarmReceiver] sebelum polling agar rantai tidak
+     * pernah putus walau satu siklus HTTP gagal.
+     */
+    fun scheduleNext(context: Context) {
+        val appContext = context.applicationContext
+        if (!hasCredentials(appContext)) {
+            cancelAlarm(appContext)
+            return
+        }
+        val alarmManager = appContext.getSystemService(AlarmManager::class.java) ?: return
+        val pendingIntent = alarmIntent(appContext)
+        val triggerAt = SystemClock.elapsedRealtime() + POLL_INTERVAL_MS
+        try {
+            val canBeExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                alarmManager.canScheduleExactAlarms()
+            if (canBeExact) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAt,
+                    pendingIntent,
+                )
             } else {
-                context.startService(intent)
-            }
-        }
-
-        /**
-         * Versi aman untuk dipanggil dari BroadcastReceiver atau lintasan yang
-         * tidak boleh crash, misalnya batasan foreground service Android 15.
-         */
-        fun startSafely(context: Context): Boolean {
-            return try {
-                start(context)
-                true
-            } catch (error: RuntimeException) {
-                Log.w(TAG, "Service tidak dapat dijalankan sekarang: ${error.message}")
-                false
-            }
-        }
-
-        fun stop(context: Context) {
-            cancelRestart(context)
-            context.stopService(Intent(context, BackgroundSyncService::class.java))
-        }
-
-        /**
-         * Menjadwalkan service kembali hidup ~1,5 detik setelah aplikasi
-         * ditutup dari Recent Apps atau setelah boot selesai.
-         */
-        fun scheduleRestart(context: Context) {
-            val pendingIntent = restartIntent(context) ?: return
-            val alarmManager =
-                context.getSystemService(AlarmManager::class.java) ?: return
-            val triggerAt = SystemClock.elapsedRealtime() + RESTART_DELAY_MS
-            try {
-                val canBeExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                    alarmManager.canScheduleExactAlarms()
-                if (canBeExact) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAt,
-                        pendingIntent,
-                    )
-                } else {
-                    alarmManager.set(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAt,
-                        pendingIntent,
-                    )
-                }
-            } catch (error: SecurityException) {
-                Log.w(TAG, "Alarm presisi ditolak, memakai alarm biasa.")
-                alarmManager.set(
+                // Android 12+ tanpa izin alarm presisi: tetap bangunkan
+                // perangkat dengan alarm non-presisi yang diizinkan.
+                alarmManager.setAndAllowWhileIdle(
                     AlarmManager.ELAPSED_REALTIME_WAKEUP,
                     triggerAt,
                     pendingIntent,
                 )
             }
-        }
-
-        private fun cancelRestart(context: Context) {
-            val pendingIntent = restartIntent(context) ?: return
-            val alarmManager =
-                context.getSystemService(AlarmManager::class.java) ?: return
-            alarmManager.cancel(pendingIntent)
-            pendingIntent.cancel()
-        }
-
-        private fun restartIntent(context: Context): PendingIntent? {
-            val intent = Intent(context, BackgroundSyncService::class.java)
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                PendingIntent.getForegroundService(
-                    context,
-                    RESTART_REQUEST_CODE,
-                    intent,
-                    flags,
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Alarm presisi ditolak, memakai alarm biasa.")
+            try {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAt,
+                    pendingIntent,
                 )
-            } else {
-                PendingIntent.getService(context, RESTART_REQUEST_CODE, intent, flags)
+            } catch (fallbackError: SecurityException) {
+                Log.w(TAG, "Alarm tidak dapat dijadwalkan: ${fallbackError.message}")
             }
         }
-
-        /** ID yang sudah tampil disimpan berurutan sebagai teks satu per baris. */
-        fun readSeenIds(store: SharedPreferences): List<String> {
-            val raw = try {
-                store.getString(KEY_SEEN_IDS, "")
-            } catch (error: ClassCastException) {
-                null
-            }
-            if (raw == null) {
-                // Migrasi dari format lama (StringSet) tanpa kehilangan data.
-                val legacy = try {
-                    store.getStringSet(KEY_SEEN_IDS, emptySet()).orEmpty()
-                } catch (error: ClassCastException) {
-                    emptySet<String>()
-                }
-                val migrated = legacy.filterNotNull().take(MAX_SEEN_IDS)
-                writeSeenIds(store, migrated)
-                return migrated
-            }
-            return raw.split('\n')
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-        }
-
-        /** Disimpan berurutan dari yang terbaru agar pemotongan 200 ID tepat. */
-        fun writeSeenIds(store: SharedPreferences, ids: List<String>) {
-            store.edit()
-                .putString(KEY_SEEN_IDS, ids.take(MAX_SEEN_IDS).joinToString("\n"))
-                .apply()
-        }
     }
 
-    private var executor: ScheduledExecutorService? = null
-    private var pollTask: ScheduledFuture<*>? = null
-    private val polling = AtomicBoolean(false)
-
-    override fun onCreate() {
-        super.onCreate()
-        createChannels()
+    private fun cancelAlarm(context: Context) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        val pendingIntent = alarmIntent(context)
+        alarmManager.cancel(pendingIntent)
+        pendingIntent.cancel()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // startForeground wajib dipanggil lebih dulu: service yang dijalankan
-        // lewat startForegroundService akan dianggap gagal bila langsung
-        // stopSelf tanpa pernah masuk mode foreground.
-        startForegroundCompat()
-        if (!hasCredentials(this)) {
-            Log.d(TAG, "Token kosong; service dihentikan.")
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        ensurePolling()
-        // START_STICKY: Android membangunkan ulang service bila proses dibunuh
-        // saat memori rendah, tanpa perlu Intent baru dari Dart.
-        return START_STICKY
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        if (!hasCredentials(this)) return
-        Log.i(TAG, "Aplikasi ditutup; menjadwalkan ulang service sinkronisasi.")
-        scheduleRestart(this)
-    }
-
-    /** Android 15 membatasi foreground service `dataSync` sekitar 6 jam/hari. */
-    override fun onTimeout(startId: Int, fgsType: Int) {
-        Log.w(TAG, "Batas waktu sinkronisasi tercapai; service dihentikan.")
-        stopSelf()
-    }
-
-    override fun onDestroy() {
-        pollTask?.cancel(true)
-        pollTask = null
-        executor?.shutdownNow()
-        executor = null
-        super.onDestroy()
-    }
-
-    private fun ensurePolling() {
-        if (pollTask != null) return
-        val scheduler = executor ?: Executors
-            .newSingleThreadScheduledExecutor { runnable ->
-                Thread(runnable, "background-sync").apply { isDaemon = true }
-            }
-            .also { executor = it }
-        pollTask = scheduler.scheduleWithFixedDelay(
-            { pollOnce() },
-            0L,
-            POLL_INTERVAL_SECONDS,
-            TimeUnit.SECONDS,
+    private fun alarmIntent(context: Context): PendingIntent {
+        val intent = Intent(context, BackgroundSyncAlarmReceiver::class.java)
+        return PendingIntent.getBroadcast(
+            context,
+            ALARM_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
-    private fun pollOnce() {
-        if (!polling.compareAndSet(false, true)) return
-        try {
-            performPoll()
+    /**
+     * Wakelock singkat agar satu siklus HTTP selesai walau layar mati.
+     * Timeout 10 detik menjaga baterai tetap hemat.
+     */
+    fun acquireWakeLock(context: Context): PowerManager.WakeLock? {
+        return try {
+            val powerManager =
+                context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    ?: return null
+            @Suppress("DEPRECATION")
+            powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "absensi:background-sync",
+            ).apply {
+                setReferenceCounted(false)
+                acquire(WAKE_LOCK_TIMEOUT_MS)
+            }
         } catch (error: Exception) {
-            Log.w(TAG, "Siklus sinkronisasi gagal: ${error.message}")
-        } finally {
-            polling.set(false)
+            Log.w(TAG, "Wakelock tidak tersedia: ${error.message}")
+            null
         }
     }
 
-    private fun performPoll() {
-        val store = prefs(this)
-        val token = store.getString(KEY_TOKEN, null)?.trim().orEmpty()
-        val baseUrl = store.getString(KEY_BASE_URL, null)
-            ?.trim()
-            ?.trimEnd('/')
-            .orEmpty()
-        if (token.isEmpty() || baseUrl.isEmpty()) {
-            Log.d(TAG, "Kredensial latar kosong; service berhenti.")
-            stopSelf()
-            return
+    /** Satu siklus: ambil notifikasi terbaru lalu tampilkan yang belum dilihat. */
+    fun pollOnce(context: Context) {
+        val appContext = context.applicationContext
+        if (!polling.compareAndSet(false, true)) return
+        try {
+            ensureAlertChannel(appContext)
+            val store = prefs(appContext)
+            val token = store.getString(KEY_TOKEN, null)?.trim().orEmpty()
+            val baseUrl = store.getString(KEY_BASE_URL, null)
+                ?.trim()
+                ?.trimEnd('/')
+                .orEmpty()
+            if (token.isEmpty() || baseUrl.isEmpty()) {
+                Log.d(TAG, "Kredensial latar kosong; alarm dihentikan.")
+                stop(appContext)
+                return
+            }
+            val body = fetchNotifications(baseUrl, token) ?: return
+            handlePayload(appContext, store, body)
+        } finally {
+            polling.set(false)
         }
-        val body = fetchNotifications(baseUrl, token) ?: return
-        handlePayload(store, body)
     }
 
     private fun fetchNotifications(baseUrl: String, token: String): String? {
@@ -300,7 +216,11 @@ class BackgroundSyncService : Service() {
         }
     }
 
-    private fun handlePayload(store: SharedPreferences, body: String) {
+    private fun handlePayload(
+        context: Context,
+        store: SharedPreferences,
+        body: String,
+    ) {
         val items = parseItems(body)
         if (items.isEmpty()) return
 
@@ -309,7 +229,7 @@ class BackgroundSyncService : Service() {
         val fresh = items.filter { !seenSet.contains(it.id) }
         if (fresh.isEmpty()) return
 
-        fresh.forEach { showAlert(it) }
+        fresh.forEach { showAlert(context, it) }
         Log.i(TAG, "${fresh.size} notifikasi baru ditampilkan.")
 
         // ID dari respons dianggap terbaru sehingga berada di depan daftar.
@@ -360,21 +280,21 @@ class BackgroundSyncService : Service() {
         }
     }
 
-    private fun showAlert(item: AlertItem) {
+    private fun showAlert(context: Context, item: AlertItem) {
         val notificationId = item.id.hashCode().let { if (it == 0) 1 else it }
-        val intent = Intent(this, MainActivity::class.java).apply {
+        val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_NOTIFICATION_ID, item.id)
             item.linkUrl?.let { putExtra(EXTRA_LINK_URL, it) }
         }
         val pendingIntent = PendingIntent.getActivity(
-            this,
+            context,
             notificationId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(this, CHANNEL_ALERTS)
-            .setSmallIcon(iconRes())
+        val notification = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+            .setSmallIcon(iconRes(context))
             .setContentTitle(item.title)
             .setContentText(item.message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(item.message))
@@ -387,41 +307,16 @@ class BackgroundSyncService : Service() {
             .setContentIntent(pendingIntent)
             .build()
         try {
-            NotificationManagerCompat.from(this).notify(notificationId, notification)
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
         } catch (error: SecurityException) {
             Log.w(TAG, "Izin notifikasi belum diberikan; alert dilewati.")
         }
     }
 
-    private fun startForegroundCompat() {
-        val notification = buildStatusNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID_STATUS,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID_STATUS, notification)
-        }
-    }
-
-    private fun createChannels() {
+    private fun ensureAlertChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-
-        val status = NotificationChannel(
-            CHANNEL_STATUS,
-            "Sinkronisasi presensi",
-            NotificationManager.IMPORTANCE_LOW,
-        ).apply {
-            description = "Menjaga sinkronisasi presensi dan notifikasi tetap berjalan."
-            setSound(null, null)
-            enableVibration(false)
-            setShowBadge(false)
-        }
-        manager.createNotificationChannel(status)
-
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(CHANNEL_ALERTS) != null) return
         val alerts = NotificationChannel(
             CHANNEL_ALERTS,
             "Persetujuan & pengumuman",
@@ -435,26 +330,38 @@ class BackgroundSyncService : Service() {
         manager.createNotificationChannel(alerts)
     }
 
-    private fun buildStatusNotification(): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_STATUS)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this).setPriority(Notification.PRIORITY_LOW)
+    private fun iconRes(context: Context): Int =
+        context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
+
+    /** ID yang sudah tampil disimpan berurutan sebagai teks satu per baris. */
+    fun readSeenIds(store: SharedPreferences): List<String> {
+        val raw = try {
+            store.getString(KEY_SEEN_IDS, "")
+        } catch (error: ClassCastException) {
+            null
         }
-        return builder
-            .setSmallIcon(iconRes())
-            .setContentTitle("Absensi")
-            .setContentText("Sinkronisasi presensi & notifikasi aktif")
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .build()
+        if (raw == null) {
+            // Migrasi dari format lama (StringSet) tanpa kehilangan data.
+            val legacy = try {
+                store.getStringSet(KEY_SEEN_IDS, emptySet()).orEmpty()
+            } catch (error: ClassCastException) {
+                emptySet<String>()
+            }
+            val migrated = legacy.filterNotNull().take(MAX_SEEN_IDS)
+            writeSeenIds(store, migrated)
+            return migrated
+        }
+        return raw.split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
     }
 
-    private fun iconRes(): Int =
-        applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
+    /** Disimpan berurutan dari yang terbaru agar pemotongan 200 ID tepat. */
+    fun writeSeenIds(store: SharedPreferences, ids: List<String>) {
+        store.edit()
+            .putString(KEY_SEEN_IDS, ids.take(MAX_SEEN_IDS).joinToString("\n"))
+            .apply()
+    }
 
     private data class AlertItem(
         val id: String,

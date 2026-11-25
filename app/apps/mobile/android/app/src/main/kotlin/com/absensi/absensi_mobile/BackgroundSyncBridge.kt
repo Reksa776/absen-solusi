@@ -12,10 +12,12 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * Menyimpan salinan token dan baseUrl pada SharedPreferences polos
  * (`bg_access_token`, `bg_api_base_url`) agar dapat dibaca tanpa Keystore,
- * lalu menyalakan atau menghentikan [BackgroundSyncService].
+ * lalu menjadwalkan atau menghentikan rantai [AlarmManager] milik
+ * [BackgroundSyncService].
  *
- * Dart hanya bertugas menyiapkan kredensial dan memicu service; seluruh loop
- * HTTP 10 detik berjalan di dalam service tersebut.
+ * Dart hanya bertugas menyiapkan kredensial dan memicu penjadwalan; seluruh
+ * siklus HTTP 15 detik berjalan di [BackgroundSyncAlarmReceiver] tanpa
+ * notifikasi status apa pun.
  */
 class BackgroundSyncBridge(private val context: Context) :
     MethodChannel.MethodCallHandler {
@@ -29,7 +31,7 @@ class BackgroundSyncBridge(private val context: Context) :
 
     /**
      * True bila aplikasi sudah dikecualikan dari optimasi baterai. Tanpa
-     * pengecualian ini banyak OEM membunuh foreground service saat layar mati.
+     * pengecualian ini banyak OEM menahan alarm saat layar mati.
      */
     private fun isBatteryOptimizationIgnored(): Boolean {
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -105,7 +107,7 @@ class BackgroundSyncBridge(private val context: Context) :
                 result.success(null)
             }
             "startService" -> {
-                result.success(BackgroundSyncService.startSafely(context))
+                result.success(BackgroundSyncService.start(context))
             }
             "stopService" -> {
                 BackgroundSyncService.stop(context)

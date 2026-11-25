@@ -27,13 +27,15 @@ class NoopBackgroundSessionSync implements BackgroundSessionSync {
 }
 
 /// Menyiapkan sesi latar: menyalin kredensial ke SharedPreferences polos,
-/// menandai notifikasi lama sebagai sudah dilihat, lalu menyalakan foreground
-/// service native.
+/// menandai notifikasi lama sebagai sudah dilihat, lalu menjadwalkan rantai
+/// alarm native.
 ///
-/// Seluruh loop `GET /api/notifications/me` setiap 10 detik berjalan di Kotlin
-/// (`BackgroundSyncService.kt`), jadi tetap hidup walau Activity Flutter sudah
-/// dihancurkan. Dart sengaja tidak memakai `Timer.periodic` agar tidak ada dua
-/// poller yang balapan dan menampilkan notifikasi ganda.
+/// Seluruh siklus `GET /api/notifications/me` setiap 15 detik berjalan di
+/// Kotlin (`BackgroundSyncService.kt` + `BackgroundSyncAlarmReceiver.kt`) tanpa
+/// foreground service, jadi tidak ada notifikasi status permanen dan
+/// sinkronisasi tetap hidup walau Activity Flutter sudah dihancurkan. Dart
+/// sengaja tidak memakai `Timer.periodic` agar tidak ada dua poller yang
+/// balapan dan menampilkan notifikasi ganda.
 class BackgroundSyncController implements BackgroundSessionSync {
   BackgroundSyncController({
     BackgroundSyncPlatform? platform,
@@ -50,7 +52,7 @@ class BackgroundSyncController implements BackgroundSessionSync {
 
   bool _running = false;
 
-  /// True setelah bridge native dipanggil untuk menyalakan service.
+  /// True setelah bridge native dipanggil untuk menjadwalkan alarm.
   bool get isRunning => _running;
 
   @override

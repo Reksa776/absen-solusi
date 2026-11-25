@@ -10,15 +10,14 @@
     <!-- Menampilkan dialog sistem pengecualian optimasi baterai sekali ketuk
          agar sinkronisasi latar tidak dibunuh oleh penghemat daya. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Sinkronisasi notifikasi latar memakai AlarmManager 15 detik tanpa
+         foreground service, sehingga tidak ada notifikasi status permanen. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Sinkronisasi notifikasi real-time 10 detik di latar belakang. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <application
         android:label="absensi_mobile"
         android:name="${applicationName}"
@@ -60,13 +59,11 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
-        <!-- Foreground service mandiri: memegang loop polling 10 detik dan
-             menampilkan notifikasi walau Activity sudah dihancurkan. -->
-        <service
-            android:name=".BackgroundSyncService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:stopWithTask="false" />
+        <!-- Alarm sinkronisasi 15 detik: berjalan diam-diam tanpa notifikasi
+             status, lalu menjadwalkan alarm berikutnya sendiri. -->
+        <receiver
+            android:name=".BackgroundSyncAlarmReceiver"
+            android:exported="false" />
         <!-- Menyalakan kembali service setelah boot / pembaruan aplikasi bila
              pengguna masih login. -->
         <receiver
