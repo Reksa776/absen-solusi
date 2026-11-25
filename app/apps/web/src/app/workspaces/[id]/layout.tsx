@@ -1,11 +1,14 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { getCompanyProfile, listMyNotifications } from "@absensi/auth";
+import {
+  getCompanyProfile,
+  listMyNotifications,
+  listWorkspaceWfh,
+} from "@absensi/auth";
 
 import { requirePagePermission } from "@/lib/page-auth";
-import { WorkspaceBreadcrumb, WorkspaceSidebar } from "./workspace-sidebar";
+import { WorkspaceShell } from "./workspace-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -26,61 +29,29 @@ export default async function WorkspaceLayout({
   const { id } = await params;
   const { ctx, user, workspaces } = await requirePagePermission();
   if (!ctx || ctx.tenantId !== id) redirect("/workspaces?error=forbidden");
-  const [inbox, company] = await Promise.all([
+  const canReviewWfh = ctx.permissions.includes("correction.review");
+  const [inbox, company, wfhPending] = await Promise.all([
     listMyNotifications({ ctx, limit: 1 }),
     getCompanyProfile({ ctx, workspaceId: id }),
+    canReviewWfh
+      ? listWorkspaceWfh({ ctx, workspaceId: id, status: "PENDING" })
+      : Promise.resolve([]),
   ]);
   const workspaceName =
     workspaces.find((workspace) => workspace.id === id)?.name ?? "Workspace";
 
   return (
-    <div className="app-shell">
-      <WorkspaceSidebar
-        workspaceId={id}
-        workspaceName={workspaceName}
-        logoUrl={company.logoUrl}
-        permissions={ctx.permissions}
-        userEmail={user.email}
-      />
-      <div className="shell-main">
-        <header className="topbar">
-          <WorkspaceBreadcrumb workspaceId={id} />
-          <div className="topbar-meta">
-            <span className="date-pill">
-              <strong>Hari ini</strong>
-              {DATE_FORMAT.format(new Date())}
-            </span>
-            <Link
-              href={`/workspaces/${id}/notifications`}
-              aria-label={`Notifikasi, ${inbox.unreadCount} belum dibaca`}
-              className="icon-link"
-            >
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" />
-                <path d="M13.7 20a2 2 0 0 1-3.4 0" />
-              </svg>
-              {inbox.unreadCount > 0 ? (
-                <span className="badge-count" aria-hidden="true">
-                  {inbox.unreadCount}
-                </span>
-              ) : (
-                <span className="muted" style={{ fontWeight: 500 }}>
-                  Kotak masuk
-                </span>
-              )}
-            </Link>
-          </div>
-        </header>
-        {children}
-      </div>
-    </div>
+    <WorkspaceShell
+      workspaceId={id}
+      workspaceName={workspaceName}
+      logoUrl={company.logoUrl}
+      permissions={ctx.permissions}
+      userEmail={user.email}
+      unreadCount={inbox.unreadCount}
+      wfhPending={wfhPending.length}
+      todayLabel={DATE_FORMAT.format(new Date())}
+    >
+      {children}
+    </WorkspaceShell>
   );
 }

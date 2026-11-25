@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { getTodayDashboard } from "@absensi/auth";
+import { getTodayDashboard, listWorkspaceWfh } from "@absensi/auth";
 
 import { requirePagePermission } from "@/lib/page-auth";
 
@@ -58,6 +58,10 @@ export default async function DashboardPage({
     workspaceId: id,
     date: query.date?.trim() || undefined,
   });
+  const canReviewWfh = ctx.permissions.includes("correction.review");
+  const wfhPending = canReviewWfh
+    ? await listWorkspaceWfh({ ctx, workspaceId: id, status: "PENDING" })
+    : [];
 
   const timezone = dashboard.timezone ?? "UTC";
   const total = Math.max(1, dashboard.totalMembers);
@@ -69,6 +73,16 @@ export default async function DashboardPage({
     { label: "Absen", value: dashboard.absent, hint: "belum check-in", bar: pct(dashboard.absent), tone: "red" },
     { label: "Masih di kantor", value: dashboard.onSite, hint: "belum check-out", bar: pct(dashboard.onSite) },
     { label: "Revisi pending", value: dashboard.correctionsPending, hint: "menunggu review" },
+    ...(canReviewWfh
+      ? [
+          {
+            label: "WFH menunggu",
+            value: wfhPending.length,
+            hint: "pengajuan perlu review",
+            tone: "yellow" as const,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -110,6 +124,65 @@ export default async function DashboardPage({
           </article>
         ))}
       </section>
+
+      {canReviewWfh ? (
+        <section className="table-wrap" aria-label="Antrean persetujuan WFH">
+          <div className="table-head">
+            <div>
+              <h2 className="section-title">Antrean persetujuan</h2>
+              <p className="section-note">
+                {wfhPending.length} pengajuan WFH menunggu keputusan
+              </p>
+            </div>
+            <Link
+              href={`/workspaces/${id}/wfh`}
+              className="btn btn--secondary btn--sm"
+            >
+              Tinjau WFH
+            </Link>
+          </div>
+          <div className="table-scroll">
+            <table className="data">
+              <thead>
+                <tr>
+                  {["Karyawan", "Tanggal", "Alasan", "Status", "Aksi"].map((label) => (
+                    <th key={label}>{label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {wfhPending.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="empty">
+                      Tidak ada pengajuan WFH yang menunggu.
+                    </td>
+                  </tr>
+                ) : null}
+                {wfhPending.slice(0, 5).map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <span className="cell-title">{row.memberName}</span>
+                    </td>
+                    <td className="mono nowrap">{row.date}</td>
+                    <td style={{ maxWidth: "20rem" }}>{row.reason}</td>
+                    <td>
+                      <span className="badge badge--yellow">Menunggu</span>
+                    </td>
+                    <td className="nowrap">
+                      <Link
+                        href={`/workspaces/${id}/wfh`}
+                        className="btn btn--secondary btn--sm"
+                      >
+                        Tinjau
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       <section className="table-wrap">
         <div className="table-head">

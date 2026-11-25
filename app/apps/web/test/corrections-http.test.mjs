@@ -549,6 +549,19 @@ test("C-HTTP-9: reject wajib alasan dan audit tidak memuat isi alasan", async ()
   const invalidAction = await review(tenantA.ownerToken, pending.id, { action: "hapus" });
   assert.equal(invalidAction.response.status, 400);
   assert.equal(invalidAction.body.error.code, "INVALID_ACTION");
+
+  const correctionRow = await db.correctionRequest.findFirstOrThrow({
+    where: { id: pending.id },
+  });
+  const rejectedNote = await db.inAppNotification.findFirst({
+    where: {
+      tenantId: correctionRow.tenantId,
+      memberId: correctionRow.memberId,
+      type: "CORRECTION_REJECTED",
+    },
+  });
+  assert.ok(rejectedNote);
+  assert.equal(rejectedNote.body.includes(reason), true);
 });
 
 test("C-HTTP-10: review non-admin 403 dan cross-tenant 403 identik", async () => {

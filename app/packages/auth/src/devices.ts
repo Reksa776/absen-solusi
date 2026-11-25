@@ -407,15 +407,15 @@ export async function reviewMemberDevice(input: {
         memberId: device.memberId,
         type: approving ? "DEVICE_APPROVED" : rejectedPending ? "DEVICE_REJECTED" : "DEVICE_REVOKED",
         title: approving
-          ? "Perangkat disetujui"
+          ? `Perangkat ${device.deviceName} disetujui`
           : rejectedPending
-            ? "Perangkat ditolak"
-            : "Perangkat dicabut",
+            ? `Perangkat ${device.deviceName} ditolak`
+            : `Perangkat ${device.deviceName} dicabut`,
         body: approving
-          ? "Perangkat ini sekarang dapat digunakan untuk absensi."
+          ? `Perangkat ${device.deviceName} sekarang dapat digunakan untuk absensi.`
           : rejectedPending
-            ? "Perangkat baru ditolak. Hubungi Admin HR bila ini perangkat resmi Anda."
-            : "Perangkat tidak lagi diizinkan untuk absensi. Login dari perangkat baru untuk meminta persetujuan.",
+            ? `Permintaan perangkat ${device.deviceName} ditolak Admin/HR. Hubungi Admin HR bila ini perangkat resmi Anda.`
+            : `Perangkat ${device.deviceName} tidak lagi diizinkan untuk absensi. Login dari perangkat baru untuk meminta persetujuan.`,
         linkUrl: `/workspaces/${input.ctx.tenantId}/devices`,
       });
       await writeAudit(

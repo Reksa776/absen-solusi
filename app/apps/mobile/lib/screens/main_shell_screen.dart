@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../services/app_update_service.dart';
 import '../services/auth_service.dart';
+import '../services/live_sync.dart';
 import '../services/location_service.dart';
 import '../services/submission_notification_service.dart';
 import '../theme/app_theme.dart';
@@ -22,6 +23,7 @@ class MainShellScreen extends StatefulWidget {
     this.locationService,
     this.photoTaker,
     this.notificationService,
+    this.syncInterval = const Duration(seconds: 12),
   });
 
   final AuthService auth;
@@ -29,6 +31,9 @@ class MainShellScreen extends StatefulWidget {
   final LocationService? locationService;
   final PhotoTaker? photoTaker;
   final SubmissionNotificationService? notificationService;
+
+  /// Interval sinkronisasi diam-diam saat aplikasi di foreground.
+  final Duration syncInterval;
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
@@ -41,24 +46,48 @@ class _MainShellScreenState extends State<MainShellScreen>
       widget.notificationService ?? SubmissionNotificationService();
   int _index = 0;
   int _unread = 0;
+  Timer? _syncTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabs[0] = _buildTab(0);
-    _loadUnread();
+    _startAutoSync();
+    _syncNow();
   }
 
   @override
   void dispose() {
+    _syncTimer?.cancel();
+    _syncTimer = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_loadUnread());
+    if (state == AppLifecycleState.resumed) {
+      _startAutoSync();
+      _syncNow();
+    } else {
+      // Hemat baterai: hentikan timer saat aplikasi tidak terlihat.
+      _syncTimer?.cancel();
+      _syncTimer = null;
+    }
+  }
+
+  void _startAutoSync() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(widget.syncInterval, (_) => _syncNow());
+  }
+
+  /// Menyegarkan badge pesan, menampilkan notifikasi lokal baru, dan
+  /// memancarkan detak agar tab yang terbuka memuat ulang datanya diam-diam.
+  void _syncNow() {
+    if (!mounted) return;
+    LiveSync.instance.pulse();
+    unawaited(_loadUnread());
   }
 
   Future<void> _loadUnread() async {
@@ -104,6 +133,8 @@ class _MainShellScreenState extends State<MainShellScreen>
       _tabs[index] ??= _buildTab(index);
       _index = index;
     });
+    // Data tab tujuan langsung disegarkan tanpa menunggu timer berikutnya.
+    _syncNow();
   }
 
   @override

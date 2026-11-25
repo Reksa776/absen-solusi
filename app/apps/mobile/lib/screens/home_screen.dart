@@ -18,6 +18,7 @@ import '../models/warning_letter.dart';
 import '../services/app_update_service.dart';
 import '../services/attendance_reminder_service.dart';
 import '../services/auth_service.dart';
+import '../services/live_sync.dart';
 import '../services/location_service.dart';
 import '../services/offline_attendance_queue.dart';
 import '../services/push_service.dart';
@@ -147,20 +148,28 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     unawaited(_loadAvatar());
     unawaited(_loadCompanyLogo());
+    LiveSync.instance.addListener(_onLiveSync);
     _load();
   }
 
   @override
   void dispose() {
+    LiveSync.instance.removeListener(_onLiveSync);
     _offlineRetry?.cancel();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  void _onLiveSync() {
+    if (mounted && !_submitting) unawaited(_load(silent: true));
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final results = await Future.wait([
         widget.auth.api.activeOffices(),

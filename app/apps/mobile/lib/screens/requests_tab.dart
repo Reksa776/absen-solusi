@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
@@ -8,6 +10,7 @@ import '../models/leave.dart';
 import '../models/overtime_schedule.dart';
 import '../models/work_permit.dart';
 import '../services/auth_service.dart';
+import '../services/live_sync.dart';
 import '../theme/app_theme.dart';
 import 'client_visits_screen.dart';
 import 'correction_form_screen.dart';
@@ -76,14 +79,27 @@ class _RequestsTabState extends State<RequestsTab> {
   void initState() {
     super.initState();
     _segment = widget.initialSegment;
+    LiveSync.instance.addListener(_onLiveSync);
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    LiveSync.instance.removeListener(_onLiveSync);
+    super.dispose();
+  }
+
+  void _onLiveSync() {
+    if (mounted) unawaited(_load(silent: true));
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final results = await Future.wait([
         widget.auth.api.myCorrections(),

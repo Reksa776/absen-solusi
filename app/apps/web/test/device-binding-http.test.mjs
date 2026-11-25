@@ -294,6 +294,16 @@ test("DEV-3: perangkat pending ditolak menjadi REVOKED dan check-in 403", { time
     },
   });
   assert.ok(audit);
+
+  const notification = await db.inAppNotification.findFirst({
+    where: {
+      tenantId: tenantA.tenantId,
+      memberId: employeeThree.memberId,
+      type: "DEVICE_REJECTED",
+    },
+  });
+  assert.ok(notification);
+  assert.match(notification.title, /ditolak/);
 });
 
 test("DEV-4: reset karyawan mencabut semua perangkat aktif", { timeout: 90_000 }, async () => {

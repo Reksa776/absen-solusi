@@ -44,13 +44,7 @@ class SubmissionNotificationService {
       final page = await api.myNotifications(limit: 20);
       if (page.notifications.isEmpty) return page;
       final revisions = page.notifications
-          .where(
-            (item) =>
-                !item.isRead &&
-                (item.type.contains('CORRECTION') ||
-                    item.type.contains('ATTENDANCE_APPROVED') ||
-                    item.type.contains('ATTENDANCE_REJECTED')),
-          )
+          .where((item) => !item.isRead && _isApprovalResult(item.type))
           .toList(growable: false);
       final newest = page.notifications.first.createdAt;
       final lastSeenRaw = await _storage.read(key: _lastSeenKey);
@@ -82,6 +76,21 @@ class SubmissionNotificationService {
       debugPrint('Sinkronisasi notifikasi submisi gagal: $error');
       return null;
     }
+  }
+
+  /// Hasil persetujuan dari seluruh fitur pengajuan, bukan hanya revisi.
+  bool _isApprovalResult(String type) {
+    final value = type.toUpperCase();
+    if (!value.endsWith('APPROVED') && !value.endsWith('REJECTED')) {
+      return false;
+    }
+    return value.contains('CORRECTION') ||
+        value.contains('WFH') ||
+        value.contains('OVERTIME') ||
+        value.contains('LEAVE') ||
+        value.contains('PERMIT') ||
+        value.contains('DEVICE') ||
+        value.contains('ATTENDANCE');
   }
 
   Future<void> _show(InAppNotification item) async {

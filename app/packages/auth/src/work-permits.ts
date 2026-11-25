@@ -493,6 +493,10 @@ export async function reviewWorkPermit(input: {
         },
         include: INCLUDE,
       });
+      const permitStart = existing.startDate.toISOString().slice(0, 10);
+      const permitEnd = existing.endDate.toISOString().slice(0, 10);
+      const permitDate =
+        permitStart === permitEnd ? permitStart : `${permitStart} s.d. ${permitEnd}`;
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: existing.memberId,
@@ -504,16 +508,16 @@ export async function reviewWorkPermit(input: {
               : "PERMIT_APPROVED",
         title:
           status === "PENDING"
-            ? "Izin kerja menunggu level berikutnya"
+            ? `Izin ${permitDate} menunggu level berikutnya`
             : action === "REJECT"
-              ? "Izin kerja ditolak"
-              : "Izin kerja disetujui",
+              ? `Izin ${permitDate} ditolak`
+              : `Izin ${permitDate} disetujui`,
         body:
           status === "PENDING"
-            ? "Pengajuan izin Anda sudah disetujui pada level ini dan diteruskan ke approver berikutnya."
+            ? `Pengajuan izin tanggal ${permitDate} disetujui pada level ini dan diteruskan ke approver berikutnya.`
             : action === "REJECT"
-              ? "Buka riwayat izin untuk melihat alasan penolakan."
-              : "Pengajuan izin kerja Anda sudah disetujui penuh.",
+              ? `Pengajuan izin tanggal ${permitDate} ditolak. Catatan admin: ${rejectionReason}`
+              : `Pengajuan izin kerja tanggal ${permitDate} disetujui penuh.`,
         linkUrl: `/workspaces/${input.ctx.tenantId}/permits`,
       });
       await writeAudit(

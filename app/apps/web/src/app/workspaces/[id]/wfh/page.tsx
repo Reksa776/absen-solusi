@@ -2,58 +2,69 @@ import { redirect } from "next/navigation";
 
 import { listWorkspaceWfh } from "@absensi/auth";
 
-import { RequestReview } from "@/components/request-review";
 import { requirePagePermission } from "@/lib/page-auth";
+import { WfhReview } from "./wfh-review";
 
 export const dynamic = "force-dynamic";
 
-const FILTERS = ["PENDING", "APPROVED", "REJECTED", "ALL"] as const;
-
 export default async function WfhPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ status?: string }>;
 }) {
   const { id } = await params;
-  const query = await searchParams;
   const { ctx } = await requirePagePermission("correction.review");
   if (!ctx || ctx.tenantId !== id) redirect("/workspaces?error=forbidden");
-  const requested = (query.status ?? "PENDING").toUpperCase();
-  const status = (FILTERS as readonly string[]).includes(requested) ? requested : "PENDING";
-  const rows = await listWorkspaceWfh({
-    ctx,
-    workspaceId: id,
-    status: status === "ALL" ? undefined : status,
-  });
+  const rows = await listWorkspaceWfh({ ctx, workspaceId: id });
+  const pending = rows.filter((row) => row.status === "PENDING").length;
+  const approved = rows.filter((row) => row.status === "APPROVED").length;
+  const rejected = rows.filter((row) => row.status === "REJECTED").length;
 
   return (
     <main className="page">
       <div className="page-head">
         <div>
-          <p className="eyebrow">Approval</p>
-          <h1 className="page-title">Antrian approval WFH</h1>
-          <p className="page-subtitle">{rows.length} pengajuan pada filter ini</p>
+          <p className="eyebrow">Kehadiran</p>
+          <h1 className="page-title">Pengajuan WFH</h1>
+          <p className="page-subtitle">
+            Setujui atau tolak pengajuan kerja dari rumah. Keputusan langsung
+            mengirim notifikasi ke karyawan.
+          </p>
         </div>
       </div>
 
-      <form method="get" className="toolbar">
-        <label className="field" style={{ minWidth: "11rem" }}>
-          Status
-          <select name="status" defaultValue={status}>
-            <option value="PENDING">Menunggu</option>
-            <option value="APPROVED">Disetujui</option>
-            <option value="REJECTED">Ditolak</option>
-            <option value="ALL">Semua</option>
-          </select>
-        </label>
-        <button type="submit" className="btn btn--primary">
-          Filter
-        </button>
-      </form>
+      <section className="kpi-grid" aria-label="Ringkasan pengajuan WFH">
+        <article className="kpi">
+          <div className="kpi-label">Menunggu</div>
+          <div className="kpi-value">{pending}</div>
+          <div className="kpi-bar kpi-bar--yellow" aria-hidden="true">
+            <span style={{ width: pending > 0 ? "100%" : "0%" }} />
+          </div>
+          <div className="kpi-foot">butuh keputusan admin</div>
+        </article>
+        <article className="kpi">
+          <div className="kpi-label">Disetujui</div>
+          <div className="kpi-value">{approved}</div>
+          <div className="kpi-bar" aria-hidden="true">
+            <span style={{ width: approved > 0 ? "100%" : "0%" }} />
+          </div>
+          <div className="kpi-foot">bebas geofence pada tanggalnya</div>
+        </article>
+        <article className="kpi">
+          <div className="kpi-label">Ditolak</div>
+          <div className="kpi-value">{rejected}</div>
+          <div className="kpi-bar kpi-bar--red" aria-hidden="true">
+            <span style={{ width: rejected > 0 ? "100%" : "0%" }} />
+          </div>
+          <div className="kpi-foot">karyawan menerima catatan admin</div>
+        </article>
+      </section>
 
-      <RequestReview kind="wfh" rows={rows} canReview={ctx.permissions.includes("correction.review")} />
+      <WfhReview
+        workspaceId={id}
+        rows={rows}
+        canReview={ctx.permissions.includes("correction.review")}
+      />
     </main>
   );
 }

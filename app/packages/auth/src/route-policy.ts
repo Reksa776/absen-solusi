@@ -231,6 +231,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "correction.review",
   },
+  "/api/workspaces/:id/wfh/:requestId/review": {
+    kind: "permission",
+    permission: "correction.review",
+  },
   "/api/permits": { kind: "permission", permission: "workspace.read" },
   "/api/permits/me": { kind: "permission", permission: "workspace.read" },
   "/api/permits/:id": { kind: "permission", permission: "correction.review" },

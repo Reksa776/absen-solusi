@@ -40,6 +40,7 @@ const NAV_ENTRIES: readonly NavEntry[] = [
         label: "Persetujuan Presensi",
         permission: "correction.review",
       },
+      { slug: "wfh", label: "Pengajuan WFH", permission: "correction.review" },
       { slug: "devices", label: "Persetujuan Perangkat", permission: "member.read" },
       {
         slug: "profile-photos",
@@ -219,12 +220,18 @@ export function WorkspaceSidebar({
   logoUrl,
   permissions,
   userEmail,
+  wfhPending = 0,
+  open = false,
+  onClose,
 }: {
   workspaceId: string;
   workspaceName: string;
-  logoUrl?: string | null;
+  logoUrl?: string | null | undefined;
   permissions: readonly string[];
   userEmail: string;
+  wfhPending?: number;
+  open?: boolean;
+  onClose?: () => void;
 }) {
   const pathname = usePathname();
   const base = `/workspaces/${workspaceId}`;
@@ -272,7 +279,10 @@ export function WorkspaceSidebar({
   }
 
   return (
-    <aside className="sidebar">
+    <aside
+      className={`sidebar${open ? " sidebar--open" : ""}`}
+      id="workspace-sidebar"
+    >
       <div className="brand">
         {logoUrl ? (
           <img className="brand-logo" src={logoUrl} alt={`Logo ${workspaceName}`} />
@@ -287,6 +297,23 @@ export function WorkspaceSidebar({
             {workspaceName}
           </div>
         </div>
+        <button
+          type="button"
+          className="sidebar-close"
+          aria-label="Tutup menu navigasi"
+          onClick={onClose}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          >
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
       </div>
 
       <nav aria-label="Navigasi workspace">
@@ -342,6 +369,14 @@ export function WorkspaceSidebar({
                             className="nav-link"
                           >
                             <span>{item.label}</span>
+                            {item.slug === "wfh" && wfhPending > 0 ? (
+                              <span
+                                className="nav-badge"
+                                aria-label={`${wfhPending} pengajuan menunggu`}
+                              >
+                                {wfhPending}
+                              </span>
+                            ) : null}
                             {activeHref === href ? (
                               <span className="nav-dot" aria-hidden="true" />
                             ) : null}

@@ -268,6 +268,7 @@ export async function reviewOvertime(input: {
         },
         include: { member: { include: { user: { select: { name: true } } } } },
       });
+      const overtimeDate = existing.date.toISOString().slice(0, 10);
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: existing.memberId,
@@ -280,15 +281,15 @@ export async function reviewOvertime(input: {
         title:
           action === "APPROVE"
             ? intermediate
-              ? "Lembur menunggu level berikutnya"
-              : "Lembur disetujui"
-            : "Lembur ditolak",
+              ? `Lembur ${overtimeDate} menunggu level berikutnya`
+              : `Lembur ${overtimeDate} disetujui`
+            : `Lembur ${overtimeDate} ditolak`,
         body:
           action === "APPROVE"
             ? intermediate
-              ? "Pengajuan lembur Anda diteruskan ke approver berikutnya."
-              : "Pengajuan lembur Anda sudah disetujui."
-            : "Pengajuan lembur Anda ditolak. Buka detail untuk alasannya.",
+              ? `Pengajuan lembur tanggal ${overtimeDate} diteruskan ke approver berikutnya.`
+              : `Pengajuan lembur tanggal ${overtimeDate} (${existing.startTime}-${existing.endTime}) disetujui.`
+            : `Pengajuan lembur tanggal ${overtimeDate} ditolak. Catatan admin: ${rejectionReason}`,
         linkUrl: `/workspaces/${input.ctx.tenantId}/overtime`,
       });
 

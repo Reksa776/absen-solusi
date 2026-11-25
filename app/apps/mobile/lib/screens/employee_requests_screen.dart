@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
 import '../models/employee_request.dart';
 import '../services/auth_service.dart';
+import '../services/live_sync.dart';
 import '../theme/app_theme.dart';
 
 /// Form dan riwayat lembur/WFH untuk karyawan. Kedua pengajuan memakai
@@ -60,11 +63,13 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     _wfhDate = DateUtils.dateOnly(_now.add(const Duration(days: 1)));
     _overtimeStart.addListener(_refreshDuration);
     _overtimeEnd.addListener(_refreshDuration);
+    LiveSync.instance.addListener(_onLiveSync);
     _load();
   }
 
   @override
   void dispose() {
+    LiveSync.instance.removeListener(_onLiveSync);
     _overtimeStart.removeListener(_refreshDuration);
     _overtimeEnd.removeListener(_refreshDuration);
     _overtimeStart.dispose();
@@ -78,11 +83,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  void _onLiveSync() {
+    if (mounted && !_busy) unawaited(_load(silent: true));
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final results = await Future.wait([
         widget.auth.api.myOvertime(),

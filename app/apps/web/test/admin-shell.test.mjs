@@ -40,14 +40,35 @@ test("B7 UI: audit viewer read-only memakai audit.read dan filter tenant", () =>
 test("P5 UI: layout workspace punya sidebar permission-aware dan breadcrumb", () => {
   const layout = read("workspaces/[id]/layout.tsx");
   const sidebar = read("workspaces/[id]/workspace-sidebar.tsx");
+  const shell = read("workspaces/[id]/workspace-shell.tsx");
   assert.match(layout, /requirePagePermission\(\)/);
   assert.match(layout, /ctx\.tenantId !== id/);
-  assert.match(layout, /WorkspaceSidebar/);
+  assert.match(layout, /WorkspaceShell/);
+  assert.match(layout, /listWorkspaceWfh/);
   assert.match(sidebar, /permissions\.includes\(item\.permission\)/);
   assert.match(sidebar, /usePathname/);
   assert.match(sidebar, /settings\/holidays/);
+  assert.match(sidebar, /slug: "wfh"/);
+  assert.match(sidebar, /nav-badge/);
   assert.match(sidebar, /aria-label="Breadcrumb"/);
   assert.match(sidebar, /aria-current/);
+  assert.match(shell, /menu-toggle/);
+  assert.match(shell, /open={open}/);
+  assert.match(shell, /sidebar-backdrop/);
+  assert.match(sidebar, /sidebar--open/);
+});
+
+test("WFH UI: antrean admin memakai KPI, filter, dan endpoint review workspace", () => {
+  const page = read("workspaces/[id]/wfh/page.tsx");
+  const review = read("workspaces/[id]/wfh/wfh-review.tsx");
+  assert.match(page, /requirePagePermission\("correction\.review"\)/);
+  assert.match(page, /listWorkspaceWfh/);
+  assert.match(page, /kpi-grid/);
+  assert.match(review, /\/api\/workspaces\/\$\{workspaceId\}\/wfh\/\$\{row\.id\}\/review/);
+  assert.match(review, /rejectionReason/);
+  assert.match(review, /Setujui/);
+  assert.match(review, /Tolak/);
+  assert.match(review, /router\.refresh\(\)/);
 });
 
 test("P5 UI: statistik keterlambatan memakai bar CSS tanpa dependency chart", () => {

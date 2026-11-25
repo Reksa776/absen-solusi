@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:absensi_mobile/api/api_client.dart';
 import 'package:absensi_mobile/screens/main_shell_screen.dart';
 import 'package:absensi_mobile/services/auth_service.dart';
+import 'package:absensi_mobile/services/live_sync.dart';
 import 'package:absensi_mobile/services/token_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -76,13 +77,14 @@ Map<String, dynamic> scheduleJson() => {
   'holidays': [],
 };
 
-Future<AuthService> buildAuth() async {
+Future<AuthService> buildAuth({void Function(String path)? onRequest}) async {
   final auth = AuthService(
     api: ApiClient(
       baseUrl: 'https://absensi.test',
       tokenStore: MemoryTokenStore(),
       client: MockClient((request) async {
         final path = request.url.path;
+        onRequest?.call(path);
         if (path == '/api/auth/login') {
           return http.Response(jsonEncode(sessionJson()), 200);
         }
@@ -277,5 +279,64 @@ void main() {
     await settle(tester);
 
     expect(auth.isAuthenticated, isFalse);
+  });
+
+  testWidgets('timer 12 detik menyegarkan data tanpa aksi pengguna', (
+    tester,
+  ) async {
+    LiveSync.instance.reset();
+    final calls = <String>[];
+    final auth = await buildAuth(onRequest: calls.add);
+    await tester.pumpWidget(shell(auth));
+    await settle(tester);
+
+    final before = calls.where((path) => path == '/api/attendance/me').length;
+    await tester.pump(const Duration(seconds: 12));
+    await settle(tester);
+
+    expect(
+      calls.where((path) => path == '/api/attendance/me').length,
+      greaterThan(before),
+    );
+    expect(LiveSync.instance.tick, greaterThan(0));
+  });
+
+  testWidgets('pindah tab memicu sinkronisasi langsung', (tester) async {
+    LiveSync.instance.reset();
+    final auth = await buildAuth();
+    await tester.pumpWidget(shell(auth));
+    await settle(tester);
+
+    final before = LiveSync.instance.tick;
+    await tester.tap(find.byKey(const Key('nav-jadwal')));
+    await settle(tester);
+
+    expect(LiveSync.instance.tick, greaterThan(before));
+    expect(find.byKey(const Key('schedule-today')), findsOneWidget);
+  });
+
+  testWidgets('timer berhenti saat aplikasi di background dan saat dispose', (
+    tester,
+  ) async {
+    LiveSync.instance.reset();
+    final auth = await buildAuth();
+    await tester.pumpWidget(shell(auth));
+    await settle(tester);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    final paused = LiveSync.instance.tick;
+    await tester.pump(const Duration(seconds: 30));
+    expect(LiveSync.instance.tick, paused);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await settle(tester);
+    expect(LiveSync.instance.tick, greaterThan(paused));
+
+    final resumed = LiveSync.instance.tick;
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 30));
+    expect(LiveSync.instance.tick, resumed);
   });
 }

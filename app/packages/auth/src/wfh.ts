@@ -15,6 +15,8 @@ export type WfhSummary = {
   id: string;
   memberId: string;
   memberName: string;
+  memberDivision: string | null;
+  memberPosition: string | null;
   date: string;
   reason: string;
   status: string;
@@ -38,12 +40,18 @@ function toSummary(row: {
   reviewedAt: Date | null;
   rejectionReason: string | null;
   createdAt: Date;
-  member: { user: { name: string } };
+  member: {
+    user: { name: string };
+    division: { name: string } | null;
+    position: { name: string } | null;
+  };
 }): WfhSummary {
   return {
     id: row.id,
     memberId: row.memberId,
     memberName: row.member.user.name,
+    memberDivision: row.member.division?.name ?? null,
+    memberPosition: row.member.position?.name ?? null,
     date: row.date.toISOString().slice(0, 10),
     reason: row.reason,
     status: row.status,
@@ -98,7 +106,15 @@ export async function submitWfh(input: {
           date,
           reason,
         },
-        include: { member: { include: { user: { select: { name: true } } } } },
+        include: {
+          member: {
+            include: {
+              user: { select: { name: true } },
+              division: { select: { name: true } },
+              position: { select: { name: true } },
+            },
+          },
+        },
       });
       await writeAudit(
         {
@@ -129,7 +145,15 @@ export async function listMyWfh(input: {
   const rows = await withTenant(input.ctx, (db) =>
     db.wfhRequest.findMany({
       where: { memberId: input.ctx.memberId, ...(status ? { status } : {}) },
-      include: { member: { include: { user: { select: { name: true } } } } },
+      include: {
+        member: {
+          include: {
+            user: { select: { name: true } },
+            division: { select: { name: true } },
+            position: { select: { name: true } },
+          },
+        },
+      },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     }),
   );
@@ -154,7 +178,15 @@ export async function listWorkspaceWfh(input: {
         ...(status ? { status } : {}),
         ...(input.memberId ? { memberId: input.memberId } : {}),
       },
-      include: { member: { include: { user: { select: { name: true } } } } },
+      include: {
+        member: {
+          include: {
+            user: { select: { name: true } },
+            division: { select: { name: true } },
+            position: { select: { name: true } },
+          },
+        },
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: 100,
     }),
@@ -189,7 +221,15 @@ export async function reviewWfh(input: {
     db.$transaction(async (tx) => {
       const existing = await tx.wfhRequest.findFirst({
         where: { id: input.wfhId },
-        include: { member: { include: { user: { select: { name: true } } } } },
+        include: {
+          member: {
+            include: {
+              user: { select: { name: true } },
+              division: { select: { name: true } },
+              position: { select: { name: true } },
+            },
+          },
+        },
       });
       if (!existing) {
         throw new HttpError(404, "WFH_NOT_FOUND", "Pengajuan WFH tidak ditemukan");
@@ -205,17 +245,29 @@ export async function reviewWfh(input: {
           reviewedAt: input.now ?? new Date(),
           rejectionReason: action === "REJECT" ? rejectionReason : null,
         },
-        include: { member: { include: { user: { select: { name: true } } } } },
+        include: {
+          member: {
+            include: {
+              user: { select: { name: true } },
+              division: { select: { name: true } },
+              position: { select: { name: true } },
+            },
+          },
+        },
       });
+      const dateLabel = existing.date.toISOString().slice(0, 10);
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: existing.memberId,
         type: action === "APPROVE" ? "WFH_APPROVED" : "WFH_REJECTED",
-        title: action === "APPROVE" ? "WFH disetujui" : "WFH ditolak",
+        title:
+          action === "APPROVE"
+            ? `WFH ${dateLabel} disetujui`
+            : `WFH ${dateLabel} ditolak`,
         body:
           action === "APPROVE"
-            ? "Pengajuan WFH Anda sudah disetujui."
-            : "Pengajuan WFH Anda ditolak. Buka detail untuk alasannya.",
+            ? `Pengajuan WFH tanggal ${dateLabel} disetujui. Absensi pada tanggal tersebut tidak terkena geofence.`
+            : `Pengajuan WFH tanggal ${dateLabel} ditolak. Catatan admin: ${rejectionReason}`,
         linkUrl: `/workspaces/${input.ctx.tenantId}/wfh`,
       });
 

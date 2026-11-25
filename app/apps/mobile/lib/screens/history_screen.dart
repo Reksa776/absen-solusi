@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../api/api_client.dart';
 import '../models/attendance_log.dart';
 import '../models/correction.dart';
 import '../services/auth_service.dart';
+import '../services/live_sync.dart';
 import '../theme/app_theme.dart';
 import 'activity_detail_screen.dart';
 import 'correction_form_screen.dart';
@@ -49,7 +52,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
+    LiveSync.instance.addListener(_onLiveSync);
     _load();
+  }
+
+  @override
+  void dispose() {
+    LiveSync.instance.removeListener(_onLiveSync);
+    super.dispose();
+  }
+
+  void _onLiveSync() {
+    if (mounted) unawaited(_load(silent: true));
   }
 
   (DateTime, DateTime) _range() {
@@ -64,11 +78,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return (start, start.add(const Duration(days: 6)));
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final (from, to) = _range();
       final rows = await widget.auth.api.attendanceHistory(

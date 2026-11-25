@@ -863,6 +863,10 @@ export async function reviewLeaveRequest(input: {
         },
         include: INCLUDE,
       });
+      const leaveStart = existing.startDate.toISOString().slice(0, 10);
+      const leaveEnd = existing.endDate.toISOString().slice(0, 10);
+      const leaveDate =
+        leaveStart === leaveEnd ? leaveStart : `${leaveStart} s.d. ${leaveEnd}`;
       await createInAppNotification(tx, {
         tenantId: input.ctx.tenantId,
         memberId: existing.memberId,
@@ -874,16 +878,16 @@ export async function reviewLeaveRequest(input: {
               : "LEAVE_APPROVED",
         title:
           status === "PENDING"
-            ? "Cuti menunggu level berikutnya"
+            ? `Cuti ${leaveDate} menunggu level berikutnya`
             : action === "REJECT"
-              ? "Pengajuan cuti ditolak"
-              : "Pengajuan cuti disetujui",
+              ? `Cuti ${leaveDate} ditolak`
+              : `Cuti ${leaveDate} disetujui`,
         body:
           status === "PENDING"
-            ? "Pengajuan cuti Anda sudah disetujui pada level ini dan diteruskan ke approver berikutnya."
+            ? `Pengajuan cuti tanggal ${leaveDate} disetujui pada level ini dan diteruskan ke approver berikutnya.`
             : action === "REJECT"
-              ? "Buka riwayat cuti untuk melihat alasan penolakan."
-              : "Pengajuan cuti Anda sudah disetujui penuh.",
+              ? `Pengajuan cuti tanggal ${leaveDate} ditolak. Catatan admin: ${rejectionReason}`
+              : `Pengajuan cuti tanggal ${leaveDate} disetujui penuh.`,
         linkUrl: `/workspaces/${input.ctx.tenantId}/leave`,
       });
       await writeAudit(

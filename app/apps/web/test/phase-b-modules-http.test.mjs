@@ -197,6 +197,33 @@ test("B-1: izin kerja dengan bukti, approval, proof privat, RBAC, dan audit", as
     },
   });
   assert.ok(notification);
+  assert.match(notification.body, /2026-12-10/);
+
+  const rejectedPermit = await submitPermit({
+    permitType: "SAKIT",
+    startDate: "2026-12-15",
+    endDate: "2026-12-15",
+    reason: "Kontrol kesehatan lanjutan di rumah sakit",
+  });
+  assert.equal(rejectedPermit.response.status, 201);
+  const permitReason = "Surat keterangan belum ditandatangani dokter";
+  const permitRejected = await send(
+    `/api/permits/${rejectedPermit.body.id}`,
+    tenantA.ownerToken,
+    "PATCH",
+    { action: "REJECT", rejectionReason: permitReason },
+  );
+  assert.equal(permitRejected.response.status, 200, JSON.stringify(permitRejected.body));
+  assert.equal(permitRejected.body.status, "REJECTED");
+  const rejectedNote = await db.inAppNotification.findFirst({
+    where: {
+      tenantId: tenantA.tenantId,
+      memberId: employee.memberId,
+      type: "PERMIT_REJECTED",
+    },
+  });
+  assert.ok(rejectedNote);
+  assert.equal(rejectedNote.body.includes(permitReason), true);
 });
 
 test("B-2: cuti menghitung hari kerja, menyetujui berjenjang, dan memotong saldo", async () => {
@@ -288,6 +315,33 @@ test("B-2: cuti menghitung hari kerja, menyetujui berjenjang, dan memotong saldo
   const afterApproval = await send("/api/leave/balance?year=2026", employee.token);
   assert.equal(afterApproval.body.usedDays, 4);
   assert.equal(afterApproval.body.remainingDays, 8);
+
+  const rejectedLeave = await send("/api/leave", employee.token, "POST", {
+    leaveType: "CUTI_KHUSUS",
+    startDate: "2026-12-28",
+    endDate: "2026-12-29",
+    reason: "Urusan keluarga yang tidak dapat diwakilkan",
+  });
+  assert.equal(rejectedLeave.response.status, 201, JSON.stringify(rejectedLeave.body));
+  const leaveReason = "Beban kerja akhir tahun belum memungkinkan cuti";
+  const leaveRejected = await send(
+    `/api/leave/${rejectedLeave.body.id}`,
+    tenantA.ownerToken,
+    "PATCH",
+    { action: "REJECT", rejectionReason: leaveReason },
+  );
+  assert.equal(leaveRejected.response.status, 200, JSON.stringify(leaveRejected.body));
+  assert.equal(leaveRejected.body.status, "REJECTED");
+  const leaveNote = await db.inAppNotification.findFirst({
+    where: {
+      tenantId: tenantA.tenantId,
+      memberId: employee.memberId,
+      type: "LEAVE_REJECTED",
+    },
+  });
+  assert.ok(leaveNote);
+  assert.equal(leaveNote.body.includes(leaveReason), true);
+  assert.match(leaveNote.body, /2026-12-28/);
 
   const balance = await db.memberLeaveBalance.findFirstOrThrow({
     where: {
