@@ -7,7 +7,7 @@ import 'package:absensi_mobile/services/auth_service.dart';
 import 'package:absensi_mobile/services/background_sync_platform.dart';
 import 'package:absensi_mobile/services/background_sync_service.dart';
 import 'package:absensi_mobile/services/token_store.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -56,15 +56,6 @@ String inboxBody(List<InAppNotification> items, {int unreadCount = 0}) {
   });
 }
 
-class RecordingAlertNotifier implements AlertNotifier {
-  final List<InAppNotification> shown = <InAppNotification>[];
-
-  @override
-  Future<void> show(InAppNotification item) async {
-    shown.add(item);
-  }
-}
-
 ApiClient buildApi(
   MemoryTokenStore store, {
   void Function(http.Request request)? onRequest,
@@ -94,18 +85,17 @@ ApiClient buildApi(
 }
 
 void main() {
-  test('login menyimpan token & baseUrl ke SharedPreferences latar dan '
-      'logout menghapusnya', () async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('login menyinkronkan token & baseUrl ke native, lalu logout '
+      'menghentikan service dan menghapus kredensial', () async {
     final store = MemoryTokenStore();
     final platform = MemoryBackgroundSyncPlatform();
-    final notifier = RecordingAlertNotifier();
     final controller = BackgroundSyncController(
       platform: platform,
-      notifier: notifier,
       clientFactory: () => MockClient(
         (_) async => http.Response(inboxBody(const []), 200),
       ),
-      interval: const Duration(minutes: 5),
     );
     final auth = AuthService(api: buildApi(store), backgroundSync: controller);
 
@@ -113,27 +103,85 @@ void main() {
     expect(platform.token, 'token-abc');
     expect(platform.baseUrl, baseUrl);
     expect(platform.serviceRunning, isTrue);
-    expect(controller.isPolling, isTrue);
+    expect(platform.startCount, 1);
+    expect(controller.isRunning, isTrue);
 
     await auth.logout();
     expect(platform.token, isNull);
     expect(platform.baseUrl, isNull);
     expect(platform.serviceRunning, isFalse);
-    expect(controller.isPolling, isFalse);
+    expect(platform.stopCount, 1);
+    expect(platform.seenIds, isEmpty);
+    expect(controller.isRunning, isFalse);
   });
 
-  test('pemulihan sesi saat startup ikut menyinkronkan kredensial latar',
-      () async {
-    final store = MemoryTokenStore();
-    await store.write('token-restore');
+  test('Dart tidak lagi memutar loop polling; hanya satu request penandaan '
+      'notifikasi lama saat login', () async {
+    final platform = MemoryBackgroundSyncPlatform();
+    final requests = <http.Request>[];
+    final controller = BackgroundSyncController(
+      platform: platform,
+      clientFactory: () => MockClient((request) async {
+        requests.add(request);
+        return http.Response(inboxBody(const []), 200);
+      }),
+    );
+    final auth = AuthService(
+      api: buildApi(MemoryTokenStore()),
+      backgroundSync: controller,
+    );
+
+    expect(await auth.login('a@example.com', 'rahasia'), isTrue);
+    expect(requests.map((request) => request.url.path), ['/api/notifications/me']);
+    expect(requests.single.headers['authorization'], 'Bearer token-abc');
+
+    // Sebelumnya Timer.periodic 10 detik mengulang request tiap 10 detik.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    expect(requests, hasLength(1));
+  });
+
+  test('notifikasi yang sudah ada sebelum login ditandai sudah dilihat agar '
+      'tidak berbunyi sebagai alert baru', () async {
     final platform = MemoryBackgroundSyncPlatform();
     final controller = BackgroundSyncController(
       platform: platform,
-      notifier: RecordingAlertNotifier(),
       clientFactory: () => MockClient(
-        (_) async => http.Response(inboxBody(const []), 200),
+        (_) async => http.Response(
+          inboxBody([
+            notification('notif-lama-1'),
+            notification('notif-lama-2'),
+          ]),
+          200,
+        ),
       ),
-      interval: const Duration(minutes: 5),
+    );
+    final auth = AuthService(
+      api: buildApi(MemoryTokenStore()),
+      backgroundSync: controller,
+    );
+
+    expect(await auth.login('a@example.com', 'rahasia'), isTrue);
+    expect(platform.seenIds, ['notif-lama-1', 'notif-lama-2']);
+    expect(platform.token, 'token-abc');
+    expect(platform.serviceRunning, isTrue);
+
+    await auth.logout();
+    expect(platform.seenIds, isEmpty);
+  });
+
+  test('ID yang sudah tercatat dari native tidak ditimpa saat sesi dipulihkan',
+      () async {
+    final store = MemoryTokenStore();
+    await store.write('token-restore');
+    final platform = MemoryBackgroundSyncPlatform()
+      ..seenIds = ['notif-lama-1'];
+    var requests = 0;
+    final controller = BackgroundSyncController(
+      platform: platform,
+      clientFactory: () => MockClient((_) async {
+        requests++;
+        return http.Response(inboxBody([notification('notif-lama-2')]), 200);
+      }),
     );
     final auth = AuthService(api: buildApi(store), backgroundSync: controller);
 
@@ -141,126 +189,116 @@ void main() {
     expect(platform.token, 'token-restore');
     expect(platform.baseUrl, baseUrl);
     expect(platform.serviceRunning, isTrue);
+    expect(requests, 0);
+    expect(platform.seenIds, ['notif-lama-1']);
 
     await auth.logout();
     expect(platform.token, isNull);
     expect(platform.serviceRunning, isFalse);
   });
 
-  test('poller memanggil GET /api/notifications/me, memunculkan alert baru, '
-      'dan mendeduplikasi ID', () async {
-    final platform = MemoryBackgroundSyncPlatform()..seenIds = ['notif-0'];
-    final notifier = RecordingAlertNotifier();
-    final requests = <http.Request>[];
-    final poller = BackgroundAlertPoller(
-      client: MockClient((request) async {
-        requests.add(request);
-        return http.Response(
-          inboxBody([
-            notification('notif-0'),
-            notification('notif-1'),
-            notification('notif-2'),
-          ], unreadCount: 3),
-          200,
-        );
-      }),
+  test('penandaan notifikasi lama mempertahankan ID terbaru saja', () async {
+    final platform = MemoryBackgroundSyncPlatform();
+    final controller = BackgroundSyncController(
       platform: platform,
-      notifier: notifier,
-      baseUrl: baseUrl,
-      token: 'token-abc',
+      maxSeenIds: 2,
+      clientFactory: () => MockClient(
+        (_) async => http.Response(
+          inboxBody([
+            notification('baru-1'),
+            notification('baru-2'),
+            notification('baru-3'),
+          ]),
+          200,
+        ),
+      ),
+    );
+    final auth = AuthService(
+      api: buildApi(MemoryTokenStore()),
+      backgroundSync: controller,
     );
 
-    final fresh = await poller.tick();
+    expect(await auth.login('a@example.com', 'rahasia'), isTrue);
+    expect(platform.seenIds, ['baru-1', 'baru-2']);
 
-    expect(requests, hasLength(1));
-    expect(requests.single.method, 'GET');
-    expect(requests.single.url.path, '/api/notifications/me');
-    expect(requests.single.headers['authorization'], 'Bearer token-abc');
-    expect(fresh.map((item) => item.id), ['notif-1', 'notif-2']);
-    expect(notifier.shown.map((item) => item.id), ['notif-1', 'notif-2']);
-    expect(platform.seenIds, containsAll(['notif-0', 'notif-1', 'notif-2']));
-
-    await poller.tick();
-    expect(requests, hasLength(2));
-    expect(notifier.shown.map((item) => item.id), ['notif-1', 'notif-2']);
-    expect(poller.alertCount, 2);
+    await auth.logout();
   });
 
-  test('poller tidak menampilkan apa pun saat token kosong', () async {
-    final requests = <http.Request>[];
-    final notifier = RecordingAlertNotifier();
-    final poller = BackgroundAlertPoller(
-      client: MockClient((request) async {
-        requests.add(request);
-        return http.Response(inboxBody(const []), 200);
-      }),
-      platform: MemoryBackgroundSyncPlatform(),
-      notifier: notifier,
-      baseUrl: baseUrl,
-      token: '',
-    );
-
-    expect(await poller.tick(), isEmpty);
-    expect(requests, isEmpty);
-    expect(notifier.shown, isEmpty);
-  });
-
-  test('poller menahan kegagalan server tanpa melempar dan tanpa alert',
-      () async {
-    final notifier = RecordingAlertNotifier();
-    final poller = BackgroundAlertPoller(
-      client: MockClient(
+  test('login tetap berhasil dan service tetap menyala walau penandaan '
+      'notifikasi lama gagal', () async {
+    final platform = MemoryBackgroundSyncPlatform();
+    final controller = BackgroundSyncController(
+      platform: platform,
+      clientFactory: () => MockClient(
         (_) async => http.Response(jsonEncode({'error': 'boom'}), 500),
       ),
-      platform: MemoryBackgroundSyncPlatform(),
-      notifier: notifier,
-      baseUrl: baseUrl,
-      token: 'token-abc',
+    );
+    final auth = AuthService(
+      api: buildApi(MemoryTokenStore()),
+      backgroundSync: controller,
     );
 
-    expect(await poller.tick(), isEmpty);
-    expect(notifier.shown, isEmpty);
+    expect(await auth.login('a@example.com', 'rahasia'), isTrue);
+    expect(platform.token, 'token-abc');
+    expect(platform.serviceRunning, isTrue);
+    expect(platform.seenIds, isEmpty);
   });
 
-  test('start langsung memutar detak pertama dan stop menghentikan timer',
-      () async {
-    var calls = 0;
-    final poller = BackgroundAlertPoller(
-      client: MockClient((_) async {
-        calls++;
-        return http.Response(inboxBody(const []), 200);
-      }),
-      platform: MemoryBackgroundSyncPlatform(),
-      notifier: RecordingAlertNotifier(),
-      baseUrl: baseUrl,
-      token: 'token-abc',
-      interval: const Duration(milliseconds: 20),
+  test('token kosong tidak memicu bridge native sama sekali', () async {
+    final platform = MemoryBackgroundSyncPlatform();
+    final controller = BackgroundSyncController(platform: platform);
+    final auth = AuthService(
+      api: ApiClient(
+        baseUrl: baseUrl,
+        tokenStore: MemoryTokenStore(),
+        client: MockClient((_) async => http.Response('{}', 500)),
+      ),
+      backgroundSync: controller,
     );
 
-    await poller.start();
-    await Future<void>.delayed(const Duration(milliseconds: 5));
-    expect(calls, 1);
-    expect(poller.isRunning, isTrue);
-
-    await Future<void>.delayed(const Duration(milliseconds: 60));
-    expect(calls, greaterThan(1));
-
-    poller.stop();
-    final afterStop = calls;
-    await Future<void>.delayed(const Duration(milliseconds: 60));
-    expect(calls, afterStop);
-    expect(poller.isRunning, isFalse);
+    await controller.start(auth.api);
+    expect(platform.startCount, 0);
+    expect(platform.token, isNull);
+    expect(controller.isRunning, isFalse);
   });
 
-  test('channel alert memakai Importance.max, prioritas tinggi, suara, dan '
-      'getar', () {
-    final android = LocalAlertNotifier.details.android;
-    expect(android, isNotNull);
-    expect(android!.channelId, 'approval_alerts_high');
-    expect(android.importance, Importance.max);
-    expect(android.priority, Priority.high);
-    expect(android.playSound, isTrue);
-    expect(android.enableVibration, isTrue);
+  test('bridge native memakai method channel yang sama dengan Kotlin', () async {
+    final calls = <MethodCall>[];
+    const channel = MethodChannel(MethodChannelBackgroundSyncPlatform.channelName);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return switch (call.method) {
+            'readSeenIds' => <String>['notif-1'],
+            'startService' => true,
+            _ => null,
+          };
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final platform = MethodChannelBackgroundSyncPlatform();
+    await platform.syncCredentials(token: 'token-abc', baseUrl: baseUrl);
+    await platform.startService();
+    expect(await platform.readSeenIds(), ['notif-1']);
+    await platform.writeSeenIds(['notif-1', 'notif-2']);
+    await platform.stopService();
+    await platform.clearCredentials();
+
+    expect(calls.map((call) => call.method), [
+      'syncCredentials',
+      'startService',
+      'readSeenIds',
+      'writeSeenIds',
+      'stopService',
+      'clearCredentials',
+    ]);
+    expect(calls.first.arguments, {'token': 'token-abc', 'baseUrl': baseUrl});
+    expect(calls[3].arguments, {
+      'ids': ['notif-1', 'notif-2'],
+    });
   });
 
   testWidgets('login dari layar masuk menyalakan service dan menyimpan '
@@ -269,11 +307,9 @@ void main() {
     final platform = MemoryBackgroundSyncPlatform();
     final controller = BackgroundSyncController(
       platform: platform,
-      notifier: RecordingAlertNotifier(),
       clientFactory: () => MockClient(
         (_) async => http.Response(inboxBody(const []), 200),
       ),
-      interval: const Duration(minutes: 5),
     );
     final auth = AuthService(api: buildApi(store), backgroundSync: controller);
 
