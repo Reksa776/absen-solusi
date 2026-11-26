@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../api/api_client.dart';
 import '../theme/app_theme.dart';
 
 /// Draft rencana kerja yang dipakai form check-in maupun form pengajuan.
@@ -44,12 +46,16 @@ class WorkPlanEditor extends StatefulWidget {
     super.key,
     required this.draft,
     required this.workMode,
+    this.api,
     this.onChanged,
     this.enabled = true,
   });
 
   final WorkPlanDraft draft;
   final String workMode;
+
+  /// Dipakai tombol "Generate To-Do dari Gambar"; tanpa client tombol disembunyikan.
+  final ApiClient? api;
   final VoidCallback? onChanged;
   final bool enabled;
 
@@ -58,8 +64,11 @@ class WorkPlanEditor extends StatefulWidget {
 }
 
 class _WorkPlanEditorState extends State<WorkPlanEditor> {
+  static const int _maxWorkPlanItems = 30;
+
   final ImagePicker _picker = ImagePicker();
   bool _picking = false;
+  bool _generating = false;
 
   Future<void> _pickAttachment() async {
     if (!widget.enabled || _picking) return;
@@ -80,6 +89,7 @@ class _WorkPlanEditorState extends State<WorkPlanEditor> {
             : picked.name;
       });
       widget.onChanged?.call();
+      if (widget.api != null) await _generateFromImage();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,6 +98,96 @@ class _WorkPlanEditorState extends State<WorkPlanEditor> {
     } finally {
       if (mounted) setState(() => _picking = false);
     }
+  }
+
+  /// Minta server membaca gambar rencana kerja lalu isi to-do list.
+  Future<void> _generateFromImage() async {
+    final api = widget.api;
+    final bytes = widget.draft.attachmentBytes;
+    if (!widget.enabled || api == null || bytes == null || _generating) return;
+    setState(() => _generating = true);
+    Directory? tempDir;
+    try {
+      tempDir = await Directory.systemTemp.createTemp('absensi-plan-');
+      final name = widget.draft.attachmentName.trim().isEmpty
+          ? 'rencana.jpg'
+          : widget.draft.attachmentName.trim();
+      final file = File('${tempDir.path}/$name');
+      await file.writeAsBytes(bytes, flush: true);
+      final items = await api.extractWorkPlanFromImage(file);
+      if (!mounted) return;
+      final added = _mergeExtractedItems(items);
+      setState(() {});
+      widget.onChanged?.call();
+      if (added == 0) {
+        _showSnack(
+          items.isEmpty
+              ? 'Gambar belum memuat teks rencana kerja yang terbaca. Silakan isi to-do list manual.'
+              : 'Tidak ada tugas baru yang bisa ditambahkan (sudah ada atau batas $_maxWorkPlanItems tugas tercapai).',
+        );
+        return;
+      }
+      _showSnack(
+        '$added tugas berhasil dibuat dari gambar — silakan cek atau edit sebelum kirim.',
+      );
+    } catch (_) {
+      if (!mounted) return;
+      _showSnack(
+        'Rencana kerja tidak dapat dibaca dari gambar. Silakan isi to-do list manual.',
+      );
+    } finally {
+      if (tempDir != null) {
+        try {
+          await tempDir.delete(recursive: true);
+        } catch (_) {
+          // file sementara boleh tertinggal di cache sistem
+        }
+      }
+      if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  /// Gabungkan hasil ekstraksi: baris kosong default diganti, item manual tetap.
+  int _mergeExtractedItems(List<String> items) {
+    final draft = widget.draft;
+    final cleaned = <String>[];
+    final seen = <String>{};
+    for (final raw in items) {
+      final title = raw.trim();
+      if (title.isEmpty) continue;
+      if (!seen.add(title.toLowerCase())) continue;
+      cleaned.add(title);
+    }
+    if (cleaned.isEmpty) return 0;
+
+    final hasManual = draft.itemControllers.any(
+      (controller) => controller.text.trim().isNotEmpty,
+    );
+    var next = 0;
+    if (!hasManual) {
+      for (
+        var index = 0;
+        index < draft.itemControllers.length && next < cleaned.length;
+        index++
+      ) {
+        draft.itemControllers[index].text = cleaned[next];
+        next += 1;
+      }
+    }
+    while (
+      next < cleaned.length &&
+      draft.itemControllers.length < _maxWorkPlanItems
+    ) {
+      draft.itemControllers.add(TextEditingController(text: cleaned[next]));
+      next += 1;
+    }
+    return next;
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -270,6 +370,46 @@ class _WorkPlanEditorState extends State<WorkPlanEditor> {
                     ),
                   ],
                 ),
+                if (widget.api != null) ...[
+                  const Divider(height: 1, color: AppColors.line),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        key: const Key('work-plan-generate-from-image'),
+                        onPressed: widget.enabled && !_generating
+                            ? _generateFromImage
+                            : null,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          textStyle: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        icon: _generating
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.greenDark,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.document_scanner_outlined,
+                                size: 16,
+                              ),
+                        label: Text(
+                          _generating
+                              ? 'Membaca rencana kerja dari gambar...'
+                              : 'Generate To-Do dari Gambar',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

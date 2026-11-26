@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Worker wasm tesseract.js (OCR lokal) dimuat runtime, bukan di-bundle.
+  serverExternalPackages: ["tesseract.js"],
   experimental: {
     // Proxy/middleware Next.js memotong body request di 10 MB. Unggahan APK di
     // panel Admin mencapai 300 MB, jadi batasnya dinaikkan agar FormData utuh.

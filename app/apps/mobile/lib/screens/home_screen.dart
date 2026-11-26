@@ -902,6 +902,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       WorkPlanEditor(
                         draft: planDraft,
                         workMode: selectedMode,
+                        api: widget.auth.api,
                         onChanged: () => setSheetState(() {}),
                       ),
                     if (selectedMode == 'OUT_OF_TOWN') ...[

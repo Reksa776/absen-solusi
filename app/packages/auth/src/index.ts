@@ -299,6 +299,23 @@ export {
   type WorkPlanSummary,
 } from "./work-plans.js";
 export {
+  cleanWorkPlanImageLine,
+  detectWorkPlanImageMimeType,
+  extractWorkPlanFromImage,
+  extractWorkPlanItemsFromImage,
+  extractWorkPlanItemsFromUpload,
+  MAX_WORK_PLAN_IMAGE_BYTES,
+  normalizeWorkPlanImageMimeType,
+  parseWorkPlanTextLines,
+  WORK_PLAN_IMAGE_ITEM_MAX_LENGTH,
+  WORK_PLAN_IMAGE_MAX_ITEMS,
+  WORK_PLAN_IMAGE_MIME_TYPES,
+  type WorkPlanImageExtraction,
+  type WorkPlanImageExtractionOptions,
+  type WorkPlanImageMimeType,
+  type WorkPlanImageSource,
+} from "./work-plan-image-parser.js";
+export {
   MAX_WORK_PLAN_ATTACHMENT_BYTES,
   readWfhRequestPlanAttachment,
   readWorkPlanAttachment,

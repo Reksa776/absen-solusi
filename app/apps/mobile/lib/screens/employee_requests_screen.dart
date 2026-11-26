@@ -449,6 +449,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             WorkPlanEditor(
               draft: _wfhPlan,
               workMode: remoteModeLabel,
+              api: widget.auth.api,
               enabled: !_busy,
               onChanged: () => setState(() {}),
             ),

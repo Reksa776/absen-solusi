@@ -258,6 +258,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "workspace.read",
   },
+  "/api/mobile/work-plans/extract-from-image": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
   "/api/mobile/work-plans/items/:itemId": {
     kind: "methods",
     methods: {
@@ -273,6 +277,10 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     },
   },
   "/api/work-plans/today": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/work-plans/extract-from-image": {
     kind: "permission",
     permission: "workspace.read",
   },

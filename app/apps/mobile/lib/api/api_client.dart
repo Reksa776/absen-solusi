@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -563,6 +564,57 @@ class ApiClient {
     return WorkPlan.fromJson(
       _decodeObject(response)['workPlan'] as Map<String, dynamic>,
     );
+  }
+
+  /// Baca daftar tugas dari foto/whiteboard/screenshot rencana kerja.
+  /// Server memakai vision LLM bila API key tersedia, lalu OCR lokal.
+  Future<List<String>> extractWorkPlanFromImage(File imageFile) async {
+    final bytes = await imageFile.readAsBytes();
+    final name = imageFile.uri.pathSegments.isEmpty
+        ? 'rencana.jpg'
+        : imageFile.uri.pathSegments.last;
+    return extractWorkPlanItemsFromImageBytes(
+      bytes,
+      filename: name.isEmpty ? 'rencana.jpg' : name,
+    );
+  }
+
+  Future<List<String>> extractWorkPlanItemsFromImageBytes(
+    Uint8List bytes, {
+    String filename = 'rencana.jpg',
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/mobile/work-plans/extract-from-image'),
+    );
+    request.headers.addAll(await _authHeaders());
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'image',
+        bytes,
+        filename: filename,
+        contentType: _imageMediaType(filename),
+      ),
+    );
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 20));
+    final response = await http.Response.fromStream(streamed);
+    final json = _decodeObject(response);
+    final items = json['items'];
+    if (items is! List) return const [];
+    return items
+        .whereType<String>()
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  MediaType _imageMediaType(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.png')) return MediaType('image', 'png');
+    if (lower.endsWith('.webp')) return MediaType('image', 'webp');
+    return MediaType('image', 'jpeg');
   }
 
   Future<List<WfhRequest>> myWfh({String? status}) async {
