@@ -47,6 +47,19 @@ async function get(path, token) {
   return { response, body: await response.json() };
 }
 
+async function send(path, token, method, body) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+      connection: "close",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { response, body: await response.json() };
+}
+
 async function createAttendance(memberId, tenantId, date, type, timestamp) {
   await db.attendanceLog.create({
     data: {
@@ -362,7 +375,7 @@ test("C-CSV-1: export CSV header benar, tanpa data sensitif, dan audit tercatat"
   const lines = csv.trim().split("\r\n");
   assert.equal(
     lines[0],
-    "member_name,date,check_in,check_out,work_hours,late_minutes,status",
+    "member_name,date,check_in,check_out,work_hours,late_minutes,status,work_mode,leave_type,note",
   );
   assert.equal(lines.length, 121);
   assert.equal(csv.includes("@test.local"), false);
@@ -532,4 +545,230 @@ test("C-DASH-3: tenant asing dan workspace tidak ada sama-sama 403 identik", asy
     employeeA1.token,
   );
   assert.equal(nonAdmin.response.status, 403);
+});
+
+test("C-REP-3: cuti, WFH, WFC, dan izin disetujui masuk rekap tanpa baris ganda", async () => {
+  await db.leaveRequest.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      memberId: employeeA1.memberId,
+      leaveType: "CUTI_TAHUNAN",
+      startDate: new Date("2026-11-09T00:00:00.000Z"),
+      endDate: new Date("2026-11-11T00:00:00.000Z"),
+      workingDays: 3,
+      reason: "Cuti keluarga di luar kota",
+      status: "APPROVED",
+    },
+  });
+  await db.workPermit.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      memberId: employeeA1.memberId,
+      permitType: "SAKIT",
+      startDate: new Date("2026-11-12T00:00:00.000Z"),
+      endDate: new Date("2026-11-12T00:00:00.000Z"),
+      reason: "Demam dan surat dokter",
+      status: "APPROVED",
+    },
+  });
+  const wfhId = randomUUID();
+  await db.wfhRequest.create({
+    data: {
+      id: wfhId,
+      tenantId: tenantA.tenantId,
+      memberId: employeeA2.memberId,
+      date: new Date("2026-11-10T00:00:00.000Z"),
+      workMode: "WFH",
+      locationNote: "Rumah",
+      reason: "Bekerja dari rumah karena akses kantor terendam banjir",
+      status: "APPROVED",
+    },
+  });
+  await db.workPlan.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      memberId: employeeA2.memberId,
+      requestId: wfhId,
+      workMode: "WFH",
+      date: new Date("2026-11-10T00:00:00.000Z"),
+      locationNote: "Rumah",
+      items: {
+        create: [
+          {
+            id: randomUUID(),
+            tenantId: tenantA.tenantId,
+            title: "Menyelesaikan laporan bulanan",
+            isCompleted: true,
+            completedAt: new Date("2026-11-10T10:00:00.000Z"),
+          },
+          {
+            id: randomUUID(),
+            tenantId: tenantA.tenantId,
+            title: "Menyiapkan bahan meeting",
+            isCompleted: false,
+          },
+        ],
+      },
+    },
+  });
+  // Presensi GPS pada tanggal WFH yang disetujui harus digabung, bukan ganda.
+  await createAttendance(
+    employeeA2.memberId,
+    tenantA.tenantId,
+    "2026-11-10",
+    "CHECK_IN",
+    "2026-11-10T08:55:00.000Z",
+  );
+  await createAttendance(
+    employeeA2.memberId,
+    tenantA.tenantId,
+    "2026-11-10",
+    "CHECK_OUT",
+    "2026-11-10T17:05:00.000Z",
+  );
+  await db.wfhRequest.create({
+    data: {
+      id: randomUUID(),
+      tenantId: tenantA.tenantId,
+      memberId: employeeA3.memberId,
+      date: new Date("2026-11-11T00:00:00.000Z"),
+      workMode: "WFC",
+      locationNote: "Kopi Senja",
+      reason: "Meeting client di cafe dekat kantor pusat",
+      status: "APPROVED",
+    },
+  });
+
+  const result = await get(
+    `/api/workspaces/${tenantA.tenantId}/reports/monthly?year=2026&month=11`,
+    tenantA.ownerToken,
+  );
+  assert.equal(result.response.status, 200);
+  const byId = new Map(result.body.members.map((member) => [member.memberId, member]));
+
+  const leaveMember = byId.get(employeeA1.memberId);
+  const leaveDay = leaveMember.days.find((day) => day.date === "2026-11-09");
+  assert.equal(leaveDay.status, "LEAVE");
+  assert.equal(leaveDay.workMode, "CUTI");
+  assert.equal(leaveDay.leaveType, "CUTI_TAHUNAN");
+  assert.match(leaveDay.note, /Cuti keluarga/);
+  assert.equal(
+    leaveMember.days.find((day) => day.date === "2026-11-10").status,
+    "LEAVE",
+  );
+  assert.equal(
+    leaveMember.days.find((day) => day.date === "2026-11-11").status,
+    "LEAVE",
+  );
+  const permitDay = leaveMember.days.find((day) => day.date === "2026-11-12");
+  assert.equal(permitDay.status, "PERMIT");
+  assert.equal(permitDay.workMode, "IZIN");
+  assert.equal(leaveMember.totalLeave, 3);
+  assert.equal(leaveMember.totalPermit, 1);
+  const dates = leaveMember.days.map((day) => day.date);
+  assert.equal(new Set(dates).size, dates.length);
+
+  const remoteMember = byId.get(employeeA2.memberId);
+  const mergedDays = remoteMember.days.filter((day) => day.date === "2026-11-10");
+  assert.equal(mergedDays.length, 1);
+  assert.equal(mergedDays[0].status, "PRESENT");
+  assert.equal(mergedDays[0].workMode, "WFH");
+  assert.equal(mergedDays[0].note, "Rumah");
+  assert.equal(mergedDays[0].workPlanTotal, 2);
+  assert.equal(mergedDays[0].workPlanCompleted, 1);
+  assert.equal(remoteMember.totalWfh, 1);
+
+  const wfcMember = byId.get(employeeA3.memberId);
+  const wfcDay = wfcMember.days.find((day) => day.date === "2026-11-11");
+  assert.equal(wfcDay.status, "WFC");
+  assert.equal(wfcDay.workMode, "WFC");
+  assert.equal(wfcDay.note, "Kopi Senja");
+  assert.equal(wfcMember.totalWfc, 1);
+
+  const leaveOnly = await get(
+    `/api/workspaces/${tenantA.tenantId}/reports/monthly?year=2026&month=11&memberId=${employeeA1.memberId}&status=CUTI`,
+    tenantA.ownerToken,
+  );
+  assert.equal(leaveOnly.response.status, 200);
+  assert.equal(leaveOnly.body.members[0].days.length, 3);
+  assert.equal(
+    leaveOnly.body.members[0].days.every((day) => day.status === "LEAVE"),
+    true,
+  );
+
+  const wfhOnly = await get(
+    `/api/workspaces/${tenantA.tenantId}/reports/monthly?year=2026&month=11&memberId=${employeeA2.memberId}&status=WFH`,
+    tenantA.ownerToken,
+  );
+  assert.equal(wfhOnly.response.status, 200);
+  assert.deepEqual(
+    wfhOnly.body.members[0].days.map((day) => day.date),
+    ["2026-11-10"],
+  );
+
+  const invalid = await get(
+    `/api/workspaces/${tenantA.tenantId}/reports/monthly?year=2026&month=11&status=TIDAK_VALID`,
+    tenantA.ownerToken,
+  );
+  assert.equal(invalid.response.status, 400);
+  assert.equal(invalid.body.error.code, "INVALID_STATUS");
+
+  const csvResponse = await fetch(
+    `${baseUrl}/api/workspaces/${tenantA.tenantId}/reports/monthly/export?year=2026&month=11&format=csv`,
+    { headers: { authorization: `Bearer ${tenantA.ownerToken}`, connection: "close" } },
+  );
+  const csv = await csvResponse.text();
+  assert.match(csv, /2026-11-09,,,0\.00,0,LEAVE,CUTI,CUTI_TAHUNAN,Cuti keluarga/);
+  assert.match(
+    csv,
+    /2026-11-10,2026-11-10T08:55:00\.000Z,2026-11-10T17:05:00\.000Z,7\.17,0,PRESENT,WFH,,Rumah/,
+  );
+});
+
+test("C-LEAVE-1: hari kerja 26/11-10/12 = 11 dan pengajuan melebihi kuota ditolak", async () => {
+  const applicant = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER);
+  const overQuota = await send("/api/leave", applicant.token, "POST", {
+    leaveType: "CUTI_TAHUNAN",
+    startDate: "2026-11-26",
+    endDate: "2026-12-14",
+    reason: "Cuti tahunan keluarga di akhir tahun",
+  });
+  assert.equal(overQuota.response.status, 409);
+  assert.equal(overQuota.body.error.code, "INSUFFICIENT_LEAVE_BALANCE");
+
+  const ok = await send("/api/leave", applicant.token, "POST", {
+    leaveType: "CUTI_TAHUNAN",
+    startDate: "2026-11-26",
+    endDate: "2026-12-10",
+    reason: "Cuti tahunan keluarga di akhir tahun",
+  });
+  assert.equal(ok.response.status, 201, JSON.stringify(ok.body));
+  assert.equal(ok.body.workingDays, 11);
+  assert.equal(ok.body.startDate, "2026-11-26");
+  assert.equal(ok.body.endDate, "2026-12-10");
+
+  const weekend = await send("/api/leave", applicant.token, "POST", {
+    leaveType: "CUTI_KHUSUS",
+    startDate: "2026-12-19",
+    endDate: "2026-12-20",
+    reason: "Acara keluarga pada akhir pekan",
+  });
+  assert.equal(weekend.response.status, 400);
+  assert.equal(weekend.body.error.code, "NO_WORKING_DAYS");
+
+  // ISO datetime WIB (25 Nov 17:00Z = 26 Nov 00:00 WIB) tidak menggeser tanggal.
+  const isoApplicant = await seedMember(db, tenantA.tenantId, tenantA.roles.VIEWER);
+  const iso = await send("/api/leave", isoApplicant.token, "POST", {
+    leaveType: "CUTI_KHUSUS",
+    startDate: "2026-11-25T17:00:00.000Z",
+    endDate: "2026-11-26T17:00:00.000Z",
+    reason: "Keperluan keluarga yang tidak bisa ditunda",
+  });
+  assert.equal(iso.response.status, 201, JSON.stringify(iso.body));
+  assert.equal(iso.body.startDate, "2026-11-26");
+  assert.equal(iso.body.endDate, "2026-11-27");
+  assert.equal(iso.body.workingDays, 2);
 });

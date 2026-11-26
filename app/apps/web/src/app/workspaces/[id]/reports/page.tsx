@@ -11,10 +11,14 @@ const STATUS_LABELS: Record<string, string> = {
   PRESENT: "Hadir",
   INCOMPLETE: "Belum check-out",
   ANOMALY: "Anomali waktu",
-  ABSENT: "Absen",
+  ABSENT: "Alpa / tidak hadir",
   HOLIDAY: "Libur",
   WEEKEND: "Akhir pekan",
   FUTURE: "Belum terjadi",
+  LEAVE: "Cuti",
+  WFH: "WFH",
+  WFC: "WFC",
+  PERMIT: "Izin / sakit",
 };
 
 const STATUS_BADGES: Record<string, string> = {
@@ -25,7 +29,29 @@ const STATUS_BADGES: Record<string, string> = {
   HOLIDAY: "badge badge--neutral",
   WEEKEND: "badge badge--neutral",
   FUTURE: "badge badge--neutral",
+  LEAVE: "badge badge--green",
+  WFH: "badge badge--green",
+  WFC: "badge badge--yellow",
+  PERMIT: "badge badge--yellow",
 };
+
+const MODE_LABELS: Record<string, string> = {
+  WFO: "WFO",
+  WFH: "WFH",
+  WFC: "WFC",
+  CUTI: "Cuti",
+  IZIN: "Izin",
+};
+
+const STATUS_FILTERS = [
+  { value: "", label: "Semua status" },
+  { value: "WFO", label: "Hadir (WFO)" },
+  { value: "WFH", label: "WFH" },
+  { value: "WFC", label: "WFC" },
+  { value: "CUTI", label: "Cuti" },
+  { value: "IZIN", label: "Izin / sakit" },
+  { value: "ABSENT", label: "Alpa / tidak hadir" },
+] as const;
 
 function time(value: string | null, timeZone: string): string {
   if (!value) return "—";
@@ -47,6 +73,7 @@ export default async function ReportsPage({
     month?: string;
     memberId?: string;
     divisionId?: string;
+    status?: string;
   }>;
 }) {
   const { id } = await params;
@@ -58,6 +85,7 @@ export default async function ReportsPage({
   const year = Number(query.year ?? now.getUTCFullYear());
   const month = Number(query.month ?? now.getUTCMonth() + 1);
   const divisionId = query.divisionId?.trim() || undefined;
+  const status = query.status?.trim().toUpperCase() || undefined;
   const report = await getMonthlyReport({
     ctx,
     workspaceId: id,
@@ -65,6 +93,7 @@ export default async function ReportsPage({
     month,
     memberId: query.memberId?.trim() || undefined,
     divisionId,
+    status,
   });
   const divisions = ctx.permissions.includes("member.read")
     ? (await listDivisions({ ctx, workspaceId: id })).filter(
@@ -81,6 +110,7 @@ export default async function ReportsPage({
   });
   if (divisionId) exportQuery.set("divisionId", divisionId);
   if (query.memberId) exportQuery.set("memberId", query.memberId);
+  if (status) exportQuery.set("status", status);
 
   return (
     <main className="page">
@@ -132,6 +162,16 @@ export default async function ReportsPage({
             </select>
           </label>
         ) : null}
+        <label className="field" style={{ maxWidth: "12rem" }}>
+          Status / mode
+          <select name="status" defaultValue={status ?? ""}>
+            {STATUS_FILTERS.map((option) => (
+              <option key={option.value || "all"} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="submit" className="btn btn--primary">
           Tampilkan
         </button>
@@ -146,6 +186,11 @@ export default async function ReportsPage({
                 <span className="badge badge--neutral">{member.divisionName}</span>
               ) : null}
               <span className="mono">{member.totalWorkHours} jam</span>
+              <span className="mono">{member.totalWfo} WFO</span>
+              <span className="mono">{member.totalWfh} WFH</span>
+              <span className="mono">{member.totalWfc} WFC</span>
+              <span className="mono">{member.totalLeave} cuti</span>
+              <span className="mono">{member.totalPermit} izin</span>
               <span className="mono">{member.totalLate} menit terlambat</span>
               <span className="mono">{member.totalAbsent} alpha</span>
             </summary>
@@ -153,7 +198,7 @@ export default async function ReportsPage({
               <table className="data">
                 <thead>
                   <tr>
-                    {["Tanggal", "Masuk", "Keluar", "Jam kerja", "Terlambat", "Status"].map((label) => (
+                    {["Tanggal", "Masuk", "Keluar", "Jam kerja", "Terlambat", "Mode", "Status", "Catatan"].map((label) => (
                       <th key={label}>{label}</th>
                     ))}
                   </tr>
@@ -169,9 +214,21 @@ export default async function ReportsPage({
                         {day.late > 0 ? `${day.late} menit` : "—"}
                       </td>
                       <td>
+                        {day.workMode ? (
+                          <span className="mono">{MODE_LABELS[day.workMode] ?? day.workMode}</span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td>
                         <span className={STATUS_BADGES[day.status] ?? "badge badge--neutral"}>
                           {STATUS_LABELS[day.status] ?? day.status}
                         </span>
+                      </td>
+                      <td className="cell-sub">
+                        {day.workPlanTotal > 0
+                          ? `${day.workPlanCompleted}/${day.workPlanTotal} tugas`
+                          : day.note ?? "—"}
                       </td>
                     </tr>
                   ))}

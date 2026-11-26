@@ -26,6 +26,7 @@ export async function GET(
       positionId: url.searchParams.get("positionId") ?? undefined,
       from: url.searchParams.get("from") ?? undefined,
       to: url.searchParams.get("to") ?? undefined,
+      status: url.searchParams.get("status") ?? undefined,
       ip: getClientIp(request),
       userAgent: request.headers.get("user-agent"),
     });

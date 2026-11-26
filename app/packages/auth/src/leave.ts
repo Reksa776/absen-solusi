@@ -135,9 +135,40 @@ function day(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_TIME =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/**
+ * Tanggal cuti selalu dinormalisasi ke hari kalender WIB. Klien lama bisa
+ * mengirim ISO datetime (misalnya `2026-11-25T17:00:00.000Z` = 26 November
+ * 00:00 WIB); tanpa normalisasi tanggal itu bergeser satu hari dan rentang
+ * kerja normal bisa dianggap tidak memuat hari kerja.
+ */
+export function parseLeaveDay(value: string, label: string): Date {
+  const text = value.trim();
+  if (DATE_ONLY.test(text)) return parseReportDay(text, label);
+  if (!ISO_DATE_TIME.test(text)) {
+    throw new HttpError(400, "INVALID_DATE", `Parameter ${label} harus berformat YYYY-MM-DD`);
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpError(400, "INVALID_DATE", `Parameter ${label} tidak valid`);
+  }
+  const wib = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+  return parseReportDay(wib, label);
+}
+
 /**
  * Hari kerja mengikuti hari aktif Pola Kerja karyawan. Tanpa penugasan,
- * fallback lama Senin-Jumat tetap dipakai. Hari libur workspace selalu dilewati.
+ * fallback lama Senin-Jumat tetap dipakai. Pola kerja yang tersimpan tanpa
+ * satu pun hari aktif juga memakai fallback Senin-Jumat agar rentang kerja
+ * normal tidak dianggap kosong. Hari libur workspace selalu dilewati.
  */
 export function calculateWorkingDays(
   startDate: Date,
@@ -145,6 +176,8 @@ export function calculateWorkingDays(
   holidayDates: ReadonlySet<string>,
   workdayNumbers?: ReadonlySet<number> | null,
 ): number {
+  const configuredWorkdays =
+    workdayNumbers && workdayNumbers.size > 0 ? workdayNumbers : null;
   let count = 0;
   for (
     let cursor = startDate.getTime();
@@ -153,8 +186,8 @@ export function calculateWorkingDays(
   ) {
     const date = new Date(cursor);
     const weekday = date.getUTCDay();
-    if (workdayNumbers) {
-      if (!workdayNumbers.has(weekday)) continue;
+    if (configuredWorkdays) {
+      if (!configuredWorkdays.has(weekday)) continue;
     } else if (isWeekendDay(weekday)) {
       continue;
     }
@@ -398,11 +431,11 @@ export async function submitLeaveRequest(input: {
   now?: Date;
 }): Promise<LeaveRequestSummary> {
   const leaveType = parseType(input.body.leaveType);
-  const startDate = parseReportDay(
+  const startDate = parseLeaveDay(
     typeof input.body.startDate === "string" ? input.body.startDate : "",
     "startDate",
   );
-  const endDate = parseReportDay(
+  const endDate = parseLeaveDay(
     typeof input.body.endDate === "string" ? input.body.endDate : "",
     "endDate",
   );
@@ -540,11 +573,11 @@ export async function createLeaveRequestByAdmin(input: {
   }
   const leaveType = parseType(input.body.leaveType);
   const status = parseAdminCreateStatus(input.body.status);
-  const startDate = parseReportDay(
+  const startDate = parseLeaveDay(
     typeof input.body.startDate === "string" ? input.body.startDate : "",
     "startDate",
   );
-  const endDate = parseReportDay(
+  const endDate = parseLeaveDay(
     typeof input.body.endDate === "string" ? input.body.endDate : "",
     "endDate",
   );

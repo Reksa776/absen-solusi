@@ -26,6 +26,8 @@ export type AttendancePeriodMember = {
   earlyLeaveDays: number;
   permitDays: number;
   leaveDays: number;
+  wfhDays: number;
+  wfcDays: number;
   outOfTownDays: number;
   absentDays: number;
 };
@@ -96,6 +98,8 @@ function emptyTotals(): AttendancePeriodTotals {
     earlyLeaveDays: 0,
     permitDays: 0,
     leaveDays: 0,
+    wfhDays: 0,
+    wfcDays: 0,
     outOfTownDays: 0,
     absentDays: 0,
   };
@@ -134,6 +138,7 @@ export async function getAttendancePeriodSummary(
       office,
       patternAssignments,
       leaves,
+      remoteRequests,
       permits,
       workspace,
     ] = await Promise.all([
@@ -176,6 +181,16 @@ export async function getAttendancePeriodSummary(
             ...(input.memberId ? { memberId: input.memberId } : {}),
           },
           select: { memberId: true, startDate: true, endDate: true },
+        }),
+        // WFH/WFC yang disetujui tetap dihitung sebagai hari kerja meski tanpa
+        // check-in GPS; hari dengan presensi tetap dihitung hadir (tanpa ganda).
+        db.wfhRequest.findMany({
+          where: {
+            status: "APPROVED",
+            date: { gte: start, lt: endExclusive },
+            ...(input.memberId ? { memberId: input.memberId } : {}),
+          },
+          select: { memberId: true, date: true, workMode: true },
         }),
         db.workPermit.findMany({
           where: {
@@ -227,6 +242,12 @@ export async function getAttendancePeriodSummary(
       addDateKeys(keys, row.startDate, row.endDate, start, end);
       permitByMember.set(row.memberId, keys);
     }
+    const remoteByMember = new Map<string, Map<string, string>>();
+    for (const row of remoteRequests) {
+      const days = remoteByMember.get(row.memberId) ?? new Map<string, string>();
+      days.set(dayKey(row.date), row.workMode === "WFC" ? "WFC" : "WFH");
+      remoteByMember.set(row.memberId, days);
+    }
 
     const dates: Date[] = [];
     for (let cursor = start; cursor < endExclusive; cursor = addDays(cursor, 1)) {
@@ -251,6 +272,7 @@ export async function getAttendancePeriodSummary(
       };
       const leaveDates = leaveByMember.get(member.id) ?? new Set<string>();
       const permitDates = permitByMember.get(member.id) ?? new Set<string>();
+      const remoteDates = remoteByMember.get(member.id) ?? new Map<string, string>();
 
       for (const date of dates) {
         if (date.getTime() > today.getTime()) continue;
@@ -293,8 +315,13 @@ export async function getAttendancePeriodSummary(
         }
 
         if (!scheduled || holiday) continue;
+        const remoteMode = remoteDates.get(key);
         if (leaveDates.has(key)) {
           summary.leaveDays += 1;
+        } else if (remoteMode === "WFH") {
+          summary.wfhDays += 1;
+        } else if (remoteMode === "WFC") {
+          summary.wfcDays += 1;
         } else if (permitDates.has(key)) {
           summary.permitDays += 1;
         } else {
@@ -311,6 +338,8 @@ export async function getAttendancePeriodSummary(
       acc.earlyLeaveDays += member.earlyLeaveDays;
       acc.permitDays += member.permitDays;
       acc.leaveDays += member.leaveDays;
+      acc.wfhDays += member.wfhDays;
+      acc.wfcDays += member.wfcDays;
       acc.outOfTownDays += member.outOfTownDays;
       acc.absentDays += member.absentDays;
       return acc;
@@ -333,7 +362,7 @@ function csvValue(value: string | number): string {
 }
 
 export const ATTENDANCE_PERIOD_CSV_HEADER =
-  "member_name,division,present_days,on_time_days,late_minutes,early_leave_days,permit_days,leave_days,out_of_town_days,absent_days";
+  "member_name,division,present_days,on_time_days,late_minutes,early_leave_days,permit_days,leave_days,wfh_days,wfc_days,out_of_town_days,absent_days";
 
 export function attendancePeriodToCsv(summary: AttendancePeriodSummary): {
   csv: string;
@@ -351,6 +380,8 @@ export function attendancePeriodToCsv(summary: AttendancePeriodSummary): {
         member.earlyLeaveDays,
         member.permitDays,
         member.leaveDays,
+        member.wfhDays,
+        member.wfcDays,
         member.outOfTownDays,
         member.absentDays,
       ]

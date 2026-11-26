@@ -21,9 +21,15 @@ const HEADERS = [
   "Total Hari Jadwal Kerja",
   "Total Hari Kehadiran",
   "Total Hari Tidak Masuk",
+  "WFH",
+  "WFC",
+  "Cuti",
+  "Izin / Sakit",
+  "Alpa",
   "Persentase Kehadiran",
 ] as const;
-const WIDTHS = [28, 26, 42, 22, 22, 22, 22] as const;
+const WIDTHS = [28, 26, 42, 22, 22, 22, 10, 10, 10, 14, 10, 22] as const;
+const COLUMN_COUNT = HEADERS.length;
 
 function dateLabel(value: string): string {
   const parsed = new Date(`${value}T00:00:00.000Z`);
@@ -95,13 +101,13 @@ export async function GET(
     const sheet = workbook.addWorksheet("Ringkasan Kehadiran");
     sheet.columns = WIDTHS.map((width) => ({ width }));
 
-    sheet.mergeCells("A1:G1");
+    sheet.mergeCells("A1:L1");
     sheet.getCell("A1").value = `Ringkasan Kehadiran - ${dateLabel(summary.startDate)} - ${dateLabel(summary.endDate)}`;
     sheet.getCell("A1").font = { name: "Calibri", size: 12, bold: true };
     sheet.getCell("A1").alignment = { horizontal: "left", vertical: "middle" };
     sheet.getRow(1).height = 28;
 
-    sheet.mergeCells("A2:G2");
+    sheet.mergeCells("A2:L2");
     sheet.getCell("A2").value = summary.companyName;
     sheet.getCell("A2").font = {
       name: "Calibri",
@@ -155,6 +161,11 @@ export async function GET(
         scheduledDays,
         presentDays,
         Math.max(0, scheduledDays - presentDays),
+        member.wfhDays,
+        member.wfcDays,
+        member.leaveDays,
+        member.permitDays,
+        member.absentDays,
         scheduledDays > 0 ? presentDays / scheduledDays : 0,
       ];
       values.forEach((value, cellIndex) => {
@@ -167,7 +178,7 @@ export async function GET(
           wrapText: false,
         };
         cell.border = thinBorder("FFD1D5DB");
-        if (cellIndex === 6) cell.numFmt = "0%";
+        if (cellIndex === COLUMN_COUNT - 1) cell.numFmt = "0%";
       });
     });
 

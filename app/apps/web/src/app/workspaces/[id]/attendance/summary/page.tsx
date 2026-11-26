@@ -50,6 +50,8 @@ export default async function AttendanceSummaryPage({
     ["Pulang cepat", summary.totals.earlyLeaveDays, "hari"],
     ["Izin", summary.totals.permitDays, "hari"],
     ["Cuti", summary.totals.leaveDays, "hari"],
+    ["WFH", summary.totals.wfhDays, "hari"],
+    ["WFC", summary.totals.wfcDays, "hari"],
     ["Luar kota", summary.totals.outOfTownDays, "hari"],
     ["Alpa", summary.totals.absentDays, "hari"],
   ] as const;
@@ -127,7 +129,7 @@ export default async function AttendanceSummaryPage({
           <table className="data">
             <thead>
               <tr>
-                {["Karyawan", "Hadir", "Tepat waktu", "Terlambat", "Pulang cepat", "Izin", "Cuti", "Luar kota", "Alpa"].map(
+                {["Karyawan", "Hadir", "Tepat waktu", "Terlambat", "Pulang cepat", "Izin", "Cuti", "WFH", "WFC", "Luar kota", "Alpa"].map(
                   (label) => (
                     <th key={label}>{label}</th>
                   ),
@@ -147,13 +149,15 @@ export default async function AttendanceSummaryPage({
                   <td className="num">{member.earlyLeaveDays}</td>
                   <td className="num">{member.permitDays}</td>
                   <td className="num">{member.leaveDays}</td>
+                  <td className="num">{member.wfhDays}</td>
+                  <td className="num">{member.wfcDays}</td>
                   <td className="num">{member.outOfTownDays}</td>
                   <td className="num">{member.absentDays}</td>
                 </tr>
               ))}
               {summary.members.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="empty">
+                  <td colSpan={11} className="empty">
                     Belum ada karyawan aktif pada periode ini.
                   </td>
                 </tr>

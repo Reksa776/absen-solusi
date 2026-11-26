@@ -30,7 +30,23 @@ export const MONTHLY_STATUSES = [
   "HOLIDAY",
   "WEEKEND",
   "FUTURE",
+  "LEAVE",
+  "WFH",
+  "WFC",
+  "PERMIT",
 ] as const;
+
+/** Filter tambahan Report Kehadiran: mode kerja dan status izin/cuti. */
+export const MONTHLY_MODE_FILTERS = ["WFO", "CUTI", "IZIN", "SAKIT"] as const;
+const MONTHLY_FILTER_VALUES = [
+  ...MONTHLY_STATUSES,
+  ...MONTHLY_MODE_FILTERS,
+] as const;
+const MONTHLY_FILTER_ALIASES: Record<string, string> = {
+  CUTI: "LEAVE",
+  IZIN: "PERMIT",
+  SAKIT: "PERMIT",
+};
 
 function pageValue(
   value: number | undefined,
@@ -289,7 +305,11 @@ export type MonthlyDayStatus =
   | "ABSENT"
   | "HOLIDAY"
   | "WEEKEND"
-  | "FUTURE";
+  | "FUTURE"
+  | "LEAVE"
+  | "WFH"
+  | "WFC"
+  | "PERMIT";
 
 export type MonthlyDay = {
   date: string;
@@ -298,6 +318,12 @@ export type MonthlyDay = {
   workHours: number;
   late: number;
   status: MonthlyDayStatus;
+  /** WFO, WFH, WFC, CUTI, atau IZIN; null untuk libur/akhir pekan. */
+  workMode: string | null;
+  leaveType: string | null;
+  note: string | null;
+  workPlanCompleted: number;
+  workPlanTotal: number;
 };
 
 export type MonthlyMemberReport = {
@@ -308,6 +334,11 @@ export type MonthlyMemberReport = {
   totalWorkHours: number;
   totalLate: number;
   totalAbsent: number;
+  totalWfo: number;
+  totalWfh: number;
+  totalWfc: number;
+  totalLeave: number;
+  totalPermit: number;
 };
 
 export type MonthlyReport = {
@@ -360,6 +391,14 @@ function roundHours(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+type MonthlyRemoteDay = {
+  workMode: "WFH" | "WFC";
+  locationNote: string | null;
+  reason: string;
+  completed: number;
+  total: number;
+};
+
 type MonthlyBuild = {
   dates: Date[];
   holidayDates: Set<string>;
@@ -368,16 +407,144 @@ type MonthlyBuild = {
   toleranceMinutes: number;
   office: { timezone: string; workStart: string } | null;
   statusFilter: string | undefined;
+  leaveByMemberDay: Map<string, { leaveType: string; reason: string }>;
+  remoteByMemberDay: Map<string, MonthlyRemoteDay>;
+  permitByMemberDay: Map<string, { permitType: string; reason: string }>;
 };
 
+type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
+
+type MonthlyOverrides = Pick<
+  MonthlyBuild,
+  "leaveByMemberDay" | "remoteByMemberDay" | "permitByMemberDay"
+>;
+
+function expandRange(start: Date, end: Date, from: Date, to: Date): string[] {
+  const first = start.getTime() < from.getTime() ? from : start;
+  const last = end.getTime() > to.getTime() ? to : end;
+  const keys: string[] = [];
+  for (
+    let cursor = first;
+    cursor.getTime() <= last.getTime();
+    cursor = new Date(cursor.getTime() + 86_400_000)
+  ) {
+    keys.push(formatDay(cursor));
+  }
+  return keys;
+}
+
+/**
+ * Cuti, WFH/WFC, dan izin yang sudah disetujui untuk rentang laporan. Data
+ * dipakai agar Report Kehadiran menampilkan hari tanpa check-in GPS.
+ */
+async function loadMonthlyOverrides(
+  db: TenantDb,
+  start: Date,
+  end: Date,
+): Promise<MonthlyOverrides> {
+  const lastDay = new Date(end.getTime() - 86_400_000);
+  const [leaves, remote, permits] = await Promise.all([
+    db.leaveRequest.findMany({
+      where: {
+        status: "APPROVED",
+        startDate: { lte: lastDay },
+        endDate: { gte: start },
+      },
+      select: {
+        memberId: true,
+        leaveType: true,
+        reason: true,
+        startDate: true,
+        endDate: true,
+      },
+    }),
+    db.wfhRequest.findMany({
+      where: { status: "APPROVED", date: { gte: start, lte: lastDay } },
+      include: { workPlan: { include: { items: true } } },
+    }),
+    db.workPermit.findMany({
+      where: {
+        status: "APPROVED",
+        startDate: { lte: lastDay },
+        endDate: { gte: start },
+      },
+      select: {
+        memberId: true,
+        permitType: true,
+        reason: true,
+        startDate: true,
+        endDate: true,
+      },
+    }),
+  ]);
+
+  const leaveByMemberDay = new Map<string, { leaveType: string; reason: string }>();
+  for (const row of leaves) {
+    for (const key of expandRange(row.startDate, row.endDate, start, lastDay)) {
+      leaveByMemberDay.set(`${row.memberId}:${key}`, {
+        leaveType: row.leaveType,
+        reason: row.reason,
+      });
+    }
+  }
+  const remoteByMemberDay = new Map<string, MonthlyRemoteDay>();
+  for (const row of remote) {
+    const items = row.workPlan?.items ?? [];
+    remoteByMemberDay.set(`${row.memberId}:${formatDay(row.date)}`, {
+      workMode: row.workMode === "WFC" ? "WFC" : "WFH",
+      locationNote: row.locationNote,
+      reason: row.reason,
+      completed: items.filter((item) => item.isCompleted).length,
+      total: items.length,
+    });
+  }
+  const permitByMemberDay = new Map<string, { permitType: string; reason: string }>();
+  for (const row of permits) {
+    for (const key of expandRange(row.startDate, row.endDate, start, lastDay)) {
+      permitByMemberDay.set(`${row.memberId}:${key}`, {
+        permitType: row.permitType,
+        reason: row.reason,
+      });
+    }
+  }
+  return { leaveByMemberDay, remoteByMemberDay, permitByMemberDay };
+}
+
+function normalizeMonthlyFilter(value: string): string {
+  const upper = value.trim().toUpperCase();
+  return MONTHLY_FILTER_ALIASES[upper] ?? upper;
+}
+
+/** Filter menerima status (`LEAVE`, `PERMIT`) sekaligus alias mode (`CUTI`, `IZIN`). */
+function matchesMonthlyFilter(day: MonthlyDay, filter: string | undefined): boolean {
+  if (!filter) return true;
+  const normalized = normalizeMonthlyFilter(filter);
+  if (normalized === "WFO" || normalized === "WFH" || normalized === "WFC") {
+    return day.workMode === normalized;
+  }
+  return day.status === normalized;
+}
+
 function indexLogs(
-  logs: Array<{ memberId: string; type: string; workDate: Date; timestampServer: Date }>,
-): Map<string, { checkIn?: Date; checkOut?: Date }> {
-  const byMemberDay = new Map<string, { checkIn?: Date; checkOut?: Date }>();
+  logs: Array<{
+    memberId: string;
+    type: string;
+    workDate: Date;
+    timestampServer: Date;
+    workMode: string;
+  }>,
+): Map<string, { checkIn?: Date; checkOut?: Date; workMode?: string }> {
+  const byMemberDay = new Map<
+    string,
+    { checkIn?: Date; checkOut?: Date; workMode?: string }
+  >();
   for (const log of logs) {
     const key = `${log.memberId}:${formatDay(log.workDate)}`;
     const entry = byMemberDay.get(key) ?? {};
-    if (log.type === "CHECK_IN" && !entry.checkIn) entry.checkIn = log.timestampServer;
+    if (log.type === "CHECK_IN" && !entry.checkIn) {
+      entry.checkIn = log.timestampServer;
+      entry.workMode = log.workMode;
+    }
     if (log.type === "CHECK_OUT" && !entry.checkOut) entry.checkOut = log.timestampServer;
     byMemberDay.set(key, entry);
   }
@@ -386,7 +553,7 @@ function indexLogs(
 
 function buildMonthlyDays(
   memberId: string,
-  byMemberDay: Map<string, { checkIn?: Date; checkOut?: Date }>,
+  byMemberDay: Map<string, { checkIn?: Date; checkOut?: Date; workMode?: string }>,
   build: MonthlyBuild,
 ): MonthlyDay[] {
   const breakMins = breakMinutes();
@@ -395,6 +562,9 @@ function buildMonthlyDays(
     const entry = byMemberDay.get(key);
     const checkIn = entry?.checkIn ?? null;
     const checkOut = entry?.checkOut ?? null;
+    const remote = build.remoteByMemberDay.get(key);
+    const leave = build.leaveByMemberDay.get(key);
+    const permit = build.permitByMemberDay.get(key);
     const isFuture = date.getTime() > build.today.getTime();
     const weekday = date.getUTCDay();
     const rule = workPatternRuleFor(build.workPatternIndex, memberId, date);
@@ -408,6 +578,30 @@ function buildMonthlyDays(
         : Math.max(0, zonedMinutes(checkIn, timezone) - threshold);
     }
 
+    // Mode kerja: check-in menang agar tidak ada baris ganda pada tanggal yang
+    // sama saat WFH/WFC disetujui sekaligus ada presensi GPS.
+    let workMode: string | null = null;
+    let leaveType: string | null = null;
+    let note: string | null = null;
+    if (checkIn) {
+      workMode =
+        remote?.workMode ??
+        (entry?.workMode === "WFH" || entry?.workMode === "WFC"
+          ? entry.workMode
+          : "WFO");
+      note = remote?.locationNote ?? null;
+    } else if (leave) {
+      workMode = "CUTI";
+      leaveType = leave.leaveType;
+      note = leave.reason;
+    } else if (remote) {
+      workMode = remote.workMode;
+      note = remote.locationNote ?? remote.reason;
+    } else if (permit) {
+      workMode = "IZIN";
+      note = `${permit.permitType}: ${permit.reason}`;
+    }
+
     let status: MonthlyDayStatus;
     let workHours = 0;
     if (isFuture) {
@@ -417,7 +611,13 @@ function buildMonthlyDays(
     } else if (!scheduled) {
       status = "WEEKEND";
     } else if (!checkIn) {
-      status = "ABSENT";
+      status = leave
+        ? "LEAVE"
+        : remote
+          ? remote.workMode
+          : permit
+            ? "PERMIT"
+            : "ABSENT";
     } else if (!checkOut) {
       status = "INCOMPLETE";
     } else if (checkOut.getTime() < checkIn.getTime()) {
@@ -435,22 +635,44 @@ function buildMonthlyDays(
       workHours,
       late,
       status,
+      workMode,
+      leaveType,
+      note,
+      workPlanCompleted: remote?.completed ?? 0,
+      workPlanTotal: remote?.total ?? 0,
     };
   });
 
   return build.statusFilter
-    ? allDays.filter((day) => day.status === build.statusFilter)
+    ? allDays.filter((day) => matchesMonthlyFilter(day, build.statusFilter))
     : allDays;
 }
 
-function monthlyTotals(days: MonthlyDay[]): { hours: number; late: number; absent: number } {
+function monthlyTotals(days: MonthlyDay[]): {
+  hours: number;
+  late: number;
+  absent: number;
+  wfo: number;
+  wfh: number;
+  wfc: number;
+  leave: number;
+  permit: number;
+} {
   return days.reduce(
-    (acc, day) => ({
-      hours: roundHours(acc.hours + day.workHours),
-      late: acc.late + day.late,
-      absent: acc.absent + (day.status === "ABSENT" ? 1 : 0),
-    }),
-    { hours: 0, late: 0, absent: 0 },
+    (acc, day) => {
+      const counted = day.status !== "FUTURE";
+      return {
+        hours: roundHours(acc.hours + day.workHours),
+        late: acc.late + day.late,
+        absent: acc.absent + (day.status === "ABSENT" ? 1 : 0),
+        wfo: acc.wfo + (counted && day.workMode === "WFO" ? 1 : 0),
+        wfh: acc.wfh + (counted && day.workMode === "WFH" ? 1 : 0),
+        wfc: acc.wfc + (counted && day.workMode === "WFC" ? 1 : 0),
+        leave: acc.leave + (counted && day.status === "LEAVE" ? 1 : 0),
+        permit: acc.permit + (counted && day.status === "PERMIT" ? 1 : 0),
+      };
+    },
+    { hours: 0, late: 0, absent: 0, wfo: 0, wfh: 0, wfc: 0, leave: 0, permit: 0 },
   );
 }
 
@@ -474,7 +696,10 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
   }
 
   const statusFilter = input.status?.trim().toUpperCase();
-  if (statusFilter && !(MONTHLY_STATUSES as readonly string[]).includes(statusFilter)) {
+  if (
+    statusFilter &&
+    !(MONTHLY_FILTER_VALUES as readonly string[]).includes(statusFilter)
+  ) {
     throw new HttpError(400, "INVALID_STATUS", "Status rekap tidak valid");
   }
   const limit = pageValue(input.limit, REPORT_LIST_LIMIT_DEFAULT, 1, REPORT_LIST_LIMIT_MAX);
@@ -488,7 +713,7 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
   const breakMins = breakMinutes();
 
   return withTenant(input.ctx, async (db) => {
-    const [members, logs, holidays, office, patternAssignments] = await Promise.all([
+    const [members, logs, holidays, office, patternAssignments, overrides] = await Promise.all([
       db.workspaceMember.findMany({
         where: {
           status: "ACTIVE",
@@ -517,6 +742,7 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
       db.workPatternAssignment.findMany({
         include: { workPattern: { include: { days: true } } },
       }),
+      loadMonthlyOverrides(db, start, end),
     ]);
 
     const holidayDates = new Set(holidays.map((holiday) => formatDay(holiday.date)));
@@ -544,6 +770,7 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
         toleranceMinutes: tolerance,
         office,
         statusFilter,
+        ...overrides,
       });
       const totals = monthlyTotals(days);
       return {
@@ -554,6 +781,11 @@ export async function getMonthlyReport(input: MonthlyReportInput): Promise<Month
         totalWorkHours: totals.hours,
         totalLate: totals.late,
         totalAbsent: totals.absent,
+        totalWfo: totals.wfo,
+        totalWfh: totals.wfh,
+        totalWfc: totals.wfc,
+        totalLeave: totals.leave,
+        totalPermit: totals.permit,
       };
     });
 
@@ -572,7 +804,8 @@ function csvValue(value: string): string {
   return /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
 }
 
-const CSV_HEADER = "member_name,date,check_in,check_out,work_hours,late_minutes,status";
+const CSV_HEADER =
+  "member_name,date,check_in,check_out,work_hours,late_minutes,status,work_mode,leave_type,note";
 const CSV_STREAM_PAGE = 100;
 
 function csvLine(name: string, day: MonthlyDay): string {
@@ -584,6 +817,9 @@ function csvLine(name: string, day: MonthlyDay): string {
     day.workHours.toFixed(2),
     String(day.late),
     day.status,
+    day.workMode ?? "",
+    day.leaveType ?? "",
+    day.note ?? "",
   ]
     .map(csvValue)
     .join(",");
@@ -682,7 +918,10 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
     throw new HttpError(400, "INVALID_POSITION", "Parameter positionId tidak valid");
   }
   const statusFilter = input.status?.trim().toUpperCase();
-  if (statusFilter && !(MONTHLY_STATUSES as readonly string[]).includes(statusFilter)) {
+  if (
+    statusFilter &&
+    !(MONTHLY_FILTER_VALUES as readonly string[]).includes(statusFilter)
+  ) {
     throw new HttpError(400, "INVALID_STATUS", "Status rekap tidak valid");
   }
   const range = dayRange(input.from, input.to);
@@ -701,17 +940,20 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
     dates.push(day);
   }
 
-  const [holidays, office, patternAssignments] = await withTenant(input.ctx, async (db) =>
-    Promise.all([
-      db.workspaceHoliday.findMany({ where: { date: { gte: start, lt: end } } }),
-      db.officeLocation.findFirst({
-        where: { isActive: true },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      }),
-      db.workPatternAssignment.findMany({
-        include: { workPattern: { include: { days: true } } },
-      }),
-    ]),
+  const [holidays, office, patternAssignments, overrides] = await withTenant(
+    input.ctx,
+    async (db) =>
+      Promise.all([
+        db.workspaceHoliday.findMany({ where: { date: { gte: start, lt: end } } }),
+        db.officeLocation.findFirst({
+          where: { isActive: true },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        }),
+        db.workPatternAssignment.findMany({
+          include: { workPattern: { include: { days: true } } },
+        }),
+        loadMonthlyOverrides(db, start, end),
+      ]),
   );
   const build: MonthlyBuild = {
     dates,
@@ -721,6 +963,7 @@ export async function streamMonthlyCsv(input: CsvExportInput): Promise<CsvStream
     toleranceMinutes: tolerance,
     office,
     statusFilter,
+    ...overrides,
   };
 
   await withTenant(input.ctx, async (db) => {

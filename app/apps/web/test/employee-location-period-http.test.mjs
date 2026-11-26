@@ -339,7 +339,7 @@ test("PERIOD-1: ringkasan rentang tanggal, status, CSV, dan audit", async () => 
   const lines = (await csv.text()).trim().split("\r\n");
   assert.match(lines[0], /^member_name,division,present_days,on_time_days/);
   const summaryLine = lines.find((line) => line.startsWith("Member,Operasional,"));
-  assert.equal(summaryLine, "Member,Operasional,2,1,15,1,1,1,0,3");
+  assert.equal(summaryLine, "Member,Operasional,2,1,15,1,1,1,0,0,0,3");
 
   const audit = await db.auditLog.findFirst({
     where: { action: "report.export" },
@@ -387,8 +387,8 @@ test("PERIOD-2: export XLSX ringkasan kehadiran menyematkan logo perusahaan", as
   const sheet = workbook.getWorksheet("Ringkasan Kehadiran");
   assert.ok(sheet);
 
-  assert.ok(sheet.model.merges.includes("A1:G1"));
-  assert.ok(sheet.model.merges.includes("A2:G2"));
+  assert.ok(sheet.model.merges.includes("A1:L1"));
+  assert.ok(sheet.model.merges.includes("A2:L2"));
   assert.equal(
     sheet.getCell("A1").value,
     "Ringkasan Kehadiran - 26 Okt 2026 - 1 Nov 2026",
@@ -405,9 +405,14 @@ test("PERIOD-2: export XLSX ringkasan kehadiran menyematkan logo perusahaan", as
     "Total Hari Jadwal Kerja",
     "Total Hari Kehadiran",
     "Total Hari Tidak Masuk",
+    "WFH",
+    "WFC",
+    "Cuti",
+    "Izin / Sakit",
+    "Alpa",
     "Persentase Kehadiran",
   ];
-  const widths = [28, 26, 42, 22, 22, 22, 22];
+  const widths = [28, 26, 42, 22, 22, 22, 10, 10, 10, 14, 10, 22];
   headers.forEach((label, index) => {
     const cell = sheet.getRow(3).getCell(index + 1);
     assert.equal(cell.value, label);
@@ -440,16 +445,32 @@ test("PERIOD-2: export XLSX ringkasan kehadiran menyematkan logo perusahaan", as
   assert.equal(dataRow.getCell(4).value, 7);
   assert.equal(dataRow.getCell(5).value, 2);
   assert.equal(dataRow.getCell(6).value, 5);
-  assert.ok(Math.abs(Number(dataRow.getCell(7).value) - 2 / 7) < 0.0001);
-  assert.equal(dataRow.getCell(7).numFmt, "0%");
+  assert.equal(dataRow.getCell(7).value, 0);
+  assert.equal(dataRow.getCell(8).value, 0);
+  assert.equal(dataRow.getCell(9).value, 1);
+  assert.equal(dataRow.getCell(10).value, 1);
+  assert.equal(dataRow.getCell(11).value, 3);
+  assert.ok(Math.abs(Number(dataRow.getCell(12).value) - 2 / 7) < 0.0001);
+  assert.equal(dataRow.getCell(12).numFmt, "0%");
   assert.equal(dataRow.height, 21);
   assert.equal(dataRow.getCell(1).font?.name, "Calibri");
   assert.equal(dataRow.getCell(1).font?.size, 10);
-  ["left", "left", "left", "right", "right", "right", "right"].forEach(
-    (alignment, index) => {
-      assert.equal(dataRow.getCell(index + 1).alignment?.horizontal, alignment);
-    },
-  );
+  [
+    "left",
+    "left",
+    "left",
+    "right",
+    "right",
+    "right",
+    "right",
+    "right",
+    "right",
+    "right",
+    "right",
+    "right",
+  ].forEach((alignment, index) => {
+    assert.equal(dataRow.getCell(index + 1).alignment?.horizontal, alignment);
+  });
   assert.equal(dataRow.getCell(4).border?.bottom?.color?.argb, "FFD1D5DB");
 
   const audit = await db.auditLog.findFirst({
