@@ -11,6 +11,7 @@ import {
 
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
+import { sendPushNotificationToMember } from "./push-notifications.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
 export const MEMBER_DEVICE_PLATFORMS = ["ANDROID", "IOS", "UNKNOWN"] as const;
@@ -365,7 +366,7 @@ export async function reviewMemberDevice(input: {
   const action = normalizeReviewAction(input.action);
   const now = input.now ?? new Date();
 
-  return withTenant(input.ctx, (db) =>
+  const summary = await withTenant(input.ctx, (db) =>
     db.$transaction(async (tx) => {
       const device = await tx.memberDevice.findFirst({
         where: { id: input.deviceId },
@@ -440,6 +441,31 @@ export async function reviewMemberDevice(input: {
       return toSummary(updated);
     }),
   );
+
+  const approving = action === "APPROVE";
+  const rejected = action === "REJECT";
+  await sendPushNotificationToMember({
+    ctx: input.ctx,
+    memberId: summary.memberId,
+    message: {
+      title: approving
+        ? `Perangkat ${summary.deviceName} disetujui`
+        : rejected
+          ? `Perangkat ${summary.deviceName} ditolak`
+          : `Perangkat ${summary.deviceName} dicabut`,
+      body: approving
+        ? "Perangkat Anda sekarang dapat digunakan untuk absensi."
+        : rejected
+          ? "Permintaan perangkat Anda ditolak Admin/HR. Hubungi Admin HR bila ini perangkat resmi Anda."
+          : "Perangkat Anda tidak lagi diizinkan untuk absensi. Login dari perangkat baru untuk meminta persetujuan.",
+      data: {
+        type: approving ? "device_approved" : rejected ? "device_rejected" : "device_revoked",
+        deviceId: summary.id,
+        status: summary.status,
+      },
+    },
+  });
+  return summary;
 }
 
 export async function resetMemberDevices(input: {

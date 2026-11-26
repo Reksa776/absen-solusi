@@ -490,6 +490,36 @@ export {
   type PushTransportResolution,
 } from "./push.js";
 export {
+  DEFAULT_FIREBASE_SERVICE_ACCOUNT_PATH,
+  FIREBASE_SERVICE_ACCOUNT_ENV,
+  firebaseServiceAccountPath,
+  getFirebaseMessaging,
+  loadFirebaseServiceAccount,
+  resetFirebaseMessagingForTests,
+  type FirebaseServiceAccount,
+} from "./firebase-admin.js";
+export {
+  APPROVAL_NOTIFICATION_CHANNEL,
+  deletePushToken,
+  FirebasePushNotificationSender,
+  PUSH_PLATFORMS,
+  PUSH_TOKEN_MAX_LENGTH,
+  PUSH_TOKEN_MIN_LENGTH,
+  registerPushToken,
+  sendPushNotificationToMember,
+  sendPushNotificationToUser,
+  setPushNotificationSender,
+  type DeletePushTokenInput,
+  type DevicePushPlatform,
+  type PushNotificationMessage,
+  type PushNotificationResult,
+  type PushNotificationSender,
+  type PushSendOutcome,
+  type RegisteredPushToken,
+  type RegisterPushTokenInput,
+  type SendApprovalPushInput,
+} from "./push-notifications.js";
+export {
   acceptInvitation,
   INVITATION_ACCEPT_ACTION,
   type AcceptInvitationInput,

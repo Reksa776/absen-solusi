@@ -5,6 +5,7 @@ import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/dat
 import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
+import { sendPushNotificationToMember } from "./push-notifications.js";
 import { parseReportDay } from "./reports.js";
 import {
   createWorkPatternRuleIndex,
@@ -920,7 +921,36 @@ export async function reviewLeaveRequest(input: {
       return row;
     }),
   );
-  return toSummary(updated);
+
+  const summary = toSummary(updated);
+  const forwarded = summary.status === "PENDING";
+  const approved = action === "APPROVE";
+  const leaveDate =
+    summary.startDate === summary.endDate
+      ? summary.startDate
+      : `${summary.startDate} s.d. ${summary.endDate}`;
+  await sendPushNotificationToMember({
+    ctx: input.ctx,
+    memberId: summary.memberId,
+    message: {
+      title: approved
+        ? forwarded
+          ? `Cuti ${leaveDate} menunggu level berikutnya`
+          : `Cuti ${leaveDate} disetujui`
+        : `Cuti ${leaveDate} ditolak`,
+      body: approved
+        ? forwarded
+          ? "Pengajuan cuti Anda disetujui pada level ini dan diteruskan ke approver berikutnya."
+          : `Pengajuan cuti ${leaveDate} disetujui penuh.`
+        : "Pengajuan cuti Anda ditolak. Buka aplikasi untuk melihat catatan admin.",
+      data: {
+        type: "leave_result",
+        leaveId: summary.id,
+        status: summary.status,
+      },
+    },
+  });
+  return summary;
 }
 
 export async function getLeaveReport(input: {

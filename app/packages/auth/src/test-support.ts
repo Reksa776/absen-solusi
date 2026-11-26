@@ -130,6 +130,7 @@ export async function resetDatabase(db: PrismaClient): Promise<void> {
   await db.rolePermission.deleteMany();
   await db.workspaceMember.deleteMany();
   await db.role.deleteMany();
+  await db.devicePushToken.deleteMany();
   await db.session.deleteMany();
   await db.workspace.deleteMany();
   await db.auditLog.deleteMany();

@@ -335,6 +335,30 @@ class ApiClient {
     _decodeObject(response);
   }
 
+  /// Token FCM disimpan server per user; dipanggil saat login, sesi
+  /// dipulihkan, dan setiap token refresh.
+  Future<void> registerPushToken({
+    required String token,
+    required String platform,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/mobile/push-token'),
+      headers: await _authHeaders(json: true),
+      body: jsonEncode({'token': token, 'platform': platform}),
+    );
+    _decodeObject(response);
+  }
+
+  /// Logout: hapus token perangkat di server agar tidak ada notifikasi nyasar.
+  Future<void> deletePushToken({String? token}) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/mobile/push-token'),
+      headers: await _authHeaders(json: true),
+      body: jsonEncode({'token': ?token}),
+    );
+    _decodeObject(response);
+  }
+
   Future<OvertimeRequest> submitOvertime({
     required DateTime date,
     required String startTime,

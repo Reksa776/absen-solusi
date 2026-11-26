@@ -5,6 +5,7 @@ import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/dat
 import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
+import { sendPushNotificationToMember } from "./push-notifications.js";
 import { storePermitProof, type PermitProofInput } from "./permit-proof.js";
 import { parseReportDay } from "./reports.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
@@ -548,5 +549,34 @@ export async function reviewWorkPermit(input: {
       return row;
     }),
   );
-  return toSummary(updated);
+
+  const summary = toSummary(updated);
+  const forwarded = summary.status === "PENDING";
+  const approved = action === "APPROVE";
+  const permitDate =
+    summary.startDate === summary.endDate
+      ? summary.startDate
+      : `${summary.startDate} s.d. ${summary.endDate}`;
+  await sendPushNotificationToMember({
+    ctx: input.ctx,
+    memberId: summary.memberId,
+    message: {
+      title: approved
+        ? forwarded
+          ? `Izin ${permitDate} menunggu level berikutnya`
+          : `Izin ${permitDate} disetujui`
+        : `Izin ${permitDate} ditolak`,
+      body: approved
+        ? forwarded
+          ? "Pengajuan izin kerja Anda disetujui pada level ini dan diteruskan ke approver berikutnya."
+          : `Pengajuan izin kerja ${permitDate} disetujui penuh.`
+        : "Pengajuan izin kerja Anda ditolak. Buka aplikasi untuk melihat catatan admin.",
+      data: {
+        type: "permit_result",
+        permitId: summary.id,
+        status: summary.status,
+      },
+    },
+  });
+  return summary;
 }

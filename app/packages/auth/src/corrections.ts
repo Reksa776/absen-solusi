@@ -13,6 +13,7 @@ import {
 import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
+import { sendPushNotificationToMember } from "./push-notifications.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
 export const REVISION_WINDOW_DAYS_DEFAULT = 7;
@@ -585,7 +586,7 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
   }
 
   const now = input.now ?? new Date();
-  return withTenant(input.ctx, async (db) =>
+  const summary = await withTenant(input.ctx, async (db) =>
     db.$transaction(async (tx) => {
       const correction = await tx.correctionRequest.findFirst({
         where: { id: input.correctionId, tenantId: input.ctx.tenantId },
@@ -755,4 +756,30 @@ export async function reviewCorrection(input: ReviewCorrectionInput): Promise<Co
       return toSummary(row);
     }),
   );
+
+  const revisionDate = summary.requestedTimestamp.slice(0, 10);
+  const forwarded = summary.status === "PENDING";
+  const approved = input.action === "approve";
+  await sendPushNotificationToMember({
+    ctx: input.ctx,
+    memberId: summary.memberId,
+    message: {
+      title: approved
+        ? forwarded
+          ? `Revisi ${revisionDate} menunggu level berikutnya`
+          : `Revisi ${revisionDate} disetujui`
+        : `Revisi ${revisionDate} ditolak`,
+      body: approved
+        ? forwarded
+          ? "Revisi kehadiran Anda disetujui pada level ini dan diteruskan ke approver berikutnya."
+          : "Revisi kehadiran Anda disetujui. Data kehadiran sudah diperbarui."
+        : "Revisi kehadiran Anda ditolak. Buka aplikasi untuk melihat catatan admin.",
+      data: {
+        type: "correction_result",
+        correctionId: summary.id,
+        status: summary.status,
+      },
+    },
+  });
+  return summary;
 }

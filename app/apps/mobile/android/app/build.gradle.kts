@@ -4,6 +4,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Plugin Google Services hanya diterapkan bila google-services.json tersedia,
+// sehingga build tetap berjalan pada environment tanpa konfigurasi Firebase.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.absensi.absensi_mobile"
     // flutter_local_notifications 23 membutuhkan compileSdk 37.

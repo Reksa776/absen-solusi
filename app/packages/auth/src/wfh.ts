@@ -4,6 +4,7 @@ import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/dat
 
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
+import { sendPushNotificationToMember } from "./push-notifications.js";
 import { parseReportDay, startOfUtcDay } from "./reports.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 import { parseStatus } from "./overtime.js";
@@ -293,5 +294,21 @@ export async function reviewWfh(input: {
       return row;
     }),
   );
-  return toSummary(updated);
+
+  const summary = toSummary(updated);
+  const approved = action === "APPROVE";
+  await sendPushNotificationToMember({
+    ctx: input.ctx,
+    memberId: summary.memberId,
+    message: {
+      title: approved
+        ? `WFH ${summary.date} disetujui`
+        : `WFH ${summary.date} ditolak`,
+      body: approved
+        ? "Pengajuan WFH Anda disetujui. Absensi pada tanggal tersebut tidak terkena geofence."
+        : "Pengajuan WFH Anda ditolak. Buka aplikasi untuk melihat catatan admin.",
+      data: { type: "wfh_result", wfhId: summary.id, status: summary.status },
+    },
+  });
+  return summary;
 }

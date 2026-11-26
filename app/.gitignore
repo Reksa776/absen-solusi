@@ -16,6 +16,9 @@ coverage/
 .env.production
 !.env.example
 
+# Firebase Admin service account (server credential, never commit)
+firebase-service-account*.json
+
 # Generated Prisma client
 packages/database/src/generated/
 

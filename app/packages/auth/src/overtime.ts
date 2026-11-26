@@ -5,6 +5,7 @@ import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/dat
 import { assertApprovalActor, resolveApprovalStep } from "./approvals.js";
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
+import { sendPushNotificationToMember } from "./push-notifications.js";
 import { parseReportDay, startOfUtcDay } from "./reports.js";
 import { assertWorkspaceReadClaim } from "./workspaces.js";
 
@@ -317,5 +318,30 @@ export async function reviewOvertime(input: {
       return row;
     }),
   );
-  return toSummary(updated);
+
+  const summary = toSummary(updated);
+  const forwarded = summary.status === "PENDING";
+  const approved = action === "APPROVE";
+  await sendPushNotificationToMember({
+    ctx: input.ctx,
+    memberId: summary.memberId,
+    message: {
+      title: approved
+        ? forwarded
+          ? `Lembur ${summary.date} menunggu level berikutnya`
+          : `Lembur ${summary.date} disetujui`
+        : `Lembur ${summary.date} ditolak`,
+      body: approved
+        ? forwarded
+          ? "Pengajuan lembur Anda diteruskan ke approver berikutnya."
+          : `Pengajuan lembur ${summary.startTime}-${summary.endTime} disetujui.`
+        : "Pengajuan lembur Anda ditolak. Buka aplikasi untuk melihat catatan admin.",
+      data: {
+        type: "overtime_result",
+        overtimeId: summary.id,
+        status: summary.status,
+      },
+    },
+  });
+  return summary;
 }

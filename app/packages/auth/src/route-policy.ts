@@ -140,6 +140,13 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
     kind: "permission",
     permission: "workspace.read",
   },
+  "/api/mobile/push-token": {
+    kind: "methods",
+    methods: {
+      POST: { kind: "permission", permission: "workspace.read" },
+      DELETE: { kind: "permission", permission: "workspace.read" },
+    },
+  },
   "/api/notifications/me": {
     kind: "permission",
     permission: "workspace.read",

@@ -5,16 +5,25 @@ import '../models/session.dart';
 import '../models/user.dart';
 import '../models/workspace.dart';
 import 'background_sync_service.dart';
+import 'push_notification_service.dart';
 
 class AuthService extends ChangeNotifier {
-  AuthService({required this.api, BackgroundSessionSync? backgroundSync})
-    : backgroundSync = backgroundSync ?? const NoopBackgroundSessionSync();
+  AuthService({
+    required this.api,
+    BackgroundSessionSync? backgroundSync,
+    PushSessionSync? pushSync,
+  }) : backgroundSync = backgroundSync ?? const NoopBackgroundSessionSync(),
+       pushNotifications = pushSync ?? const NoopPushSessionSync();
 
   final ApiClient api;
 
   /// Menyalin kredensial ke SharedPreferences polos dan menyalakan
   /// foreground service sinkronisasi selama sesi aktif.
   final BackgroundSessionSync backgroundSync;
+
+  /// Registrasi token FCM saat login/sesi dipulihkan dan penghapusannya saat
+  /// logout. Implementasi nyata ada di [PushNotificationService].
+  final PushSessionSync pushNotifications;
   SessionProfile? _profile;
   bool _loading = false;
   bool _busy = false;
@@ -47,6 +56,7 @@ class AuthService extends ChangeNotifier {
         return false;
       }
       _profile = await api.me();
+      await _startPushSync();
       await _startBackgroundSync();
       return true;
     } on ApiException catch (error) {
@@ -73,6 +83,7 @@ class AuthService extends ChangeNotifier {
     try {
       final result = await api.login(email.trim(), password);
       _profile = result;
+      await _startPushSync();
       await _startBackgroundSync();
       return true;
     } on ApiException catch (error) {
@@ -111,6 +122,8 @@ class AuthService extends ChangeNotifier {
     _busy = true;
     notifyListeners();
     try {
+      // Hapus token FCM selagi sesi masih valid.
+      await _stopPushSync();
       await api.logout();
     } catch (_) {
       // Token tetap dihapus lokal walau server tidak dapat dihubungi.
@@ -127,6 +140,22 @@ class AuthService extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
+  }
+
+  Future<void> _startPushSync() async {
+    try {
+      await pushNotifications.register(api);
+    } catch (error) {
+      debugPrint('Registrasi push notification gagal: $error');
+    }
+  }
+
+  Future<void> _stopPushSync() async {
+    try {
+      await pushNotifications.unregister(api);
+    } catch (error) {
+      debugPrint('Penghapusan push token gagal: $error');
+    }
   }
 
   Future<void> _startBackgroundSync() async {

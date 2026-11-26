@@ -34,6 +34,11 @@
 	<string>Lokasi dipakai untuk memvalidasi radius kantor saat absensi.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Lokasi dipakai hanya saat presensi untuk memverifikasi titik kantor atau lapangan.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
