@@ -3,6 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import {
+  WorkPlanPanel,
+  workModeBadgeClass,
+  workModeLabel,
+  type WorkPlanPanelData,
+} from "@/components/work-plan-panel";
+
 const CSRF_COOKIE = "aos_csrf";
 const MIN_REJECTION_REASON = 5;
 
@@ -12,10 +19,19 @@ export type WfhReviewRow = {
   memberDivision: string | null;
   memberPosition: string | null;
   date: string;
+  workMode: string;
+  locationNote: string | null;
   reason: string;
   status: string;
   rejectionReason: string | null;
+  workPlan: WorkPlanPanelData | null;
 };
+
+const MODE_FILTERS = [
+  { value: "ALL", label: "Semua mode" },
+  { value: "WFH", label: "WFH" },
+  { value: "WFC", label: "WFC" },
+] as const;
 
 const FILTERS = [
   { value: "PENDING", label: "Menunggu" },
@@ -74,6 +90,8 @@ export function WfhReview({
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["value"]>("PENDING");
+  const [modeFilter, setModeFilter] =
+    useState<(typeof MODE_FILTERS)[number]["value"]>("ALL");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<WfhReviewRow | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -81,8 +99,13 @@ export function WfhReview({
   const [notice, setNotice] = useState<string | null>(null);
 
   const visible = useMemo(
-    () => (filter === "ALL" ? rows : rows.filter((row) => row.status === filter)),
-    [filter, rows],
+    () =>
+      rows.filter(
+        (row) =>
+          (filter === "ALL" || row.status === filter) &&
+          (modeFilter === "ALL" || row.workMode === modeFilter),
+      ),
+    [filter, modeFilter, rows],
   );
 
   async function review(
@@ -115,8 +138,8 @@ export function WfhReview({
       setRejectionReason("");
       setNotice(
         action === "APPROVE"
-          ? `WFH ${formatDate(row.date)} disetujui.`
-          : `WFH ${formatDate(row.date)} ditolak.`,
+          ? `${workModeLabel(row.workMode)} ${formatDate(row.date)} disetujui.`
+          : `${workModeLabel(row.workMode)} ${formatDate(row.date)} ditolak.`,
       );
       router.refresh();
     } catch {
@@ -152,12 +175,12 @@ export function WfhReview({
       <div className="table-wrap">
         <div className="table-head">
           <div>
-            <h2 className="section-title">Daftar pengajuan WFH</h2>
+            <h2 className="section-title">Daftar pengajuan WFH &amp; WFC</h2>
             <p className="section-note">
               {visible.length} dari {rows.length} pengajuan pada filter ini
             </p>
           </div>
-          <div className="chip-row" role="group" aria-label="Filter status WFH">
+          <div className="chip-row" role="group" aria-label="Filter status WFH & WFC">
             {FILTERS.map((item) => (
               <button
                 key={item.value}
@@ -170,21 +193,36 @@ export function WfhReview({
               </button>
             ))}
           </div>
+          <div className="chip-row" role="group" aria-label="Filter mode kerja">
+            {MODE_FILTERS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={`chip${modeFilter === item.value ? " chip--active" : ""}`}
+                aria-pressed={modeFilter === item.value}
+                onClick={() => setModeFilter(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="table-scroll">
           <table className="data">
             <thead>
               <tr>
-                {["Karyawan", "Tanggal WFH", "Alasan", "Status", "Aksi"].map((label) => (
-                  <th key={label}>{label}</th>
-                ))}
+                {["Karyawan", "Tanggal", "Alasan", "Rencana kerja", "Status", "Aksi"].map(
+                  (label) => (
+                    <th key={label}>{label}</th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="empty">
-                    Tidak ada pengajuan WFH pada filter ini.
+                  <td colSpan={6} className="empty">
+                    Tidak ada pengajuan WFH/WFC pada filter ini.
                   </td>
                 </tr>
               ) : null}
@@ -198,7 +236,15 @@ export function WfhReview({
                         .join(" · ") || "—"}
                     </span>
                   </td>
-                  <td className="mono nowrap">{formatDate(row.date)}</td>
+                  <td className="nowrap">
+                    <span className="mono">{formatDate(row.date)}</span>
+                    <span className="cell-sub">
+                      <span className={workModeBadgeClass(row.workMode)}>
+                        {workModeLabel(row.workMode)}
+                      </span>
+                      {row.locationNote ? ` ${row.locationNote}` : ""}
+                    </span>
+                  </td>
                   <td style={{ maxWidth: "20rem" }}>
                     {row.reason}
                     {row.rejectionReason ? (
@@ -206,6 +252,18 @@ export function WfhReview({
                         Ditolak: {row.rejectionReason}
                       </span>
                     ) : null}
+                  </td>
+                  <td style={{ maxWidth: "18rem" }}>
+                    {row.workPlan ? (
+                      <details className="work-plan-details">
+                        <summary>
+                          {row.workPlan.completedCount}/{row.workPlan.totalCount} selesai
+                        </summary>
+                        <WorkPlanPanel plan={row.workPlan} />
+                      </details>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
                   </td>
                   <td>
                     <span className={statusBadge(row.status)}>
@@ -256,9 +314,12 @@ export function WfhReview({
             aria-modal="true"
             aria-labelledby="wfh-reject-title"
           >
-            <h2 id="wfh-reject-title">Tolak pengajuan WFH</h2>
+            <h2 id="wfh-reject-title">
+              Tolak pengajuan {workModeLabel(rejecting.workMode)}
+            </h2>
             <p className="modal-sub">
               {rejecting.memberName} · {formatDate(rejecting.date)}
+              {rejecting.locationNote ? ` · ${rejecting.locationNote}` : ""}
             </p>
             <label className="field">
               Catatan penolakan (wajib, minimal {MIN_REJECTION_REASON} karakter)

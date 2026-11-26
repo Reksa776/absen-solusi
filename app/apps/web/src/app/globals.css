@@ -2489,3 +2489,89 @@ table.data {
     justify-content: center;
   }
 }
+
+/* ---------- Rencana kerja WFH / WFC ---------- */
+
+.work-plan {
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.work-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+
+.work-plan-progress {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--green-200);
+  border-radius: 999px;
+  background: var(--green-100);
+  color: var(--green-800);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.work-plan-location {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.work-plan-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.work-plan-item--done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.work-plan-check {
+  color: var(--green-700);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.work-plan-check--empty {
+  color: var(--line);
+}
+
+.work-plan-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.work-plan-details summary {
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--green-700);
+}
+
+.work-plan-details[open] summary {
+  margin-bottom: 0.35rem;
+}

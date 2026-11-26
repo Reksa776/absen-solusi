@@ -44,7 +44,7 @@ class _RequestsTabState extends State<RequestsTab> {
   static const _segments = [
     ('CORRECTION', 'Revisi'),
     ('OVERTIME', 'Lembur'),
-    ('WFH', 'WFH'),
+    ('WFH', 'WFH/WFC'),
     ('IZIN', 'Izin'),
     ('CUTI', 'Cuti'),
   ];
@@ -207,7 +207,7 @@ class _RequestsTabState extends State<RequestsTab> {
                 icon: Icons.home_work_outlined,
                 title: 'WFH',
                 subtitle:
-                    'Minta izin bekerja dari rumah untuk tanggal tertentu.',
+                    'Minta izin WFH (rumah) atau WFC (cafe/remote) lengkap dengan rencana kerja.',
                 value: 'WFH',
               ),
               _sheetOption(
@@ -551,9 +551,13 @@ class _RequestsTabState extends State<RequestsTab> {
       return [
         for (final row in _wfh)
           _requestCard(
-            icon: Icons.home_work_outlined,
-            title: 'WFH • ${_date(row.date)}',
-            subtitle: row.reason,
+            icon: row.workMode == 'WFC'
+                ? Icons.local_cafe_outlined
+                : Icons.home_work_outlined,
+            title: '${row.modeLabel} • ${_date(row.date)}',
+            subtitle:
+                '${row.reason}'
+                '${row.locationNote == null ? '' : '\\nLokasi: ${row.locationNote}'}',
             status: row.status,
             statusLabel: row.statusLabel,
           ),
@@ -719,12 +723,16 @@ class _RequestsTabState extends State<RequestsTab> {
           },
         ),
     ]);
-    addSection('WFH', [
+    addSection('WFH & WFC', [
       for (final row in _wfh)
         _requestCard(
-          icon: Icons.home_work_outlined,
-          title: 'WFH • ${_date(row.date)}',
-          subtitle: row.reason,
+          icon: row.workMode == 'WFC'
+              ? Icons.local_cafe_outlined
+              : Icons.home_work_outlined,
+          title: '${row.modeLabel} • ${_date(row.date)}',
+          subtitle:
+              '${row.reason}'
+              '${row.locationNote == null ? '' : '\\nLokasi: ${row.locationNote}'}',
           status: row.status,
           statusLabel: row.statusLabel,
         ),

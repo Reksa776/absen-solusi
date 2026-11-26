@@ -3,6 +3,10 @@ import { redirect } from "next/navigation";
 
 import { listAttendanceRecords, listWorkspaceMembers } from "@absensi/auth";
 
+import {
+  workModeBadgeClass,
+  workModeLabel,
+} from "@/components/work-plan-panel";
 import { requirePagePermission } from "@/lib/page-auth";
 import { AttendanceDetail, type AttendanceDetailGroup } from "./attendance-detail";
 
@@ -21,7 +25,7 @@ export default async function DailyAttendancePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ date?: string; memberId?: string }>;
+  searchParams: Promise<{ date?: string; memberId?: string; workMode?: string }>;
 }) {
   const { id } = await params;
   const query = await searchParams;
@@ -34,6 +38,7 @@ export default async function DailyAttendancePage({
       workspaceId: id,
       date,
       memberId: query.memberId || undefined,
+      workMode: query.workMode || undefined,
       limit: 500,
     }),
     ctx.permissions.includes("member.read")
@@ -86,6 +91,16 @@ export default async function DailyAttendancePage({
         <label className="field">
           Tanggal
           <input type="date" name="date" defaultValue={date} className="mono" />
+        </label>
+        <label className="field">
+          Mode kerja
+          <select name="workMode" defaultValue={query.workMode ?? ""}>
+            <option value="">Semua mode</option>
+            <option value="WFO">WFO (kantor)</option>
+            <option value="WFH">WFH (rumah)</option>
+            <option value="WFC">WFC (cafe/remote)</option>
+            <option value="OUT_OF_TOWN">Luar kota</option>
+          </select>
         </label>
         {members.members.length > 0 ? (
           <label className="field">
@@ -150,15 +165,18 @@ export default async function DailyAttendancePage({
                       </span>
                     </td>
                     <td>
-                      <span className="badge badge--neutral">
-                        {primary
-                          ? primary.workMode === "OUT_OF_TOWN"
-                            ? "Luar kota"
-                            : primary.workMode === "WFH"
-                              ? "WFH"
-                              : "Kantor"
-                          : "—"}
-                      </span>
+                      {primary ? (
+                        <>
+                          <span className={workModeBadgeClass(primary.workMode)}>
+                            {workModeLabel(primary.workMode)}
+                          </span>
+                          {primary.locationNote ? (
+                            <span className="cell-sub">{primary.locationNote}</span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td>
                       <span

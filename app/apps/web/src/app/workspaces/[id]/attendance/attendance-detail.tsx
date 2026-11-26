@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 
+import {
+  WorkPlanPanel,
+  workModeBadgeClass,
+  workModeLabel,
+  type WorkPlanPanelData,
+} from "@/components/work-plan-panel";
+
 export type AttendanceDetailRecord = {
   id: string;
   type: string;
@@ -12,6 +19,8 @@ export type AttendanceDetailRecord = {
   distanceMeters: number;
   officeName: string | null;
   workMode: string;
+  locationNote: string | null;
+  workPlan: WorkPlanPanelData | null;
   approvalStatus: string;
   photoUrl: string;
   notes: string | null;
@@ -36,12 +45,6 @@ function stamp(value: string): string {
     timeStyle: "medium",
     hour12: false,
   }).format(new Date(value));
-}
-
-function modeLabel(value: string): string {
-  if (value === "WFH") return "WFH";
-  if (value === "OUT_OF_TOWN") return "Luar kota";
-  return "Kantor";
 }
 
 function approvalLabel(value: string): string {
@@ -81,8 +84,15 @@ function RecordBlock({
       </div>
       <dl className="detail-grid">
         <div>
-          <dt>Mode</dt>
-          <dd>{modeLabel(record.workMode)}</dd>
+          <dt>Mode kerja</dt>
+          <dd>
+            <span className={workModeBadgeClass(record.workMode)}>
+              {workModeLabel(record.workMode)}
+            </span>
+            {record.locationNote ? (
+              <span className="cell-sub">{record.locationNote}</span>
+            ) : null}
+          </dd>
         </div>
         <div>
           <dt>Status</dt>
@@ -132,6 +142,7 @@ function RecordBlock({
           Buka di Google Maps
         </a>
       </div>
+      {record.workPlan ? <WorkPlanPanel plan={record.workPlan} /> : null}
       {record.isSuspicious ? (
         <p className="alert" style={{ marginTop: "0.65rem" }}>
           Presensi ditandai mencurigakan oleh sistem.

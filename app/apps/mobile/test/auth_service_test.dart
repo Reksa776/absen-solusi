@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:absensi_mobile/api/api_client.dart';
@@ -53,6 +54,51 @@ void main() {
     await auth.logout();
     expect(auth.isAuthenticated, isFalse);
     expect(await store.read(), isNull);
+  });
+
+  test('logout langsung menghapus sesi lokal walau server lambat', () async {
+    final store = MemoryTokenStore();
+    final pendingLogout = Completer<http.Response>();
+    final requests = <http.Request>[];
+    final client = ApiClient(
+      baseUrl: 'https://absensi.test',
+      tokenStore: store,
+      client: MockClient((request) async {
+        requests.add(request);
+        if (request.url.path == '/api/auth/login') {
+          return http.Response(
+            jsonEncode({...profileJson(), 'token': 'token-abc'}),
+            200,
+          );
+        }
+        if (request.url.path == '/api/auth/logout') {
+          // Server tidak pernah menjawab: logout tetap harus selesai seketika.
+          return pendingLogout.future;
+        }
+        return http.Response('{}', 404);
+      }),
+    );
+    final auth = AuthService(api: client);
+    expect(await auth.login('a@example.com', 'rahasia'), isTrue);
+
+    final started = DateTime.now();
+    await auth.logout();
+    final elapsed = DateTime.now().difference(started);
+    await pumpEventQueue();
+
+    expect(elapsed, lessThan(const Duration(seconds: 2)));
+    expect(auth.isAuthenticated, isFalse);
+    expect(await store.read(), isNull);
+
+    // Pembersihan server tetap berjalan di latar dengan token yang disalin
+    // sebelum penyimpanan lokal dihapus.
+    final logoutRequest = requests.singleWhere(
+      (request) => request.url.path == '/api/auth/logout',
+    );
+    expect(logoutRequest.headers['authorization'], 'Bearer token-abc');
+
+    pendingLogout.complete(http.Response(jsonEncode({'ok': true}), 200));
+    await pumpEventQueue();
   });
 
   test('login gagal menampilkan pesan yang dapat dibaca', () async {

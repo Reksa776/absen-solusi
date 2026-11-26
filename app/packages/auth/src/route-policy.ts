@@ -234,6 +234,7 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/wfh": { kind: "permission", permission: "workspace.read" },
   "/api/wfh/me": { kind: "permission", permission: "workspace.read" },
   "/api/wfh/:id": { kind: "permission", permission: "correction.review" },
+  "/api/wfh/:id/plan": { kind: "permission", permission: "workspace.read" },
   "/api/workspaces/:id/wfh": {
     kind: "permission",
     permission: "correction.review",
@@ -241,6 +242,43 @@ export const API_ROUTE_POLICIES: Record<string, ApiRoutePolicy> = {
   "/api/workspaces/:id/wfh/:requestId/review": {
     kind: "permission",
     permission: "correction.review",
+  },
+  "/api/workspaces/:id/work-plans": {
+    kind: "permission",
+    permission: "attendance.read",
+  },
+  "/api/mobile/work-plans": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "workspace.read" },
+      POST: { kind: "permission", permission: "workspace.read" },
+    },
+  },
+  "/api/mobile/work-plans/today": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/mobile/work-plans/items/:itemId": {
+    kind: "methods",
+    methods: {
+      PATCH: { kind: "permission", permission: "workspace.read" },
+      DELETE: { kind: "permission", permission: "workspace.read" },
+    },
+  },
+  "/api/work-plans": {
+    kind: "methods",
+    methods: {
+      GET: { kind: "permission", permission: "workspace.read" },
+      POST: { kind: "permission", permission: "workspace.read" },
+    },
+  },
+  "/api/work-plans/today": {
+    kind: "permission",
+    permission: "workspace.read",
+  },
+  "/api/work-plans/:planId/attachment": {
+    kind: "permission",
+    permission: "workspace.read",
   },
   "/api/permits": { kind: "permission", permission: "workspace.read" },
   "/api/permits/me": { kind: "permission", permission: "workspace.read" },

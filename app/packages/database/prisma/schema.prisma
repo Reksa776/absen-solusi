@@ -98,8 +98,10 @@ model Workspace {
   workPatternDays        WorkPatternDay[]
   workPatternAssignments WorkPatternAssignment[]
   attendanceSetting      AttendanceSetting?
-  overtimeSetting        OvertimeSetting?
-  overtimeSchedules      OvertimeSchedule[]
+    overtimeSetting             OvertimeSetting?
+  overtimeSchedules           OvertimeSchedule[]
+  workPlans                   WorkPlan[]
+  workPlanItems               WorkPlanItem[]
 
   @@map("workspaces")
 }
@@ -161,6 +163,7 @@ model WorkspaceMember {
   workPatternAssignment       WorkPatternAssignment?
   overtimeSchedules           OvertimeSchedule[]     @relation("OvertimeScheduleMember")
   overtimeSchedulesCreated    OvertimeSchedule[]     @relation("OvertimeScheduleCreator")
+  workPlans                   WorkPlan[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, id])
@@ -307,6 +310,7 @@ model AttendanceLog {
   distanceMeters       Float     @map("distance_meters")
   officeLocationId     String?   @map("office_location_id") @db.Char(36)
   workMode             String    @default("OFFICE") @map("work_mode") @db.VarChar(20)
+  locationNote         String?   @map("location_note") @db.VarChar(255)
   outOfRadius          Boolean   @default(false) @map("out_of_radius")
   outOfTownReason      String?   @map("out_of_town_reason") @db.VarChar(500)
   approvalStatus       String    @default("APPROVED") @map("approval_status") @db.VarChar(20)
@@ -336,6 +340,7 @@ model AttendanceLog {
   member      WorkspaceMember     @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
   office      OfficeLocation?     @relation("AttendanceOffice", fields: [tenantId, officeLocationId], references: [tenantId, id], onDelete: Restrict)
   corrections CorrectionRequest[]
+  workPlan    WorkPlan?
 
   @@unique([tenantId, id])
   @@unique([tenantId, memberId, idempotencyKey])
@@ -733,6 +738,13 @@ model WfhRequest {
   tenantId           String    @map("tenant_id") @db.Char(36)
   memberId           String    @map("member_id") @db.Char(36)
   date               DateTime  @db.Date
+  /// WFH (dari rumah) atau WFC (dari cafe/coworking/remote).
+  workMode           String    @default("WFH") @map("work_mode") @db.VarChar(20)
+  locationNote       String?   @map("location_note") @db.VarChar(255)
+  planAttachmentUrl  String?   @map("plan_attachment_url") @db.VarChar(512)
+  planAttachmentHash String?   @map("plan_attachment_hash") @db.Char(64)
+  planAttachmentFileName String? @map("plan_attachment_file_name") @db.VarChar(255)
+  planAttachmentContentType String? @map("plan_attachment_content_type") @db.VarChar(100)
   reason             String    @db.VarChar(1000)
   status             String    @default("PENDING") @db.VarChar(20)
   reviewedByMemberId String?   @map("reviewed_by_member_id") @db.Char(36)
@@ -744,6 +756,7 @@ model WfhRequest {
   workspace Workspace        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   member    WorkspaceMember  @relation("WfhMember", fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
   reviewer  WorkspaceMember? @relation("WfhReviewer", fields: [tenantId, reviewedByMemberId], references: [tenantId, id], onDelete: Restrict)
+  workPlan  WorkPlan?
 
   @@unique([tenantId, id])
   @@index([tenantId, memberId, date])
@@ -1210,4 +1223,53 @@ model BackgroundJobAttempt {
 
   @@index([jobId])
   @@map("background_job_attempts")
+}
+
+/// Rencana kerja harian untuk sesi WFH/WFC: lokasi kerja, lampiran gambar
+/// rencana, dan daftar tugas yang dicentang karyawan selama bekerja.
+model WorkPlan {
+  id                String   @id @db.Char(36)
+  tenantId          String   @map("tenant_id") @db.Char(36)
+  memberId          String   @map("member_id") @db.Char(36)
+  attendanceId      String?  @unique @map("attendance_id") @db.Char(36)
+  requestId         String?  @unique @map("request_id") @db.Char(36)
+  /// WFH atau WFC.
+  workMode          String   @map("work_mode") @db.VarChar(20)
+  date              DateTime @db.Date
+  locationNote      String?  @map("location_note") @db.VarChar(255)
+  planAttachmentUrl String?  @map("plan_attachment_url") @db.VarChar(512)
+  summaryNote       String?  @map("summary_note") @db.VarChar(1000)
+  createdAt         DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace  Workspace       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  member     WorkspaceMember @relation(fields: [tenantId, memberId], references: [tenantId, id], onDelete: Cascade)
+  attendance AttendanceLog?  @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  request    WfhRequest?     @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  items      WorkPlanItem[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, memberId, date])
+  @@index([tenantId, date])
+  @@index([tenantId, workMode, date])
+  @@map("work_plans")
+}
+
+model WorkPlanItem {
+  id          String    @id @db.Char(36)
+  tenantId    String    @map("tenant_id") @db.Char(36)
+  workPlanId  String    @map("work_plan_id") @db.Char(36)
+  title       String    @db.VarChar(255)
+  isCompleted Boolean   @default(false) @map("is_completed")
+  completedAt DateTime? @map("completed_at") @db.DateTime(3)
+  proofUrl    String?   @map("proof_url") @db.VarChar(512)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.DateTime(3)
+
+  workspace Workspace @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workPlan  WorkPlan  @relation(fields: [workPlanId], references: [id], onDelete: Cascade)
+
+  @@index([workPlanId, sortOrder])
+  @@map("work_plan_items")
 }

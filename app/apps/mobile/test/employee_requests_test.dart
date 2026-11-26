@@ -230,13 +230,24 @@ void main() {
     expect(find.text('Riwayat Pengajuan Terbaru'), findsOneWidget);
   });
 
-  testWidgets('submit WFH mengirim tanggal dan alasan', (tester) async {
+  testWidgets('submit WFH mengirim tanggal, alasan, dan rencana kerja', (
+    tester,
+  ) async {
     final mock = RequestsMock();
     await mock.init();
     await openScreen(tester, mock);
 
     await tester.tap(find.byKey(const Key('mode-WFH')));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('work-plan-item-0')));
+    await tester.enterText(
+      find.byKey(const Key('work-plan-location')),
+      'Rumah',
+    );
+    await tester.enterText(
+      find.byKey(const Key('work-plan-item-0')),
+      'Menyelesaikan laporan bulanan',
+    );
     await tester.enterText(
       find.byKey(const Key('wfh-reason')),
       'Bekerja dari rumah karena akses kantor terendam banjir',
@@ -245,11 +256,34 @@ void main() {
 
     final request = mock.postsFor('/api/wfh').single;
     final body = jsonDecode(request.body) as Map<String, dynamic>;
-    expect(body, {
-      'date': '2026-11-26',
-      'reason': 'Bekerja dari rumah karena akses kantor terendam banjir',
-    });
+    expect(body['date'], '2026-11-26');
+    expect(
+      body['reason'],
+      'Bekerja dari rumah karena akses kantor terendam banjir',
+    );
+    expect(body['workMode'], 'WFH');
+    expect(body['locationNote'], 'Rumah');
+    expect(body['workPlanItems'], jsonEncode(['Menyelesaikan laporan bulanan']));
     expect(find.text('Pengajuan WFH terkirim.'), findsOneWidget);
+  });
+
+  testWidgets('WFC tanpa lokasi dan rencana kerja tidak dikirim', (
+    tester,
+  ) async {
+    final mock = RequestsMock();
+    await mock.init();
+    await openScreen(tester, mock);
+
+    await tester.tap(find.byKey(const Key('mode-WFC')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('wfh-reason')),
+      'Meeting client di cafe dekat kantor pusat',
+    );
+    await tapSubmit(tester, 'wfh-submit');
+
+    expect(mock.postsFor('/api/wfh').isEmpty, isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('alasan kurang dari 10 karakter tidak dikirim', (tester) async {

@@ -48,6 +48,9 @@ class WfhRequest {
     required this.date,
     required this.reason,
     required this.status,
+    this.workMode = 'WFH',
+    this.locationNote,
+    this.planAttachmentUrl,
     this.rejectionReason,
   });
 
@@ -55,7 +58,12 @@ class WfhRequest {
   final DateTime date;
   final String reason;
   final String status;
+  final String workMode;
+  final String? locationNote;
+  final String? planAttachmentUrl;
   final String? rejectionReason;
+
+  String get modeLabel => workMode == 'WFC' ? 'WFC' : 'WFH';
 
   String get statusLabel => switch (status) {
     'APPROVED' => 'Disetujui',
@@ -69,6 +77,9 @@ class WfhRequest {
       date: DateTime.parse(json['date'] as String),
       reason: json['reason'] as String,
       status: json['status'] as String,
+      workMode: json['workMode'] as String? ?? 'WFH',
+      locationNote: json['locationNote'] as String?,
+      planAttachmentUrl: json['planAttachmentUrl'] as String?,
       rejectionReason: json['rejectionReason'] as String?,
     );
   }

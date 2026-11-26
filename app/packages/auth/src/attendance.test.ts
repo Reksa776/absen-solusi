@@ -128,12 +128,14 @@ test("A1: check-in dalam radius menulis attendance, foto filesystem, dan audit a
     "distance_meters",
     "early_leave_minutes",
     "late_minutes",
+    "location_note",
     "office_id",
     "offline_synced",
     "suspicious_reasons",
     "wfh_request_id",
     "work_mode",
     "work_pattern_id",
+    "work_plan_items",
   ]);
   const serialized = JSON.stringify(audit.metadata);
   assert.equal(serialized.includes(String(OFFICE.latitude)), false);

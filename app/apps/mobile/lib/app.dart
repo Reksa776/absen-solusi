@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'core/root_navigator.dart';
 import 'screens/main_shell_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/workspace_picker_screen.dart';
@@ -38,6 +39,7 @@ class _AbsensiAppState extends State<AbsensiApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: rootNavigatorKey,
       title: 'Absensi',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),

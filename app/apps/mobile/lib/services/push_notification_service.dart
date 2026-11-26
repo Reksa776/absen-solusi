@@ -61,10 +61,6 @@ class FirebasePushMessagingGateway implements PushMessagingGateway {
   FirebasePushMessagingGateway(this._messaging);
 
   final FirebaseMessaging _messaging;
-  final StreamController<String> _registrations =
-      StreamController<String>.broadcast();
-  StreamSubscription<String>? _registrationSubscription;
-  Completer<String>? _pendingRegistration;
   String? _token;
 
   /// Null bila Firebase belum dikonfigurasi (mis. tanpa google-services.json).
@@ -91,12 +87,8 @@ class FirebasePushMessagingGateway implements PushMessagingGateway {
 
   @override
   Future<void> initialize() async {
-    _registrationSubscription ??= _messaging.onRegistered.listen((token) {
-      _token = token;
-      _registrations.add(token);
-      final pending = _pendingRegistration;
-      if (pending != null && !pending.isCompleted) pending.complete(token);
-    });
+    // Opsi presentasi foreground diatur langsung; tidak bergantung pada
+    // `onRegistered` agar tetap berjalan di Android 10+.
     await _messaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
@@ -115,23 +107,27 @@ class FirebasePushMessagingGateway implements PushMessagingGateway {
         settings.authorizationStatus == AuthorizationStatus.provisional;
   }
 
-  /// firebase_messaging 17 memakai `register()` + `onRegistered`; token
-  /// terakhir di-cache agar pemanggilan berulang tidak menunggu stream.
+  /// `getToken()` dipanggil langsung: `register()` + `onRegistered` tidak
+  /// pernah menyelesaikan future di Android sehingga selalu timeout.
+  /// Token terakhir di-cache agar pemanggilan berulang tidak menunggu.
   @override
   Future<String?> getToken() async {
     final cached = _token;
     if (cached != null && cached.isNotEmpty) return cached;
-    final pending = _pendingRegistration ??= Completer<String>();
-    await _messaging.register();
-    try {
-      return await pending.future.timeout(const Duration(seconds: 8));
-    } on TimeoutException {
-      return _token;
-    }
+    // ignore: deprecated_member_use
+    final token = await _messaging.getToken();
+    if (token != null && token.isNotEmpty) _token = token;
+    return token;
   }
 
   @override
-  Stream<String> get onTokenRefresh => _registrations.stream;
+  Stream<String> get onTokenRefresh {
+    // ignore: deprecated_member_use
+    return _messaging.onTokenRefresh.map((token) {
+      if (token.isNotEmpty) _token = token;
+      return token;
+    });
+  }
 
   @override
   Stream<PushMessagePayload> get onMessage =>
@@ -141,17 +137,17 @@ class FirebasePushMessagingGateway implements PushMessagingGateway {
   Stream<PushMessagePayload> get onMessageOpenedApp =>
       FirebaseMessaging.onMessageOpenedApp.map(_payload);
 
-  Future<void> dispose() async {
-    await _registrationSubscription?.cancel();
-    _registrationSubscription = null;
-    await _registrations.close();
-  }
 }
 
 /// Notifikasi lokal heads-up saat pesan tiba di foreground (FCM tidak
 /// menampilkannya otomatis pada kondisi itu).
 abstract class ApprovalNotificationPresenter {
   Future<void> initialize();
+
+  /// Meminta izin notifikasi OS secara eksplisit (Android 13+
+  /// `POST_NOTIFICATIONS` / iOS alert, badge, sound).
+  Future<bool> requestPermission();
+
   Future<void> show({
     required String title,
     required String body,
@@ -202,6 +198,47 @@ class LocalApprovalNotificationPresenter
   }
 
   @override
+  Future<bool> requestPermission() async {
+    await initialize();
+    try {
+      // Android 13+: dialog sistem POST_NOTIFICATIONS. Dipanggil eksplisit
+      // lewat flutter_local_notifications, bukan hanya lewat FCM, agar
+      // pop-up tetap muncul pada perangkat yang Firebase-nya belum siap.
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      if (android != null) {
+        return isAndroidPermissionGranted(
+          await android.requestNotificationsPermission(),
+        );
+      }
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
+      if (ios != null) {
+        return await ios.requestPermissions(
+              alert: true,
+              badge: true,
+              sound: true,
+            ) ??
+            false;
+      }
+    } catch (error) {
+      debugPrint('Permintaan izin notifikasi lokal gagal: $error');
+    }
+    return false;
+  }
+
+  /// Android 10–12 (API 29–32) tidak punya dialog runtime
+  /// `POST_NOTIFICATIONS`; plugin mengembalikan `null` bila kanal platform
+  /// belum siap. Nilai `null` diperlakukan sebagai diizinkan agar token FCM
+  /// tetap bisa diminta.
+  @visibleForTesting
+  static bool isAndroidPermissionGranted(bool? result) => result ?? true;
+
+  @override
   Future<void> show({
     required String title,
     required String body,
@@ -243,18 +280,35 @@ class LocalApprovalNotificationPresenter
 /// Kontrak yang dipakai [AuthService] agar alur login/logout tidak bergantung
 /// pada Firebase.
 abstract class PushSessionSync {
+  /// Token FCM yang sedang terpasang pada perangkat, bila ada.
+  String? get token;
+
   Future<void> register(ApiClient api);
-  Future<void> unregister(ApiClient api);
+
+  /// [accessToken] dan [pushToken] disalin sebelum penyimpanan lokal dihapus,
+  /// sehingga pembersihan server tetap bisa berjalan di latar belakang.
+  Future<void> unregister(
+    ApiClient api, {
+    String? accessToken,
+    String? pushToken,
+  });
 }
 
 class NoopPushSessionSync implements PushSessionSync {
   const NoopPushSessionSync();
 
   @override
+  String? get token => null;
+
+  @override
   Future<void> register(ApiClient api) async {}
 
   @override
-  Future<void> unregister(ApiClient api) async {}
+  Future<void> unregister(
+    ApiClient api, {
+    String? accessToken,
+    String? pushToken,
+  }) async {}
 }
 
 /// Siklus hidup FCM: inisialisasi, izin, token (login/refresh), pesan
@@ -282,6 +336,7 @@ class PushNotificationService implements PushSessionSync {
   StreamSubscription<String>? _tokenSubscription;
   StreamSubscription<PushMessagePayload>? _openedSubscription;
 
+  @override
   String? get token => _token;
 
   /// Idempoten: aman dipanggil dari main() dan lagi saat login.
@@ -314,7 +369,18 @@ class PushNotificationService implements PushSessionSync {
     if (gateway == null) return;
     _api = api;
     try {
-      await gateway.requestPermission();
+      // Dua permintaan izin dipanggil eksplisit agar pop-up sistem Android
+      // 13+ maupun iOS selalu muncul bila belum diizinkan.
+      try {
+        await gateway.requestPermission();
+      } catch (error) {
+        debugPrint('Permintaan izin notifikasi FCM gagal: $error');
+      }
+      try {
+        await _presenter.requestPermission();
+      } catch (error) {
+        debugPrint('Permintaan izin notifikasi lokal gagal: $error');
+      }
       _messageSubscription ??= gateway.onMessage.listen(
         handleForegroundMessage,
       );
@@ -322,7 +388,10 @@ class PushNotificationService implements PushSessionSync {
         (token) => unawaited(_sendToken(token)),
       );
       final token = await gateway.getToken();
-      if (token == null || token.isEmpty) return;
+      if (token == null || token.isEmpty) {
+        debugPrint('FCM getToken() mengembalikan kosong.');
+        return;
+      }
       _token = token;
       await _sendToken(token);
     } catch (error) {
@@ -334,11 +403,16 @@ class PushNotificationService implements PushSessionSync {
     final api = _api;
     if (api == null || token.isEmpty || token == _registeredToken) return;
     try {
-      await api.registerPushToken(token: token, platform: currentPushPlatform);
+      await api
+          .registerPushToken(token: token, platform: currentPushPlatform)
+          .timeout(const Duration(seconds: 5));
       _token = token;
       _registeredToken = token;
-    } catch (_) {
+    } on TimeoutException {
+      debugPrint('POST /api/mobile/push-token melewati batas waktu jaringan.');
+    } catch (error) {
       // Push opsional; login dan absensi tetap berjalan.
+      debugPrint('POST /api/mobile/push-token gagal: $error');
     }
   }
 
@@ -359,9 +433,14 @@ class PushNotificationService implements PushSessionSync {
 
   /// Logout: hapus token di server agar perangkat lama berhenti menerima
   /// notifikasi akun yang sudah keluar, lalu lepaskan semua listener.
+  /// [pushToken] dikirim eksplisit karena penyimpanan lokal sudah dibersihkan.
   @override
-  Future<void> unregister(ApiClient api) async {
-    final token = _token;
+  Future<void> unregister(
+    ApiClient api, {
+    String? accessToken,
+    String? pushToken,
+  }) async {
+    final token = pushToken ?? _token;
     await _messageSubscription?.cancel();
     _messageSubscription = null;
     await _tokenSubscription?.cancel();
@@ -373,10 +452,11 @@ class PushNotificationService implements PushSessionSync {
     _token = null;
     if (token == null || token.isEmpty) return;
     try {
-      await api.deletePushToken(token: token);
-    } catch (_) {
+      await api.deletePushToken(token: token, accessToken: accessToken);
+    } catch (error) {
       // Token lokal sudah dilepas; sisa token akan dibersihkan server saat
       // FCM melaporkan registration-token-not-registered.
+      debugPrint('DELETE /api/mobile/push-token gagal: $error');
     }
   }
 }

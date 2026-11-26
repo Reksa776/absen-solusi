@@ -7,9 +7,10 @@ import '../models/employee_request.dart';
 import '../services/auth_service.dart';
 import '../services/live_sync.dart';
 import '../theme/app_theme.dart';
+import '../widgets/work_plan_editor.dart';
 
-/// Form dan riwayat lembur/WFH untuk karyawan. Kedua pengajuan memakai
-/// approval Admin/HR; WFH yang disetujui akan melewati geofence saat check-in.
+/// Form dan riwayat lembur/WFH/WFC untuk karyawan. Kedua pengajuan remote
+/// memakai approval Admin/HR; WFH/WFC yang disetujui melewati geofence.
 class EmployeeRequestsScreen extends StatefulWidget {
   const EmployeeRequestsScreen({super.key, required this.auth, this.now});
 
@@ -24,6 +25,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   static const _modes = [
     ('OVERTIME', 'Pengajuan Lembur'),
     ('WFH', 'Pengajuan WFH'),
+    ('WFC', 'Pengajuan WFC'),
   ];
   static const _dayNames = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
   static const _monthNames = [
@@ -45,6 +47,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   final _overtimeEnd = TextEditingController(text: '20:00');
   final _overtimeReason = TextEditingController();
   final _wfhReason = TextEditingController();
+  late final WorkPlanDraft _wfhPlan = WorkPlanDraft();
   late DateTime _overtimeDate;
   late DateTime _wfhDate;
   List<OvertimeRequest> _overtime = const [];
@@ -76,6 +79,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     _overtimeEnd.dispose();
     _overtimeReason.dispose();
     _wfhReason.dispose();
+    _wfhPlan.dispose();
     super.dispose();
   }
 
@@ -164,8 +168,23 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
   }
 
   Future<void> _submitWfh() async {
+    final wfc = _mode == 'WFC';
+    final modeLabel = wfc ? 'WFC' : 'WFH';
+    final location = _wfhPlan.locationController.text.trim();
+    if (wfc && location.length < 3) {
+      setState(
+        () => _error = 'Lokasi kerja WFC wajib diisi (min. 3 karakter).',
+      );
+      return;
+    }
+    if (_wfhPlan.titles.isEmpty) {
+      setState(
+        () => _error = 'Rencana kerja $modeLabel minimal 1 tugas.',
+      );
+      return;
+    }
     if (_wfhReason.text.trim().length < 10) {
-      setState(() => _error = 'Alasan WFH minimal 10 karakter.');
+      setState(() => _error = 'Alasan $modeLabel minimal 10 karakter.');
       return;
     }
     setState(() {
@@ -176,19 +195,30 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       await widget.auth.api.submitWfh(
         date: _wfhDate,
         reason: _wfhReason.text.trim(),
+        workMode: _mode,
+        locationNote: location.isEmpty ? null : location,
+        workPlanItems: _wfhPlan.titles,
+        planBytes: _wfhPlan.attachmentBytes,
+        planFilename: _wfhPlan.attachmentName,
       );
       if (!mounted) return;
       _wfhReason.clear();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Pengajuan WFH terkirim.')));
+      _wfhPlan.locationController.clear();
+      for (var index = _wfhPlan.itemControllers.length - 1; index > 0; index--) {
+        _wfhPlan.itemControllers.removeAt(index).dispose();
+      }
+      _wfhPlan.itemControllers.first.clear();
+      _wfhPlan.attachmentBytes = null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pengajuan $modeLabel terkirim.')),
+      );
       await _load();
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() => _error = messageForApiError(error));
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'Pengajuan WFH gagal dikirim.');
+      setState(() => _error = 'Pengajuan $modeLabel gagal dikirim.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -201,7 +231,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
       firstDate: DateUtils.dateOnly(_now),
       lastDate: DateUtils.dateOnly(_now.add(const Duration(days: 90))),
       initialDate: initial,
-      helpText: overtime ? 'Tanggal lembur' : 'Tanggal WFH',
+      helpText: overtime ? 'Tanggal lembur' : 'Tanggal ${_mode == 'WFC' ? 'WFC' : 'WFH'}',
     );
     if (picked == null) return;
     setState(() {
@@ -339,6 +369,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
 
   Widget _formCard() {
     final overtime = _mode == 'OVERTIME';
+    final wfc = _mode == 'WFC';
+    final remoteModeLabel = wfc ? 'WFC' : 'WFH';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -350,7 +382,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            overtime ? 'Detail lembur' : 'Detail WFH',
+            overtime ? 'Detail lembur' : 'Detail $remoteModeLabel',
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
@@ -361,7 +393,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           Text(
             overtime
                 ? 'Isi tanggal, jam, dan pekerjaan yang dikerjakan di luar shift.'
-                : 'Isi tanggal dan alasan bekerja dari rumah.',
+                : wfc
+                ? 'Isi tanggal, lokasi cafe/coworking, rencana kerja, dan alasannya.'
+                : 'Isi tanggal, rencana kerja hari ini, dan alasan bekerja dari rumah.',
             style: const TextStyle(
               fontSize: 11.5,
               height: 1.4,
@@ -407,10 +441,17 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           ],
           _dateField(
             key: Key(overtime ? 'overtime-date' : 'wfh-date'),
-            label: overtime ? 'Tanggal Lembur' : 'Tanggal WFH',
+            label: overtime ? 'Tanggal Lembur' : 'Tanggal $remoteModeLabel',
             date: overtime ? _overtimeDate : _wfhDate,
             onTap: _busy ? null : () => _pickDate(overtime: overtime),
           ),
+          if (!overtime)
+            WorkPlanEditor(
+              draft: _wfhPlan,
+              workMode: remoteModeLabel,
+              enabled: !_busy,
+              onChanged: () => setState(() {}),
+            ),
           const SizedBox(height: 16),
           if (overtime) ...[
             Row(
@@ -452,6 +493,8 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
             decoration: InputDecoration(
               hintText: overtime
                   ? 'Misalnya: menyelesaikan laporan bulanan yang tertunda.'
+                  : wfc
+                  ? 'Misalnya: meeting client di cafe dekat kantor.'
                   : 'Misalnya: pekerjaan hari ini dapat diselesaikan dari rumah.',
               alignLabelWithHint: true,
               counterStyle: const TextStyle(
@@ -484,7 +527,9 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : Text(overtime ? 'Ajukan Lembur' : 'Ajukan WFH'),
+                  : Text(
+                      overtime ? 'Ajukan Lembur' : 'Ajukan $remoteModeLabel',
+                    ),
             ),
           ),
         ],
@@ -671,7 +716,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
           date: row.date,
           child: _historyCard(
             key: Key('history-wfh-${row.id}'),
-            type: 'WFH',
+            type: row.modeLabel,
             date: row.date,
             reason: row.reason,
             status: row.status,
@@ -693,7 +738,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
         ),
         const SizedBox(height: 2),
         const Text(
-          'Lembur dan WFH yang sudah dikirim beserta status persetujuannya.',
+          'Lembur, WFH, dan WFC yang sudah dikirim beserta status persetujuannya.',
           style: TextStyle(fontSize: 11.5, color: AppColors.muted),
         ),
         const SizedBox(height: 10),
@@ -745,6 +790,7 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
     String? detail,
   }) {
     final overtime = type == 'Lembur';
+    final wfc = type == 'WFC';
     return Container(
       key: key,
       padding: const EdgeInsets.all(14),
@@ -761,10 +807,18 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: overtime ? AppColors.greenSoft : AppColors.tableHead,
+                  color: overtime
+                      ? AppColors.greenSoft
+                      : wfc
+                      ? AppColors.yellowSoft
+                      : AppColors.tableHead,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: overtime ? AppColors.greenLine : AppColors.line,
+                    color: overtime
+                        ? AppColors.greenLine
+                        : wfc
+                        ? AppColors.yellowLine
+                        : AppColors.line,
                   ),
                 ),
                 child: Text(
@@ -772,7 +826,11 @@ class _EmployeeRequestsScreenState extends State<EmployeeRequestsScreen> {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
-                    color: overtime ? AppColors.greenDark : AppColors.ink,
+                    color: overtime
+                        ? AppColors.greenDark
+                        : wfc
+                        ? AppColors.yellowInk
+                        : AppColors.ink,
                   ),
                 ),
               ),

@@ -40,7 +40,7 @@ const NAV_ENTRIES: readonly NavEntry[] = [
         label: "Persetujuan Presensi",
         permission: "correction.review",
       },
-      { slug: "wfh", label: "Pengajuan WFH", permission: "correction.review" },
+      { slug: "wfh", label: "Pengajuan WFH & WFC", permission: "correction.review" },
       { slug: "devices", label: "Persetujuan Perangkat", permission: "member.read" },
       {
         slug: "profile-photos",

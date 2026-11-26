@@ -14,6 +14,11 @@ import {
   workPatternRuleFor,
   zonedMinutesOfDay,
 } from "./work-pattern-schedule.js";
+import {
+  parseWorkPlanItemTitles,
+  upsertWorkPlanRecord,
+  type RemoteWorkMode,
+} from "./work-plans.js";
 
 export const ACCURACY_THRESHOLD_METERS = 100;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -49,7 +54,9 @@ export type RecordAttendanceInput = {
   isMockLocation: boolean;
   deviceInfo?: string | null;
   deviceIdentity?: DeviceIdentity | null;
-  workMode?: "OFFICE" | "WFH" | "OUT_OF_TOWN";
+  workMode?: "OFFICE" | "WFO" | "WFH" | "WFC" | "OUT_OF_TOWN";
+  locationNote?: string | null;
+  workPlanItems?: unknown;
   outOfTownReason?: string | null;
   notes?: string | null;
   faceVerified?: boolean;
@@ -68,7 +75,9 @@ export type AttendanceResult = {
   accuracyMeters: number;
   isSuspicious: boolean;
   photoUrl: string;
-  workMode?: "OFFICE" | "WFH" | "OUT_OF_TOWN";
+  workMode?: "OFFICE" | "WFH" | "WFC" | "OUT_OF_TOWN";
+  locationNote?: string | null;
+  workPlanId?: string | null;
   workDate?: string;
   outOfRadius?: boolean;
   approvalStatus?: "PENDING" | "APPROVED" | "REJECTED";
@@ -130,6 +139,22 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
   if (isOutOfTown && (outOfTownReason.length < 10 || outOfTownReason.length > 500)) {
     throw new HttpError(400, "INVALID_OUT_OF_TOWN_REASON", "Alasan dinas luar kota 10–500 karakter");
   }
+  const explicitRemote: RemoteWorkMode | null =
+    input.workMode === "WFH" || input.workMode === "WFC" ? input.workMode : null;
+  const locationNote = (input.locationNote ?? "").trim();
+  if (locationNote.length > 255) {
+    throw new HttpError(400, "INVALID_LOCATION_NOTE", "Lokasi kerja maksimal 255 karakter");
+  }
+  const workPlanItems = parseWorkPlanItemTitles(input.workPlanItems, {
+    required: false,
+  });
+  if (input.type === "CHECK_IN" && explicitRemote && workPlanItems.length === 0) {
+    throw new HttpError(
+      400,
+      "WORK_PLAN_REQUIRED",
+      "Rencana kerja minimal 1 tugas untuk WFH atau WFC",
+    );
+  }
   await assertAttendanceDevice({
     ctx: input.ctx,
     identity: input.deviceIdentity ?? null,
@@ -163,7 +188,8 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             accuracyMeters: replay.accuracyMeters,
             isSuspicious: replay.isSuspicious,
             photoUrl: replay.photoUrl,
-            workMode: replay.workMode as "OFFICE" | "WFH" | "OUT_OF_TOWN",
+            workMode: replay.workMode as "OFFICE" | "WFH" | "WFC" | "OUT_OF_TOWN",
+            locationNote: replay.locationNote,
             workDate: replay.workDate.toISOString().slice(0, 10),
             outOfRadius: replay.outOfRadius,
             approvalStatus: replay.approvalStatus as "PENDING" | "APPROVED" | "REJECTED",
@@ -209,21 +235,41 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           ? yesterday
           : today;
 
-      const wfh = await db.wfhRequest.findFirst({
-        where: { memberId: input.ctx.memberId, date: workDate, status: "APPROVED" },
-        select: { id: true },
+      const remoteRequest = await db.wfhRequest.findFirst({
+        where: {
+          memberId: input.ctx.memberId,
+          date: workDate,
+          status: "APPROVED",
+        },
+        select: { id: true, workMode: true, locationNote: true },
       });
+      // Pengajuan yang disetujui menentukan mode remote; klien baru boleh
+      // mengirim WFH/WFC langsung dan tetap menunggu persetujuan admin bila
+      // belum ada pengajuan yang disetujui.
+      const remoteMode: RemoteWorkMode | null =
+        explicitRemote ??
+        (remoteRequest
+          ? remoteRequest.workMode === "WFC"
+            ? "WFC"
+            : "WFH"
+          : null);
+      const effectiveLocationNote = locationNote || (remoteRequest?.locationNote ?? "").trim();
+      if (remoteMode === "WFC" && !effectiveLocationNote && input.type === "CHECK_IN") {
+        throw new HttpError(
+          400,
+          "LOCATION_REQUIRED",
+          "Nama cafe/coworking/lokasi kerja wajib diisi untuk WFC",
+        );
+      }
       let office: { id: string; latitude: number; longitude: number; radiusMeters: number } | null =
         null;
       let distance = 0;
-      const workMode: "OFFICE" | "WFH" | "OUT_OF_TOWN" = isOutOfTown
+      const workMode: "OFFICE" | "WFH" | "WFC" | "OUT_OF_TOWN" = isOutOfTown
         ? "OUT_OF_TOWN"
-        : wfh
-          ? "WFH"
-          : "OFFICE";
-      if (isOutOfTown) {
-        // Dinas luar kota tetap mencatat kantor terdekat untuk audit jarak,
-        // tetapi tidak memblokir karena berada di luar geofence.
+        : remoteMode ?? "OFFICE";
+      if (isOutOfTown || remoteMode) {
+        // Dinas luar kota dan WFH/WFC tetap mencatat kantor terdekat untuk
+        // audit jarak, tetapi tidak diblokir oleh geofence.
         const candidates = member?.officeLocationId
           ? offices.filter((row) => row.id === member.officeLocationId)
           : offices;
@@ -241,7 +287,7 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
         }
         office = best?.office ?? null;
         distance = best?.distance ?? 0;
-      } else if (!wfh) {
+      } else {
         if (offices.length === 0) {
           throw new HttpError(409, "OFFICE_NOT_CONFIGURED", "Lokasi kantor belum aktif");
         }
@@ -302,9 +348,19 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           distance = best.distance;
         }
       }
-      const outOfRadius = office ? distance > office.radiusMeters : isOutOfTown;
+      const outOfRadius = isOutOfTown
+        ? true
+        : remoteMode
+          ? false
+          : office
+            ? distance > office.radiusMeters
+            : false;
       const approvalStatus =
-        isOutOfTown || (outOfRadius && radiusPolicy === "FLAG") ? "PENDING" : "APPROVED";
+        isOutOfTown ||
+        (outOfRadius && radiusPolicy === "FLAG") ||
+        (remoteMode !== null && !remoteRequest)
+          ? "PENDING"
+          : "APPROVED";
 
       const selectedOffice = office ? offices.find((row) => row.id === office?.id) ?? null : null;
       const scheduleRule = workPatternRuleFor(patternIndex, input.ctx.memberId, workDate);
@@ -404,8 +460,10 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             longitude: input.longitude,
             accuracyMeters: input.accuracyMeters,
             distanceMeters: distance,
-            officeLocationId: office?.id ?? null,
+            // WFH/WFC tidak terikat kantor; koordinat tetap dicatat untuk audit.
+            officeLocationId: remoteMode ? null : (office?.id ?? null),
             workMode,
+            locationNote: effectiveLocationNote || null,
             outOfRadius,
             outOfTownReason: isOutOfTown ? outOfTownReason : null,
             notes: notes || null,
@@ -425,6 +483,22 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
             userAgent: input.userAgent?.slice(0, 255) ?? null,
           },
         });
+        // Rencana kerja WFH/WFC disimpan bersama check-in agar to-do list
+        // langsung tampil di beranda dan panel admin.
+        let workPlanId: string | null = null;
+        if (input.type === "CHECK_IN" && remoteMode) {
+          const plan = await upsertWorkPlanRecord(db, {
+            tenantId: input.ctx.tenantId,
+            memberId: input.ctx.memberId,
+            date: workDate,
+            workMode: remoteMode,
+            locationNote: effectiveLocationNote || null,
+            attendanceId: created.id,
+            requestId: remoteRequest?.id ?? null,
+            items: workPlanItems.length > 0 ? workPlanItems : null,
+          });
+          workPlanId = plan.id;
+        }
         await writeAudit(
           {
             tenantId: input.ctx.tenantId,
@@ -439,10 +513,12 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
               accuracy_meters: input.accuracyMeters,
               office_id: office?.id ?? null,
               work_mode: workMode,
-              ...(isOutOfTown
+              location_note: effectiveLocationNote || null,
+              ...(isOutOfTown || remoteMode
                 ? { out_of_radius: outOfRadius, approval_status: approvalStatus }
                 : {}),
-              wfh_request_id: wfh?.id ?? null,
+              wfh_request_id: remoteRequest?.id ?? null,
+              work_plan_items: workPlanItems.length,
               work_pattern_id: scheduleRule?.workPatternId ?? null,
               attendance_status: scheduleEvaluation.status,
               late_minutes: scheduleEvaluation.lateMinutes,
@@ -465,6 +541,8 @@ export async function recordAttendance(input: RecordAttendanceInput): Promise<At
           isSuspicious: suspiciousReasons.length > 0,
           photoUrl: stored.url,
           workMode,
+          locationNote: effectiveLocationNote || null,
+          workPlanId,
           workDate: workDate.toISOString().slice(0, 10),
           outOfRadius,
           approvalStatus: approvalStatus as "PENDING" | "APPROVED",

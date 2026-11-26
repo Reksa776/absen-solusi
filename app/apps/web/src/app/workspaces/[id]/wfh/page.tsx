@@ -25,15 +25,16 @@ export default async function WfhPage({
       <div className="page-head">
         <div>
           <p className="eyebrow">Kehadiran</p>
-          <h1 className="page-title">Pengajuan WFH</h1>
+          <h1 className="page-title">Pengajuan WFH &amp; WFC</h1>
           <p className="page-subtitle">
-            Setujui atau tolak pengajuan kerja dari rumah. Keputusan langsung
-            mengirim notifikasi ke karyawan.
+            Setujui atau tolak pengajuan kerja dari rumah (WFH) maupun cafe /
+            lokasi remote (WFC), termasuk rencana kerja hariannya. Keputusan
+            langsung mengirim notifikasi ke karyawan.
           </p>
         </div>
       </div>
 
-      <section className="kpi-grid" aria-label="Ringkasan pengajuan WFH">
+      <section className="kpi-grid" aria-label="Ringkasan pengajuan WFH dan WFC">
         <article className="kpi">
           <div className="kpi-label">Menunggu</div>
           <div className="kpi-value">{pending}</div>
@@ -48,7 +49,7 @@ export default async function WfhPage({
           <div className="kpi-bar" aria-hidden="true">
             <span style={{ width: approved > 0 ? "100%" : "0%" }} />
           </div>
-          <div className="kpi-foot">bebas geofence pada tanggalnya</div>
+          <div className="kpi-foot">WFO diganti WFH/WFC pada tanggalnya</div>
         </article>
         <article className="kpi">
           <div className="kpi-label">Ditolak</div>

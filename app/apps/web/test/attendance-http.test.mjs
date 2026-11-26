@@ -167,12 +167,14 @@ test("HTTP: check-in/out, status error, riwayat, audit, dan foto nyata", { timeo
     "distance_meters",
     "early_leave_minutes",
     "late_minutes",
+    "location_note",
     "office_id",
     "offline_synced",
     "suspicious_reasons",
     "wfh_request_id",
     "work_mode",
     "work_pattern_id",
+    "work_plan_items",
   ]);
   assert.equal(audit.metadata.offline_synced, false);
   const metadata = JSON.stringify(audit.metadata);

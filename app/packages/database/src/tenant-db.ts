@@ -93,6 +93,8 @@ const TENANT_MODELS = new Set([
   "MemberShift",
   "OvertimeRequest",
   "WfhRequest",
+  "WorkPlan",
+  "WorkPlanItem",
   "InAppNotification",
   "WorkPermit",
   "LeavePolicy",

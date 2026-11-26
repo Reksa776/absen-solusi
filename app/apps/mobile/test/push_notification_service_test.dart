@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:absensi_mobile/api/api_client.dart';
 import 'package:absensi_mobile/services/auth_service.dart';
 import 'package:absensi_mobile/services/live_sync.dart';
 import 'package:absensi_mobile/services/push_notification_service.dart';
 import 'package:absensi_mobile/services/token_store.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -55,12 +57,22 @@ class FakePushGateway implements PushMessagingGateway {
 }
 
 class RecordingPresenter implements ApprovalNotificationPresenter {
+  RecordingPresenter({this.permissionResult = true});
+
+  final bool permissionResult;
   final List<Map<String, Object?>> shown = [];
   bool initialized = false;
+  bool permissionRequested = false;
 
   @override
   Future<void> initialize() async {
     initialized = true;
+  }
+
+  @override
+  Future<bool> requestPermission() async {
+    permissionRequested = true;
+    return permissionResult;
   }
 
   @override
@@ -76,6 +88,11 @@ class RecordingPresenter implements ApprovalNotificationPresenter {
 class RecordingPushSessionSync implements PushSessionSync {
   int registered = 0;
   int unregistered = 0;
+  String? unregisterAccessToken;
+  String? unregisterPushToken;
+
+  @override
+  String? token = 'fcm-session-token';
 
   @override
   Future<void> register(ApiClient api) async {
@@ -83,8 +100,14 @@ class RecordingPushSessionSync implements PushSessionSync {
   }
 
   @override
-  Future<void> unregister(ApiClient api) async {
+  Future<void> unregister(
+    ApiClient api, {
+    String? accessToken,
+    String? pushToken,
+  }) async {
     unregistered += 1;
+    unregisterAccessToken = accessToken;
+    unregisterPushToken = pushToken;
   }
 }
 
@@ -120,9 +143,12 @@ void main() {
 
     expect(gateway.initialized, isTrue);
     expect(gateway.permissionRequested, isTrue);
+    // Dua permintaan izin: FCM dan plugin notifikasi lokal (Android 13+).
+    expect(presenter.permissionRequested, isTrue);
     expect(requests, hasLength(1));
     expect(requests.single.method, 'POST');
     expect(requests.single.url.path, '/api/mobile/push-token');
+    expect(requests.single.headers['authorization'], 'Bearer session-token');
     final body = jsonDecode(requests.single.body) as Map<String, dynamic>;
     expect(body['token'], 'fcm-device-token-1');
     expect(body['platform'], 'android');
@@ -214,6 +240,88 @@ void main() {
     expect(service.token, isNull);
   });
 
+  test('kegagalan jaringan saat registrasi token tidak melempar exception',
+      () async {
+    final store = MemoryTokenStore();
+    await store.write('session-token');
+    final api = ApiClient(
+      baseUrl: 'https://absensi.test',
+      tokenStore: store,
+      client: MockClient(
+        (_) async => throw const SocketException('offline'),
+      ),
+    );
+    final gateway = FakePushGateway(token: 'fcm-device-token-1');
+    final service = PushNotificationService(
+      gateway: gateway,
+      presenter: RecordingPresenter(),
+    );
+    addTearDown(gateway.dispose);
+
+    await expectLater(service.register(api), completes);
+    expect(service.token, 'fcm-device-token-1');
+  });
+
+  test('izin lokal Android 10–12 yang null tetap dianggap diizinkan', () {
+    // flutter_local_notifications mengembalikan null bila kanal platform belum
+    // siap; pada API 29–32 tidak ada dialog runtime POST_NOTIFICATIONS.
+    expect(
+      LocalApprovalNotificationPresenter.isAndroidPermissionGranted(null),
+      isTrue,
+    );
+    expect(
+      LocalApprovalNotificationPresenter.isAndroidPermissionGranted(true),
+      isTrue,
+    );
+    expect(
+      LocalApprovalNotificationPresenter.isAndroidPermissionGranted(false),
+      isFalse,
+    );
+  });
+
+  test('izin lokal tidak menghalangi pengambilan dan pengiriman token', () async {
+    final requests = <http.Request>[];
+    final api = pushApi(requests);
+    final gateway = FakePushGateway(token: 'fcm-device-token-1');
+    final service = PushNotificationService(
+      gateway: gateway,
+      presenter: RecordingPresenter(permissionResult: false),
+    );
+    addTearDown(gateway.dispose);
+
+    await service.register(api);
+
+    expect(gateway.permissionRequested, isTrue);
+    expect(requests, hasLength(1));
+    expect(requests.single.url.path, '/api/mobile/push-token');
+    final body = jsonDecode(requests.single.body) as Map<String, dynamic>;
+    expect(body['token'], 'fcm-device-token-1');
+    expect(service.token, 'fcm-device-token-1');
+  });
+
+  test('token FCM kosong dicatat di log dan tidak dikirim ke backend', () async {
+    final requests = <http.Request>[];
+    final api = pushApi(requests);
+    final log = <String>[];
+    final originalDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) log.add(message);
+    };
+    addTearDown(() => debugPrint = originalDebugPrint);
+    final gateway = FakePushGateway(token: '');
+    final service = PushNotificationService(
+      gateway: gateway,
+      presenter: RecordingPresenter(),
+    );
+    addTearDown(gateway.dispose);
+
+    await service.register(api);
+
+    expect(log, contains('FCM getToken() mengembalikan kosong.'));
+    expect(requests, isEmpty);
+    expect(service.token, isNull);
+  });
+
   test('tanpa token perangkat tidak ada request ke backend', () async {
     final requests = <http.Request>[];
     final api = pushApi(requests);
@@ -262,6 +370,13 @@ void main() {
     expect(push.registered, 1);
 
     await auth.logout();
+    await pumpEventQueue();
     expect(push.unregistered, 1);
+    // Token server dibersihkan dengan kredensial yang disalin sebelum storage
+    // dihapus, sehingga permintaan tetap terautentikasi.
+    expect(push.unregisterAccessToken, 'token-abc');
+    expect(push.unregisterPushToken, 'fcm-session-token');
+    expect(auth.isAuthenticated, isFalse);
+    expect(await api.readToken(), isNull);
   });
 }

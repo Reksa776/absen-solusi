@@ -1,4 +1,10 @@
-import { isUuid, withTenant, writeAudit, type TenantContext } from "@absensi/database";
+import {
+  isUuid,
+  withTenant,
+  writeAudit,
+  type Prisma,
+  type TenantContext,
+} from "@absensi/database";
 
 import { HttpError } from "./http.js";
 import { createInAppNotification } from "./inbox.js";
@@ -8,6 +14,7 @@ import { assertWorkspaceReadClaim } from "./workspaces.js";
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const RECORD_TYPES = ["CHECK_IN", "CHECK_OUT"] as const;
 const APPROVAL_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+const WORK_MODE_FILTERS = ["OFFICE", "WFO", "WFH", "WFC", "OUT_OF_TOWN"] as const;
 
 export type AttendanceRecordSummary = {
   id: string;
@@ -24,6 +31,23 @@ export type AttendanceRecordSummary = {
   distanceMeters: number;
   officeName: string | null;
   workMode: string;
+  locationNote: string | null;
+  workPlan: {
+    id: string;
+    workMode: string;
+    locationNote: string | null;
+    planAttachmentUrl: string | null;
+    summaryNote: string | null;
+    items: {
+      id: string;
+      title: string;
+      isCompleted: boolean;
+      completedAt: string | null;
+      sortOrder: number;
+    }[];
+    completedCount: number;
+    totalCount: number;
+  } | null;
   outOfRadius: boolean;
   outOfTownReason: string | null;
   approvalStatus: string;
@@ -45,7 +69,12 @@ const RECORD_INCLUDE = {
     },
   },
   office: { select: { name: true } },
-} as const;
+  workPlan: {
+    include: {
+      items: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+    },
+  },
+} satisfies Prisma.AttendanceLogInclude;
 
 function assertRead(ctx: TenantContext): void {
   if (!ctx.permissions.includes("attendance.read") && !ctx.permissions.includes("member.manage")) {
@@ -84,34 +113,11 @@ function filterValue<T extends readonly string[]>(
   return normalized;
 }
 
-function toRecord(row: {
-  id: string;
-  memberId: string;
-  type: string;
-  workDate: Date;
-  timestampServer: Date;
-  latitude: number;
-  longitude: number;
-  accuracyMeters: number;
-  distanceMeters: number;
-  workMode: string;
-  outOfRadius: boolean;
-  outOfTownReason: string | null;
-  approvalStatus: string;
-  isSuspicious: boolean;
-  isCorrection: boolean;
-  photoUrl: string;
-  notes: string | null;
-  faceVerified: boolean;
-  deviceInfo: string | null;
-  userAgent: string | null;
-  rejectionReason: string | null;
-  member: {
-    user: { name: string; email: string };
-    division: { name: string } | null;
-  };
-  office: { name: string } | null;
-}): AttendanceRecordSummary {
+type AttendanceRecordRow = Prisma.AttendanceLogGetPayload<{
+  include: typeof RECORD_INCLUDE;
+}>;
+
+function toRecord(row: AttendanceRecordRow): AttendanceRecordSummary {
   return {
     id: row.id,
     memberId: row.memberId,
@@ -127,6 +133,26 @@ function toRecord(row: {
     distanceMeters: row.distanceMeters,
     officeName: row.office?.name ?? null,
     workMode: row.workMode,
+    locationNote: row.locationNote,
+    workPlan: row.workPlan
+      ? {
+          id: row.workPlan.id,
+          workMode: row.workPlan.workMode,
+          locationNote: row.workPlan.locationNote,
+          planAttachmentUrl: row.workPlan.planAttachmentUrl,
+          summaryNote: row.workPlan.summaryNote,
+          items: row.workPlan.items.map((item) => ({
+            id: item.id,
+            title: item.title,
+            isCompleted: item.isCompleted,
+            completedAt: item.completedAt ? item.completedAt.toISOString() : null,
+            sortOrder: item.sortOrder,
+          })),
+          completedCount: row.workPlan.items.filter((item) => item.isCompleted)
+            .length,
+          totalCount: row.workPlan.items.length,
+        }
+      : null,
     outOfRadius: row.outOfRadius,
     outOfTownReason: row.outOfTownReason,
     approvalStatus: row.approvalStatus,
@@ -149,6 +175,7 @@ export async function listAttendanceRecords(input: {
   to?: string | undefined;
   type?: string | undefined;
   approvalStatus?: string | undefined;
+  workMode?: string | undefined;
   memberId?: string | undefined;
   limit?: number | undefined;
 }): Promise<AttendanceRecordSummary[]> {
@@ -159,6 +186,7 @@ export async function listAttendanceRecords(input: {
   const to = day(input.to, "Sampai tanggal");
   const type = filterValue(input.type, RECORD_TYPES, "Tipe presensi");
   const approvalStatus = filterValue(input.approvalStatus, APPROVAL_STATUSES, "Status approval");
+  const workModeFilter = filterValue(input.workMode, WORK_MODE_FILTERS, "Mode kerja");
   if (input.memberId && !isUuid(input.memberId)) {
     throw new HttpError(400, "INVALID_MEMBER", "Karyawan tidak valid");
   }
@@ -177,6 +205,11 @@ export async function listAttendanceRecords(input: {
           : {}),
         ...(type ? { type } : {}),
         ...(approvalStatus ? { approvalStatus } : {}),
+        ...(workModeFilter
+          ? workModeFilter === "WFO"
+            ? { workMode: "OFFICE" }
+            : { workMode: workModeFilter }
+          : {}),
         ...(input.memberId ? { memberId: input.memberId } : {}),
       },
       include: RECORD_INCLUDE,

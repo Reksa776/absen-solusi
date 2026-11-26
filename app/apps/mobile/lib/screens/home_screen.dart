@@ -15,6 +15,7 @@ import '../models/office_location.dart';
 import '../models/offline_attendance.dart';
 import '../models/schedule.dart';
 import '../models/warning_letter.dart';
+import '../models/work_plan.dart';
 import '../services/app_update_service.dart';
 import '../services/attendance_reminder_service.dart';
 import '../services/auth_service.dart';
@@ -24,6 +25,8 @@ import '../services/offline_attendance_queue.dart';
 import '../services/push_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/geofence_map.dart' show distanceMeters;
+import '../widgets/work_plan_card.dart';
+import '../widgets/work_plan_editor.dart';
 import 'broadcasts_screen.dart';
 import 'camera_screen.dart';
 import 'client_visits_screen.dart';
@@ -123,6 +126,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _showMoreServices = false;
   bool _outOfTown = false;
   String _outOfTownReason = '';
+  String _workMode = 'OFFICE';
+  String _locationNote = '';
+  List<String> _workPlanTitles = const [];
+  Uint8List? _planAttachmentBytes;
+  String _planAttachmentName = 'rencana.jpg';
+  WorkPlan? _workPlan;
+  String? _busyWorkPlanItemId;
   GpsReading? _gps;
   bool _loading = true;
   bool _locating = false;
@@ -177,6 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.auth.api.myWfh(),
         widget.auth.api.myBroadcasts(),
         widget.auth.api.myWarningLetters(),
+        widget.auth.api.todayWorkPlan(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -190,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         _broadcasts = results[3] as List<BroadcastMessage>;
         _warnings = results[4] as List<WarningLetter>;
+        _workPlan = results[5] as WorkPlan?;
         _loading = false;
       });
       try {
@@ -374,15 +386,29 @@ class _HomeScreenState extends State<HomeScreen> {
     return device != null && !device.isApproved;
   }
 
+  bool get _remoteMode => _workMode == 'WFH' || _workMode == 'WFC';
+
+  String get _modeLabel {
+    if (_outOfTown) return 'Dinas luar kota';
+    if (_workMode == 'WFC') {
+      return _locationNote.isEmpty ? 'WFC' : 'WFC · $_locationNote';
+    }
+    if (_workMode == 'WFH') {
+      return _locationNote.isEmpty ? 'WFH' : 'WFH · $_locationNote';
+    }
+    return 'WFO (Kantor)';
+  }
+
   String get _locationLabel {
     if (_outOfTown) return 'Dinas luar kota';
+    if (_remoteMode) return _workMode == 'WFC' ? 'Mode WFC' : 'Mode WFH';
     if (_wfhToday) return 'Di luar radius / WFH';
     if (_gps == null) return 'Lokasi dicek saat absen';
     return _insideRadius ? 'Dalam radius kantor' : 'Di luar radius kantor';
   }
 
   bool get _locationPositive =>
-      _outOfTown || _wfhToday || (_gps != null && _insideRadius);
+      _outOfTown || _remoteMode || _wfhToday || (_gps != null && _insideRadius);
 
   String get _name => widget.auth.user?.name ?? 'Pengguna';
 
@@ -444,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
           insideGeofence: inside,
           officeName: office?.name,
           distanceMeters: distance,
-          wfh: _wfhToday || _outOfTown,
+          wfh: _wfhToday || _outOfTown || _remoteMode,
         ),
       ),
     );
@@ -454,6 +480,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startAttendance() async {
     final action = _nextAction;
     if (_locating || _submitting) return;
+
+    if (_remoteMode) {
+      if (_workMode == 'WFC' && _locationNote.length < 3) {
+        setState(() => _error = 'Lokasi WFC wajib diisi (min. 3 karakter).');
+        return;
+      }
+      if (_workPlanTitles.isEmpty) {
+        setState(
+          () => _error = 'Rencana kerja minimal 1 tugas untuk WFH/WFC.',
+        );
+        return;
+      }
+    }
 
     setState(() {
       _locating = true;
@@ -515,8 +554,20 @@ class _HomeScreenState extends State<HomeScreen> {
     final deviceInfo = '${Theme.of(context).platform.name}-mobile';
     try {
       final api = widget.auth.api;
-      final workMode = _outOfTown ? 'OUT_OF_TOWN' : 'OFFICE';
+      final workMode = _outOfTown ? 'OUT_OF_TOWN' : _workMode;
       final reason = _outOfTown ? _outOfTownReason.trim() : null;
+      final remote = workMode == 'WFH' || workMode == 'WFC';
+      if (remote && action == 'CHECK_IN') {
+        // Simpan rencana kerja lebih dulu agar lampiran gambar ikut tersimpan.
+        final plan = await api.saveWorkPlan(
+          workMode: workMode,
+          locationNote: _locationNote,
+          items: _workPlanTitles,
+          planBytes: _planAttachmentBytes,
+          planFilename: _planAttachmentName,
+        );
+        if (mounted) setState(() => _workPlan = plan);
+      }
       if (action == 'CHECK_IN') {
         await api.checkIn(
           latitude: gps.latitude,
@@ -527,6 +578,8 @@ class _HomeScreenState extends State<HomeScreen> {
           deviceInfo: deviceInfo,
           workMode: workMode,
           outOfTownReason: reason,
+          locationNote: remote ? _locationNote : null,
+          workPlanItems: remote ? _workPlanTitles : const [],
         );
       } else {
         await api.checkOut(
@@ -538,6 +591,7 @@ class _HomeScreenState extends State<HomeScreen> {
           deviceInfo: deviceInfo,
           workMode: workMode,
           outOfTownReason: reason,
+          locationNote: remote ? _locationNote : null,
         );
       }
       unawaited(
@@ -564,6 +618,31 @@ class _HomeScreenState extends State<HomeScreen> {
       await _saveOffline(action, gps, photo, deviceInfo);
     } finally {
       if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _toggleWorkPlanItem(WorkPlanItem item, bool value) async {
+    if (_busyWorkPlanItemId != null) return;
+    setState(() => _busyWorkPlanItemId = item.id);
+    try {
+      final plan = await widget.auth.api.updateWorkPlanItem(
+        itemId: item.id,
+        isCompleted: value,
+      );
+      if (!mounted) return;
+      setState(() => _workPlan = plan);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(messageForApiError(error))),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Status tugas tidak dapat diperbarui.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busyWorkPlanItemId = null);
     }
   }
 
@@ -597,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> {
           clientCapturedAt: DateTime.now().toUtc(),
           photoPath: path,
           idempotencyKey: key,
-          workMode: _outOfTown ? 'OUT_OF_TOWN' : 'OFFICE',
+          workMode: _outOfTown ? 'OUT_OF_TOWN' : _workMode,
           outOfTownReason: _outOfTown ? _outOfTownReason.trim() : null,
         ),
       );
@@ -710,8 +789,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openModeSheet() async {
-    var selectedOutOfTown = _outOfTown;
+    var selectedMode = _outOfTown
+        ? 'OUT_OF_TOWN'
+        : (_workMode == 'WFH' || _workMode == 'WFC' ? _workMode : 'OFFICE');
     final reason = TextEditingController(text: _outOfTownReason);
+    final planDraft = WorkPlanDraft(
+      location: _locationNote,
+      items: _workPlanTitles,
+    );
+    planDraft.attachmentBytes = _planAttachmentBytes;
+    planDraft.attachmentName = _planAttachmentName;
     String? validation;
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -721,135 +808,194 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              18,
-              12,
-              18,
-              MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.line,
-                        borderRadius: BorderRadius.circular(999),
+        builder: (context, setSheetState) {
+          final remote = selectedMode == 'WFH' || selectedMode == 'WFC';
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                12,
+                18,
+                MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.line,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                       ),
                     ),
-                  ),
-                  const Text(
-                    'Mode presensi',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  const Text(
-                    'Presensi kantor memakai geofence dan selfie. Dinas luar kota '
-                    'tetap dicatat dan menunggu persetujuan approver.',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      height: 1.4,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _modeButton(
-                        key: const Key('home-mode-office'),
-                        label: 'Kantor',
-                        icon: Icons.business_outlined,
-                        selected: !selectedOutOfTown,
-                        onTap: () =>
-                            setSheetState(() => selectedOutOfTown = false),
+                    const Text(
+                      'Mode presensi',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.ink,
                       ),
-                      const SizedBox(width: 8),
-                      _modeButton(
-                        key: const Key('home-mode-out-of-town'),
-                        label: 'Luar kota',
-                        icon: Icons.flight_takeoff,
-                        selected: selectedOutOfTown,
-                        onTap: () =>
-                            setSheetState(() => selectedOutOfTown = true),
+                    ),
+                    const SizedBox(height: 3),
+                    const Text(
+                      'WFO bekerja di kantor, WFH dari rumah, dan WFC dari cafe '
+                      'atau lokasi remote. WFH/WFC wajib menyertakan rencana kerja.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.4,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _modeButton(
+                          key: const Key('home-mode-office'),
+                          label: 'WFO',
+                          icon: Icons.business_outlined,
+                          selected: selectedMode == 'OFFICE',
+                          onTap: () =>
+                              setSheetState(() => selectedMode = 'OFFICE'),
+                        ),
+                        const SizedBox(width: 8),
+                        _modeButton(
+                          key: const Key('home-mode-wfh'),
+                          label: 'WFH',
+                          icon: Icons.home_work_outlined,
+                          selected: selectedMode == 'WFH',
+                          onTap: () =>
+                              setSheetState(() => selectedMode = 'WFH'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _modeButton(
+                          key: const Key('home-mode-wfc'),
+                          label: 'WFC',
+                          icon: Icons.local_cafe_outlined,
+                          selected: selectedMode == 'WFC',
+                          onTap: () =>
+                              setSheetState(() => selectedMode = 'WFC'),
+                        ),
+                        const SizedBox(width: 8),
+                        _modeButton(
+                          key: const Key('home-mode-out-of-town'),
+                          label: 'Luar kota',
+                          icon: Icons.flight_takeoff,
+                          selected: selectedMode == 'OUT_OF_TOWN',
+                          onTap: () => setSheetState(
+                            () => selectedMode = 'OUT_OF_TOWN',
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (remote)
+                      WorkPlanEditor(
+                        draft: planDraft,
+                        workMode: selectedMode,
+                        onChanged: () => setSheetState(() {}),
+                      ),
+                    if (selectedMode == 'OUT_OF_TOWN') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        key: const Key('home-out-of-town-reason'),
+                        controller: reason,
+                        minLines: 2,
+                        maxLines: 3,
+                        maxLength: 500,
+                        onChanged: (_) {
+                          if (validation != null) {
+                            setSheetState(() => validation = null);
+                          }
+                        },
+                        decoration: const InputDecoration(
+                          hintText:
+                              'Tujuan dan keperluan dinas luar kota (min. 10 karakter)',
+                          counterText: '',
+                          isDense: true,
+                        ),
                       ),
                     ],
-                  ),
-                  if (selectedOutOfTown) ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      key: const Key('home-out-of-town-reason'),
-                      controller: reason,
-                      minLines: 2,
-                      maxLines: 3,
-                      maxLength: 500,
-                      onChanged: (_) {
-                        if (validation != null) {
-                          setSheetState(() => validation = null);
-                        }
-                      },
-                      decoration: const InputDecoration(
-                        hintText: 'Tujuan dan keperluan dinas luar kota (min. 10 karakter)',
-                        counterText: '',
-                        isDense: true,
+                    if (validation != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        validation!,
+                        key: const Key('home-mode-error'),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      height: 46,
+                      child: FilledButton(
+                        key: const Key('home-mode-save'),
+                        onPressed: () {
+                          if (selectedMode == 'OUT_OF_TOWN' &&
+                              reason.text.trim().length < 10) {
+                            setSheetState(
+                              () => validation =
+                                  'Alasan dinas luar kota minimal 10 karakter.',
+                            );
+                            return;
+                          }
+                          final remoteSelected =
+                              selectedMode == 'WFH' || selectedMode == 'WFC';
+                          if (selectedMode == 'WFC' &&
+                              planDraft.locationController.text.trim().length <
+                                  3) {
+                            setSheetState(
+                              () => validation =
+                                  'Lokasi WFC wajib diisi (min. 3 karakter).',
+                            );
+                            return;
+                          }
+                          if (remoteSelected && planDraft.titles.isEmpty) {
+                            setSheetState(
+                              () => validation =
+                                  'Rencana kerja minimal 1 tugas untuk WFH/WFC.',
+                            );
+                            return;
+                          }
+                          Navigator.of(sheetContext).pop(true);
+                        },
+                        child: const Text('Simpan mode'),
                       ),
                     ),
                   ],
-                  if (validation != null) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      validation!,
-                      key: const Key('home-mode-error'),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.danger,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    height: 46,
-                    child: FilledButton(
-                      key: const Key('home-mode-save'),
-                      onPressed: () {
-                        if (selectedOutOfTown &&
-                            reason.text.trim().length < 10) {
-                          setSheetState(
-                            () => validation =
-                                'Alasan dinas luar kota minimal 10 karakter.',
-                          );
-                          return;
-                        }
-                        Navigator.of(sheetContext).pop(true);
-                      },
-                      child: const Text('Simpan mode'),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
     if (saved == true && mounted) {
       setState(() {
-        _outOfTown = selectedOutOfTown;
-        _outOfTownReason = selectedOutOfTown ? reason.text.trim() : '';
+        _outOfTown = selectedMode == 'OUT_OF_TOWN';
+        _workMode = selectedMode == 'WFH' || selectedMode == 'WFC'
+            ? selectedMode
+            : 'OFFICE';
+        _outOfTownReason = _outOfTown ? reason.text.trim() : '';
+        _locationNote = planDraft.locationController.text.trim();
+        _workPlanTitles = planDraft.titles;
+        _planAttachmentBytes = planDraft.attachmentBytes;
+        _planAttachmentName = planDraft.attachmentName;
       });
     }
     reason.dispose();
+    planDraft.dispose();
   }
 
   @override
@@ -890,6 +1036,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                   const SizedBox(height: 10),
                                 ],
                                 _companyScheduleCard(),
+                                if (_workPlan != null &&
+                                    _workPlan!.items.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  WorkPlanCard(
+                                    plan: _workPlan!,
+                                    busyItemId: _busyWorkPlanItemId,
+                                    onToggle: _toggleWorkPlanItem,
+                                  ),
+                                ],
                                 if (_activeWarnings.isNotEmpty) ...[
                                   const SizedBox(height: 10),
                                   _buildWarningBanner(_activeWarnings.first),
@@ -1652,6 +1807,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         Icon(
                           _outOfTown
                               ? Icons.flight_takeoff
+                              : _workMode == 'WFH'
+                              ? Icons.home_work_outlined
+                              : _workMode == 'WFC'
+                              ? Icons.local_cafe_outlined
                               : Icons.business_outlined,
                           size: 15,
                           color: AppColors.muted,
@@ -1669,7 +1828,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               Text(
-                                _outOfTown ? 'Dinas luar kota' : 'Kantor',
+                                _modeLabel,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -2062,6 +2221,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (!_wfhToday &&
         !_outOfTown &&
+        !_remoteMode &&
         distance != null &&
         office != null &&
         distance > office.radiusMeters) {

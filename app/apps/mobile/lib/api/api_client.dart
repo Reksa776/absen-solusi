@@ -22,6 +22,7 @@ import '../models/schedule.dart';
 import '../models/session.dart';
 import '../models/warning_letter.dart';
 import '../models/work_permit.dart';
+import '../models/work_plan.dart';
 import '../services/device_identity_service.dart';
 import '../services/token_store.dart';
 
@@ -98,10 +99,12 @@ class ApiClient {
     return SwitchWorkspaceResult.fromJson(_decodeObject(response));
   }
 
-  Future<void> logout() async {
+  /// [accessToken] dipakai saat logout: penyimpanan lokal sudah dihapus lebih
+  /// dulu agar UI tidak menunggu jaringan, jadi token dikirim eksplisit.
+  Future<void> logout({String? accessToken}) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/auth/logout'),
-      headers: await _authHeaders(),
+      headers: await _authHeaders(accessToken: accessToken),
     );
     if (response.statusCode >= 400) {
       _decodeObject(response);
@@ -142,6 +145,8 @@ class ApiClient {
     required String deviceInfo,
     String workMode = 'OFFICE',
     String? outOfTownReason,
+    String? locationNote,
+    List<String> workPlanItems = const [],
   }) {
     return _record(
       'check-in',
@@ -153,6 +158,8 @@ class ApiClient {
       deviceInfo: deviceInfo,
       workMode: workMode,
       outOfTownReason: outOfTownReason,
+      locationNote: locationNote,
+      workPlanItems: workPlanItems,
     );
   }
 
@@ -165,6 +172,7 @@ class ApiClient {
     required String deviceInfo,
     String workMode = 'OFFICE',
     String? outOfTownReason,
+    String? locationNote,
   }) {
     return _record(
       'check-out',
@@ -176,6 +184,7 @@ class ApiClient {
       deviceInfo: deviceInfo,
       workMode: workMode,
       outOfTownReason: outOfTownReason,
+      locationNote: locationNote,
     );
   }
 
@@ -189,6 +198,8 @@ class ApiClient {
     required String deviceInfo,
     String workMode = 'OFFICE',
     String? outOfTownReason,
+    String? locationNote,
+    List<String> workPlanItems = const [],
   }) async {
     final request = http.MultipartRequest(
       'POST',
@@ -204,6 +215,10 @@ class ApiClient {
       'work_mode': workMode,
       if (workMode == 'OUT_OF_TOWN' && outOfTownReason != null)
         'out_of_town_reason': outOfTownReason,
+      if (locationNote != null && locationNote.trim().isNotEmpty)
+        'location_note': locationNote.trim(),
+      if (workPlanItems.isNotEmpty)
+        'work_plan_items': jsonEncode(workPlanItems),
     });
     request.files.add(
       http.MultipartFile.fromBytes(
@@ -350,10 +365,10 @@ class ApiClient {
   }
 
   /// Logout: hapus token perangkat di server agar tidak ada notifikasi nyasar.
-  Future<void> deletePushToken({String? token}) async {
+  Future<void> deletePushToken({String? token, String? accessToken}) async {
     final response = await _client.delete(
       Uri.parse('$baseUrl/api/mobile/push-token'),
-      headers: await _authHeaders(json: true),
+      headers: await _authHeaders(json: true, accessToken: accessToken),
       body: jsonEncode({'token': ?token}),
     );
     _decodeObject(response);
@@ -404,13 +419,150 @@ class ApiClient {
   Future<WfhRequest> submitWfh({
     required DateTime date,
     required String reason,
+    String workMode = 'WFH',
+    String? locationNote,
+    List<String> workPlanItems = const [],
+    Uint8List? planBytes,
+    String planFilename = 'rencana.jpg',
   }) async {
-    final response = await _client.post(
+    final fields = <String, String>{
+      'date': _dateOnly(date),
+      'reason': reason,
+      'workMode': workMode,
+      if (locationNote != null && locationNote.trim().isNotEmpty)
+        'locationNote': locationNote.trim(),
+      if (workPlanItems.isNotEmpty)
+        'workPlanItems': jsonEncode(workPlanItems),
+    };
+    if (planBytes == null) {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/api/wfh'),
+        headers: await _authHeaders(json: true),
+        body: jsonEncode(fields),
+      );
+      return WfhRequest.fromJson(_decodeObject(response));
+    }
+    final lowerName = planFilename.toLowerCase();
+    final contentType = lowerName.endsWith('.png')
+        ? MediaType('image', 'png')
+        : lowerName.endsWith('.webp')
+        ? MediaType('image', 'webp')
+        : MediaType('image', 'jpeg');
+    final request = http.MultipartRequest(
+      'POST',
       Uri.parse('$baseUrl/api/wfh'),
-      headers: await _authHeaders(json: true),
-      body: jsonEncode({'date': _dateOnly(date), 'reason': reason}),
     );
+    request.headers.addAll(await _authHeaders());
+    request.fields.addAll(fields);
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'plan',
+        planBytes,
+        filename: planFilename,
+        contentType: contentType,
+      ),
+    );
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
     return WfhRequest.fromJson(_decodeObject(response));
+  }
+
+  /// Rencana kerja hari ini untuk sesi WFH/WFC.
+  Future<WorkPlan?> todayWorkPlan({DateTime? date}) async {
+    final uri = Uri.parse('$baseUrl/api/mobile/work-plans/today')
+        .replace(queryParameters: date == null ? null : {'date': _dateOnly(date)});
+    final response = await _client.get(uri, headers: await _authHeaders());
+    final workPlan = _decodeObject(response)['workPlan'];
+    return workPlan is Map<String, dynamic> ? WorkPlan.fromJson(workPlan) : null;
+  }
+
+  Future<WorkPlan> saveWorkPlan({
+    required String workMode,
+    required List<String> items,
+    String? locationNote,
+    String? summaryNote,
+    Uint8List? planBytes,
+    String planFilename = 'rencana.jpg',
+    DateTime? date,
+  }) async {
+    final fields = <String, String>{
+      'workMode': workMode,
+      if (date != null) 'date': _dateOnly(date),
+      if (locationNote != null && locationNote.trim().isNotEmpty)
+        'locationNote': locationNote.trim(),
+      if (summaryNote != null && summaryNote.trim().isNotEmpty)
+        'summaryNote': summaryNote.trim(),
+      'items': jsonEncode(items),
+    };
+    http.Response response;
+    if (planBytes == null) {
+      response = await _client.post(
+        Uri.parse('$baseUrl/api/mobile/work-plans'),
+        headers: await _authHeaders(json: true),
+        body: jsonEncode(fields),
+      );
+    } else {
+      final lowerName = planFilename.toLowerCase();
+      final contentType = lowerName.endsWith('.png')
+          ? MediaType('image', 'png')
+          : lowerName.endsWith('.webp')
+          ? MediaType('image', 'webp')
+          : MediaType('image', 'jpeg');
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/mobile/work-plans'),
+      );
+      request.headers.addAll(await _authHeaders());
+      request.fields.addAll(fields);
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'plan',
+          planBytes,
+          filename: planFilename,
+          contentType: contentType,
+        ),
+      );
+      final streamed = await _client.send(request);
+      response = await http.Response.fromStream(streamed);
+    }
+    final workPlan = _decodeObject(response)['workPlan'];
+    if (workPlan is! Map<String, dynamic>) {
+      throw const ApiException(
+        500,
+        'INVALID_RESPONSE',
+        'Rencana kerja tidak diterima',
+      );
+    }
+    return WorkPlan.fromJson(workPlan);
+  }
+
+  Future<WorkPlan> updateWorkPlanItem({
+    required String itemId,
+    bool? isCompleted,
+    String? title,
+  }) async {
+    final payload = <String, Object>{
+      'isCompleted': ?isCompleted,
+      'title': ?title,
+    };
+    final response = await _client.patch(
+      Uri.parse('$baseUrl/api/mobile/work-plans/items/$itemId'),
+      headers: await _authHeaders(json: true),
+      body: jsonEncode(payload),
+    );
+    return WorkPlan.fromJson(
+      _decodeObject(response)['workPlan'] as Map<String, dynamic>,
+    );
+  }
+
+  Future<WorkPlan> deleteWorkPlanItem(String itemId) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/mobile/work-plans/items/$itemId'),
+      headers: await _authHeaders(json: true),
+    );
+    return WorkPlan.fromJson(
+      _decodeObject(response)['workPlan'] as Map<String, dynamic>,
+    );
   }
 
   Future<List<WfhRequest>> myWfh({String? status}) async {
@@ -828,8 +980,11 @@ class ApiClient {
     return Uri.parse(baseUrl).resolve(path).toString();
   }
 
-  Future<Map<String, String>> _authHeaders({bool json = false}) async {
-    final token = await _tokenStore.read();
+  Future<Map<String, String>> _authHeaders({
+    bool json = false,
+    String? accessToken,
+  }) async {
+    final token = accessToken ?? await _tokenStore.read();
     if (token == null || token.isEmpty) {
       throw const ApiException(401, 'UNAUTHENTICATED', 'Sesi tidak tersedia');
     }

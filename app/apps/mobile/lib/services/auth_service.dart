@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
+import '../core/root_navigator.dart';
 import '../models/session.dart';
 import '../models/user.dart';
 import '../models/workspace.dart';
@@ -12,8 +15,10 @@ class AuthService extends ChangeNotifier {
     required this.api,
     BackgroundSessionSync? backgroundSync,
     PushSessionSync? pushSync,
+    VoidCallback? onSessionCleared,
   }) : backgroundSync = backgroundSync ?? const NoopBackgroundSessionSync(),
-       pushNotifications = pushSync ?? const NoopPushSessionSync();
+       pushNotifications = pushSync ?? const NoopPushSessionSync(),
+       _onSessionCleared = onSessionCleared ?? resetRootNavigator;
 
   final ApiClient api;
 
@@ -24,6 +29,10 @@ class AuthService extends ChangeNotifier {
   /// Registrasi token FCM saat login/sesi dipulihkan dan penghapusannya saat
   /// logout. Implementasi nyata ada di [PushNotificationService].
   final PushSessionSync pushNotifications;
+
+  /// Dipanggil setelah sesi lokal dihapus agar seluruh rute bertumpuk dibuang
+  /// dan layar Login tampil di rute akar.
+  final VoidCallback _onSessionCleared;
   SessionProfile? _profile;
   bool _loading = false;
   bool _busy = false;
@@ -118,22 +127,74 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Batas waktu pembersihan server saat logout. UI tidak pernah menunggu
+  /// jaringan lebih lama dari ini.
+  static const Duration remoteLogoutTimeout = Duration(seconds: 3);
+
+  /// Logout dua fase: sesi lokal diputus seketika (tanpa menunggu jaringan),
+  /// lalu token push & sesi server dibersihkan di latar belakang.
   Future<void> logout() async {
+    if (_busy) return;
     _busy = true;
     notifyListeners();
+
+    // Kredensial disalin lebih dulu karena penyimpanan lokal langsung dihapus;
+    // pembersihan server memakai nilai ini, bukan membaca storage lagi.
+    String? accessToken;
     try {
-      // Hapus token FCM selagi sesi masih valid.
-      await _stopPushSync();
-      await api.logout();
-    } catch (_) {
-      // Token tetap dihapus lokal walau server tidak dapat dihubungi.
-    } finally {
+      accessToken = await api.readToken();
+    } catch (error) {
+      debugPrint('Token sesi tidak terbaca saat logout: $error');
+    }
+    final pushToken = pushNotifications.token;
+
+    // 1) Putus sesi lokal secara atomik: state memori, storage, dan sinkron
+    //    latar. Semua langkah ini lokal sehingga tidak menunggu jaringan.
+    _profile = null;
+    _error = null;
+    _busy = false;
+    try {
       await api.clearToken();
+    } catch (error) {
+      debugPrint('Penyimpanan token tidak dapat dibersihkan: $error');
+    }
+    try {
       await backgroundSync.stop();
-      _profile = null;
-      _error = null;
-      _busy = false;
-      notifyListeners();
+    } catch (error) {
+      debugPrint('Sinkronisasi latar tidak dapat dihentikan: $error');
+    }
+    notifyListeners();
+
+    // 2) Reset tumpukan rute: layar Login tampil tanpa jeda dan tombol Back
+    //    keluar dari aplikasi, bukan kembali ke Beranda/Profil.
+    _onSessionCleared();
+
+    // 3) Hapus token FCM & sesi server di latar belakang dengan batas waktu.
+    if (accessToken == null || accessToken.isEmpty) return;
+    unawaited(
+      _purgeRemoteSession(accessToken: accessToken, pushToken: pushToken),
+    );
+  }
+
+  Future<void> _purgeRemoteSession({
+    required String accessToken,
+    required String? pushToken,
+  }) async {
+    debugPrint(
+      'Logout: pembersihan server dimulai '
+      '(token push: ${pushToken == null ? 'tidak ada' : 'ada'}).',
+    );
+    try {
+      await pushNotifications
+          .unregister(api, accessToken: accessToken, pushToken: pushToken)
+          .timeout(remoteLogoutTimeout);
+    } catch (error) {
+      debugPrint('Penghapusan token push saat logout gagal: $error');
+    }
+    try {
+      await api.logout(accessToken: accessToken).timeout(remoteLogoutTimeout);
+    } catch (error) {
+      debugPrint('Sesi server tidak dapat diakhiri: $error');
     }
   }
 
@@ -147,14 +208,6 @@ class AuthService extends ChangeNotifier {
       await pushNotifications.register(api);
     } catch (error) {
       debugPrint('Registrasi push notification gagal: $error');
-    }
-  }
-
-  Future<void> _stopPushSync() async {
-    try {
-      await pushNotifications.unregister(api);
-    } catch (error) {
-      debugPrint('Penghapusan push token gagal: $error');
     }
   }
 

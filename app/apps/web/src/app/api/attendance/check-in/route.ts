@@ -44,9 +44,19 @@ export async function POST(request: Request): Promise<Response> {
       workMode:
         form.get("work_mode") === "OUT_OF_TOWN"
           ? "OUT_OF_TOWN"
-          : form.get("work_mode") === "WFH"
-            ? "WFH"
-            : "OFFICE",
+          : form.get("work_mode") === "WFC"
+            ? "WFC"
+            : form.get("work_mode") === "WFH"
+              ? "WFH"
+              : "OFFICE",
+      locationNote:
+        typeof form.get("location_note") === "string"
+          ? String(form.get("location_note"))
+          : null,
+      workPlanItems:
+        typeof form.get("work_plan_items") === "string"
+          ? String(form.get("work_plan_items"))
+          : null,
       outOfTownReason:
         typeof form.get("out_of_town_reason") === "string"
           ? String(form.get("out_of_town_reason"))
